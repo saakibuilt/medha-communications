@@ -47,6 +47,15 @@ drop policy if exists "communications files delete" on storage.objects;
 create policy "communications files delete" on storage.objects for delete using (bucket_id = 'medha-communications-files');
 alter table public.medha_communications_conversations enable row level security;
 alter table public.medha_communications_messages enable row level security;
+create table if not exists public.medha_communications_presence (
+  user_id uuid primary key,
+  is_open boolean not null default false,
+  last_seen timestamptz not null default now()
+);
+alter table public.medha_communications_presence enable row level security;
+drop policy if exists "communications presence all" on public.medha_communications_presence;
+create policy "communications presence all" on public.medha_communications_presence for all using (true) with check (true);
+create index if not exists medha_communications_presence_seen_idx on public.medha_communications_presence(last_seen);
 drop policy if exists "communications conversations all" on public.medha_communications_conversations;
 create policy "communications conversations all" on public.medha_communications_conversations for all using (true) with check (true);
 drop policy if exists "communications messages all" on public.medha_communications_messages;
