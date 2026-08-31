@@ -17,6 +17,7 @@ create table if not exists public.medha_communications_messages (
   created_at timestamptz not null default now()
 );
 alter table public.medha_communications_messages add column if not exists attachments jsonb not null default '[]'::jsonb;
+alter table public.medha_communications_messages add column if not exists reactions jsonb not null default '{}'::jsonb;
 create index if not exists medha_communications_messages_conversation_idx on public.medha_communications_messages(conversation_id, created_at);
 create table if not exists public.medha_communications_meetings (
   id uuid primary key default gen_random_uuid(),
