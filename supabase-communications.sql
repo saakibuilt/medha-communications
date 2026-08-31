@@ -56,6 +56,22 @@ alter table public.medha_communications_presence enable row level security;
 drop policy if exists "communications presence all" on public.medha_communications_presence;
 create policy "communications presence all" on public.medha_communications_presence for all using (true) with check (true);
 create index if not exists medha_communications_presence_seen_idx on public.medha_communications_presence(last_seen);
+create table if not exists public.medha_communications_user_chats (
+  user_id text not null,
+  conversation_id text not null references public.medha_communications_conversations(id) on delete cascade,
+  display_name text not null,
+  last_message text not null default '',
+  updated_at timestamptz not null default now(),
+  primary key (user_id, conversation_id)
+);
+alter table public.medha_communications_user_chats enable row level security;
+drop policy if exists "communications user chats all" on public.medha_communications_user_chats;
+create policy "communications user chats all" on public.medha_communications_user_chats for all using (true) with check (true);
+create index if not exists medha_communications_user_chats_user_idx on public.medha_communications_user_chats(user_id, updated_at desc);
+create or replace function public.medha_communications_sync_user_chats() returns trigger language plpgsql as $$ begin delete from public.medha_communications_user_chats where conversation_id=new.id and not (user_id=any(new.participant_ids)); insert into public.medha_communications_user_chats(user_id,conversation_id,display_name,last_message,updated_at) select participant,new.id,new.title,new.last_message,new.updated_at from unnest(new.participant_ids) participant on conflict (user_id,conversation_id) do update set display_name=excluded.display_name,last_message=excluded.last_message,updated_at=excluded.updated_at; return new; end; $$;
+drop trigger if exists medha_communications_sync_user_chats_trigger on public.medha_communications_conversations;
+create trigger medha_communications_sync_user_chats_trigger after insert or update of participant_ids,last_message,updated_at on public.medha_communications_conversations for each row execute function public.medha_communications_sync_user_chats();
+insert into public.medha_communications_user_chats(user_id,conversation_id,display_name,last_message,updated_at) select participant,c.id,c.title,c.last_message,c.updated_at from public.medha_communications_conversations c cross join lateral unnest(c.participant_ids) participant on conflict (user_id,conversation_id) do update set display_name=excluded.display_name,last_message=excluded.last_message,updated_at=excluded.updated_at;
 drop policy if exists "communications conversations all" on public.medha_communications_conversations;
 create policy "communications conversations all" on public.medha_communications_conversations for all using (true) with check (true);
 drop policy if exists "communications messages all" on public.medha_communications_messages;
