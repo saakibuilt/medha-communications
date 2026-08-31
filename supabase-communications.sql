@@ -18,6 +18,20 @@ create table if not exists public.medha_communications_messages (
 );
 alter table public.medha_communications_messages add column if not exists attachments jsonb not null default '[]'::jsonb;
 create index if not exists medha_communications_messages_conversation_idx on public.medha_communications_messages(conversation_id, created_at);
+create table if not exists public.medha_communications_meetings (
+  id uuid primary key default gen_random_uuid(),
+  title text not null check (char_length(title) between 1 and 160),
+  start_at timestamptz not null,
+  end_at timestamptz not null,
+  invitee_ids text[] not null default '{}',
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  check (end_at > start_at)
+);
+create index if not exists medha_communications_meetings_start_idx on public.medha_communications_meetings(start_at);
+alter table public.medha_communications_meetings enable row level security;
+drop policy if exists "communications meetings all" on public.medha_communications_meetings;
+create policy "communications meetings all" on public.medha_communications_meetings for all using (true) with check (true);
 insert into storage.buckets (id, name, public) values ('medha-communications-files', 'medha-communications-files', true) on conflict (id) do update set public = true;
 drop policy if exists "communications files read" on storage.objects;
 create policy "communications files read" on storage.objects for select using (bucket_id = 'medha-communications-files');
