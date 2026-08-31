@@ -1,13 +1,15 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 const firebaseApp=initializeApp({apiKey:"AIzaSyDhyDoFRrCXXEkoQ3i6wpqmNd8Po6p_KIw",authDomain:"medhaclockin.firebaseapp.com",projectId:"medhaclockin",storageBucket:"medhaclockin.firebasestorage.app",messagingSenderId:"458648237732",appId:"1:458648237732:web:aadb89db358e0cca7b9831"});
-const auth=getAuth(firebaseApp); let currentUserId=null;
+const auth=getAuth(firebaseApp); let currentUserId=null; let launchAuthorized=false;
+const $=s=>document.querySelector(s); const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const launchToken=new URLSearchParams(location.hash.slice(1)).get("token");
+const launchGate=$("#launch-gate");
 const SUPABASE_URL="https://nnvyfeckimnjvmeneiro.supabase.co";
 const SUPABASE_ANON_KEY="sb_publishable_H-o5HRFu3lCq5E9Hf1s3uA_Hi_LaMnY";
 const headers={apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`};
 let conversations=[];
 let active=null;
-const $=s=>document.querySelector(s); const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 async function db(path,options={}){const r=await fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...options,headers:{...headers,"Content-Type":"application/json",...(options.headers||{})}});if(!r.ok)throw Error(`Supabase ${r.status}`);if(r.status===204)return null;const t=await r.text();return t?JSON.parse(t):null}
 function avatar(c,small=false){return `<div class="person-avatar ${c.color||"blue"}${small?" small":""}">${esc(c.initials)}</div>`}
 function renderList(){const q=$("#chat-search").value.toLowerCase();$("#chat-list").innerHTML=conversations.filter(c=>`${c.name} ${c.preview}`.toLowerCase().includes(q)).map(c=>`<div class="chat-item ${active&&c.id===active.id?"selected":""}" data-id="${c.id}"><div class="avatar-stack">${avatar(c)}</div><div class="chat-copy"><div class="chat-line"><strong>${esc(c.name)}</strong><time>${esc(c.time||"")}</time></div><p>${esc(c.preview||"")}</p></div></div>`).join("")||'<p class="empty">No conversations yet. Select + to start a chat.</p>';}
@@ -33,4 +35,6 @@ document.querySelectorAll(".composer-tools button,.header-action,.team-card,.pag
 document.querySelectorAll(".rail-item[data-view]").forEach(b=>b.onclick=()=>{document.querySelectorAll(".rail-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".view").forEach(v=>v.classList.remove("active-view"));$(`#${b.dataset.view}-view`).classList.add("active-view");$("#chat-sidebar").style.display=b.dataset.view==="chat"?"flex":"none"});
 $("#calendar-grid").innerHTML='<div class="empty-state">No scheduled meetings.</div>';
 async function hydrateFromSupabase(){try{const rows=await db("medha_communications_conversations?select=id,title,kind,last_message,updated_at,participant_ids&order=updated_at.desc");const loaded=await Promise.all((rows||[]).map(async row=>{const messages=await db(`medha_communications_messages?conversation_id=eq.${encodeURIComponent(row.id)}&select=sender_id,body,attachments,created_at&order=created_at.asc`);return {id:row.id,name:row.title,participantId:(row.participant_ids||[])[0],initials:row.title.split(/\\s+/).map(x=>x[0]).join("").slice(0,2).toUpperCase(),color:row.kind==="channel"?"amber":"blue",team:row.kind==="channel"?"Team channel":"",preview:row.last_message||"",time:row.updated_at?new Date(row.updated_at).toLocaleDateString([], {month:"short",day:"numeric"}):"",messages:(messages||[]).map(m=>({who:m.sender_id===currentUserId?"me":"them",text:m.body,attachments:m.attachments||[],time:new Date(m.created_at).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}))};}));conversations=loaded;active=conversations[0]||null;renderList();renderMessages()}catch(e){conversations=[];active=null;renderList();renderMessages();toast("Supabase communications is unavailable")}}
-onAuthStateChanged(auth,user=>{currentUserId=user?.uid||null;hydrateFromSupabase()});
+async function authorizeHubLaunch(){if(!launchToken){launchGate.hidden=false;return}try{const r=await fetch("https://medha-clockin.vercel.app/api/hub-session",{method:"POST",headers:{Authorization:`Bearer ${launchToken}`}});if(!r.ok)throw Error();const {customToken}=await r.json();await signInWithCustomToken(auth,customToken);launchAuthorized=true;launchGate.hidden=true;history.replaceState(null,"",location.pathname+location.search)}catch{await signOut(auth).catch(()=>{});launchGate.hidden=false}}
+onAuthStateChanged(auth,user=>{if(!launchAuthorized){currentUserId=null;return}currentUserId=user?.uid||null;$("#current-user").textContent=user?.displayName||user?.email||"Signed-in user";hydrateFromSupabase()});
+authorizeHubLaunch();
