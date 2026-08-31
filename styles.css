@@ -35,3 +35,7 @@
 .calendar-grid .calendar-event-span i{pointer-events:auto;margin-top:30px;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 @media(max-width:760px){.calendar-grid{grid-auto-rows:minmax(48px,auto)}.calendar-grid .calendar-event-span i{margin-top:23px}}
 @media(max-width:430px){.calendar-grid{grid-auto-rows:minmax(40px,auto)}.calendar-grid .calendar-event-span i{margin-top:20px}}
+.calendar-grid .calendar-event-span{display:flex;align-items:flex-start;justify-content:center;padding:0 2px}
+.calendar-grid .calendar-event-span i{width:100%;margin-top:30px;text-align:center;line-height:1.25;border-radius:6px}
+@media(max-width:760px){.calendar-grid .calendar-event-span i{margin-top:23px}}
+@media(max-width:430px){.calendar-grid .calendar-event-span i{margin-top:20px}}
