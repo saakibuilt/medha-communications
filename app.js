@@ -58,7 +58,7 @@ function setWorkspaceView(viewName){
   });
   const shell=document.querySelector(".app-shell");
   shell.classList.toggle("calendar-mode",viewName==="calendar");
-  $("#chat-sidebar").style.display=(viewName==="chat"||viewName==="calendar")?"flex":"none";
+  $("#chat-sidebar").style.display=viewName==="chat"?"flex":"none";
   if(viewName==="chat") $("#details-panel").classList.remove("closed");
   else { $("#details-panel").classList.remove("open"); $("#details-panel").classList.add("closed"); }
   if(viewName==="calendar") renderCalendar();
