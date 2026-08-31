@@ -13,9 +13,18 @@ create table if not exists public.medha_communications_messages (
   conversation_id text not null references public.medha_communications_conversations(id) on delete cascade,
   sender_id text not null,
   body text not null check (char_length(body) between 1 and 4000),
+  attachments jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
+alter table public.medha_communications_messages add column if not exists attachments jsonb not null default '[]'::jsonb;
 create index if not exists medha_communications_messages_conversation_idx on public.medha_communications_messages(conversation_id, created_at);
+insert into storage.buckets (id, name, public) values ('medha-communications-files', 'medha-communications-files', true) on conflict (id) do update set public = true;
+drop policy if exists "communications files read" on storage.objects;
+create policy "communications files read" on storage.objects for select using (bucket_id = 'medha-communications-files');
+drop policy if exists "communications files insert" on storage.objects;
+create policy "communications files insert" on storage.objects for insert with check (bucket_id = 'medha-communications-files');
+drop policy if exists "communications files delete" on storage.objects;
+create policy "communications files delete" on storage.objects for delete using (bucket_id = 'medha-communications-files');
 alter table public.medha_communications_conversations enable row level security;
 alter table public.medha_communications_messages enable row level security;
 drop policy if exists "communications conversations all" on public.medha_communications_conversations;
