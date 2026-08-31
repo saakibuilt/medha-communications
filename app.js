@@ -59,6 +59,7 @@ function setWorkspaceView(viewName){
   const shell=document.querySelector(".app-shell");
   shell.classList.toggle("calendar-mode",viewName==="calendar");
   $("#chat-sidebar").style.display=viewName==="chat"?"flex":"none";
+  const calendarSidebar=$("#calendar-sidebar");calendarSidebar.hidden=viewName!=="calendar";calendarSidebar.style.display=viewName==="calendar"?"flex":"none";if(viewName==="calendar")shell.style.gridTemplateColumns="80px 280px minmax(500px,1fr) 0";else shell.style.removeProperty("grid-template-columns");
   if(viewName==="chat") $("#details-panel").classList.remove("closed");
   else { $("#details-panel").classList.remove("open"); $("#details-panel").classList.add("closed"); }
   if(viewName==="calendar") renderCalendar();
