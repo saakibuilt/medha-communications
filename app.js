@@ -41,6 +41,23 @@ $("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth
 document.querySelectorAll("#event-start,#event-end").forEach(input=>input.addEventListener("click",()=>input.showPicker?.()));document.querySelectorAll("dialog .close-dialog").forEach(button=>button.addEventListener("click",()=>button.closest("dialog").close()));
 document.querySelectorAll(".composer-tools button,.header-action,.team-card,.page-head .primary-button,.page-head .secondary-button").forEach(el=>el.addEventListener("click",()=>{if(el.id!=="new-chat"&&el.id!=="new-event"&&el.dataset.view===undefined)toast(el.title||"This workspace action is ready") }));
 document.querySelectorAll(".rail-item[data-view]").forEach(b=>b.onclick=()=>{document.querySelectorAll(".rail-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".view").forEach(v=>v.classList.remove("active-view"));const view=document.getElementById(`${b.dataset.view}-view`);if(view)view.classList.add("active-view");const shell=document.querySelector(".app-shell");shell.classList.toggle("calendar-mode",b.dataset.view==="calendar");$("#chat-sidebar").style.display=b.dataset.view==="chat"?"flex":"none";if(b.dataset.view==="chat")$("#details-panel").classList.remove("closed");else{$("#details-panel").classList.remove("open");$("#details-panel").classList.add("closed")} });
+function setWorkspaceView(viewName){
+  document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.classList.toggle("active",item.dataset.view===viewName));
+  document.querySelectorAll(".view").forEach(view=>{
+    const activeView=view.id===`${viewName}-view`;
+    view.classList.toggle("active-view",activeView);
+    view.hidden=!activeView;
+    view.style.display=activeView?"flex":"none";
+  });
+  const shell=document.querySelector(".app-shell");
+  shell.classList.toggle("calendar-mode",viewName==="calendar");
+  $("#chat-sidebar").style.display=viewName==="chat"?"flex":"none";
+  if(viewName==="chat") $("#details-panel").classList.remove("closed");
+  else { $("#details-panel").classList.remove("open"); $("#details-panel").classList.add("closed"); }
+  if(viewName==="calendar") renderCalendar();
+}
+document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.onclick=()=>setWorkspaceView(item.dataset.view));
+setWorkspaceView("chat");
 renderCalendar();
 async function hydrateFromSupabase(){try{const rows=await db("medha_communications_conversations?select=id,title,kind,last_message,updated_at,participant_ids&order=updated_at.desc");const loaded=await Promise.all((rows||[]).map(async row=>{const messages=await loadMessages(row.id);return {id:row.id,name:row.title,participantId:(row.participant_ids||[])[0],initials:row.title.split(/\\s+/).map(x=>x[0]).join("").slice(0,2).toUpperCase(),color:row.kind==="channel"?"amber":"blue",team:row.kind==="channel"?"Team channel":"",preview:row.last_message||"",time:row.updated_at?new Date(row.updated_at).toLocaleDateString([], {month:"short",day:"numeric"}):"",messages:(messages||[]).map(m=>({who:m.sender_id===currentUserId?"me":"them",text:m.body,attachments:m.attachments||[],time:new Date(m.created_at).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}))};}));conversations=loaded;active=conversations[0]||null;renderList();renderMessages()}catch(e){conversations=[];active=null;renderList();renderMessages();toast(`Supabase communications is unavailable: ${e.message}`)}}
 function initialsFor(name){return String(name||"").trim().split(/\s+/).filter(Boolean).map(part=>part[0]).join("").slice(0,2).toUpperCase()}
