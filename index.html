@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Medha Communications</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="rail">
+      <div class="brand"><div class="brand-mark">M</div><span>Medha</span></div>
+      <nav class="rail-nav" aria-label="Main navigation">
+        <button class="rail-item active" data-view="chat"><span>▣</span>Chat</button>
+        <button class="rail-item" data-view="calendar"><span>▦</span>Calendar</button>
+        <button class="rail-item" data-view="teams"><span>♧</span>Teams</button>
+        <button class="rail-item" data-view="files"><span>▤</span>Files</button>
+        <button class="rail-item" data-view="activity"><span>◷</span>Activity</button>
+      </nav>
+      <div class="rail-bottom"><button class="rail-item" data-view="settings"><span>⚙</span>Settings</button><button class="profile-chip" title="Profile">MC</button></div>
+    </aside>
+
+    <aside class="chat-sidebar" id="chat-sidebar">
+      <div class="sidebar-top"><div><p class="eyebrow">Workspace</p><h1>Communications</h1></div><button class="icon-button" id="new-chat" title="Start a new chat">＋</button></div>
+      <div class="search-wrap"><span>⌕</span><input id="chat-search" type="search" placeholder="Search chats"></div>
+      <div class="sidebar-tabs"><button class="tab active">All</button><button class="tab">Unread</button><button class="tab">Pinned</button></div>
+      <div class="chat-list" id="chat-list"></div>
+      <div class="sidebar-footer"><span class="status-dot"></span><span>Connected to Medha Hub</span><button title="More options">•••</button></div>
+    </aside>
+
+    <main class="main-area">
+      <section id="chat-view" class="view active-view">
+        <header class="conversation-header"><div class="person-avatar blue"></div><div class="conversation-title"><h2 id="conversation-name">No conversation selected</h2><p><span class="online-dot"></span><span id="conversation-status"></span></p></div><div class="header-actions"><button class="header-action" title="Start video call">▣</button><button class="header-action" title="Start audio call">⌕</button><button class="header-action" id="open-details" title="Open details">ⓘ</button></div></header>
+        <div class="message-area" id="message-area"><div class="date-divider"><span>Today</span></div></div>
+        <div class="typing" id="typing" hidden><span></span><span></span><span></span></div>
+        <form class="composer" id="composer"><div class="composer-tools"><button type="button" title="Format">A</button><button type="button" title="Attach file">⌕</button><button type="button" title="Add emoji">☺</button><button type="button" title="Add GIF">GIF</button></div><textarea id="message-input" rows="1" placeholder="Type a new message" aria-label="Message"></textarea><div class="composer-bottom"><span>Press Enter to send · Shift + Enter for a new line</span><button class="send-button" type="submit">Send <span>➤</span></button></div></form>
+      </section>
+      <section id="calendar-view" class="view"><div class="page-head"><div><p class="eyebrow">Your schedule</p><h2>Calendar</h2><p>Scheduled meetings from Supabase.</p></div><button class="primary-button" id="new-event">＋ New event</button></div><div class="calendar-layout"><div class="calendar-card"><div class="calendar-grid" id="calendar-grid"><div class="empty-state">No scheduled meetings.</div></div></div><aside class="agenda"><p class="eyebrow">Upcoming</p><div id="agenda-list" class="empty-state">No upcoming meetings.</div></aside></div></section>
+      <section id="teams-view" class="view"><div class="page-head"><div><p class="eyebrow">Collaborate together</p><h2>Teams</h2><p>Teams and channels from your workspace.</p></div><button class="primary-button">＋ Join or create a team</button></div><div class="team-grid" id="team-list"><div class="empty-state">No teams available.</div></div></section>
+      <section id="files-view" class="view"><div class="page-head"><div><p class="eyebrow">Shared workspace</p><h2>Files</h2><p>Files shared from real conversations.</p></div><button class="primary-button">＋ Upload file</button></div><div class="files-card" id="files-list"><div class="empty-state">No shared files.</div></div></section>
+      <section id="activity-view" class="view"><div class="page-head"><div><p class="eyebrow">Stay in the loop</p><h2>Activity</h2><p>Real notifications from your workspace.</p></div><button class="secondary-button">Mark all as read</button></div><div class="activity-card" id="activity-list"><div class="empty-state">No activity yet.</div></div></section>
+    </main>
+
+    <aside class="details-panel" id="details-panel"><div class="details-head"><h3>Chat details</h3><button id="close-details">×</button></div><div class="details-person"><div class="person-avatar blue large"></div><h3 id="details-name">No conversation selected</h3><p></p><span class="presence"></span></div><div class="details-section"><h4>Shared media</h4><div class="media-strip" id="shared-media"><div class="directory-empty">No shared media</div></div></div><div class="details-section"><h4>Chat settings</h4><button class="detail-row">☆ Add to favorites <span>›</span></button><button class="detail-row">⌕ Search in conversation <span>›</span></button><button class="detail-row danger" id="delete-chat">⌫ Delete conversation <span>›</span></button></div></aside>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <dialog id="new-chat-dialog"><form method="dialog" id="new-chat-form"><div class="dialog-head"><div><p class="eyebrow">New conversation</p><h2>Start a new chat</h2></div><button value="cancel" class="close-dialog">×</button></div><label>To<input id="new-chat-person" required placeholder="Search Medha employees..." autocomplete="off"><div class="employee-list" id="employee-list"><div class="directory-loading">Loading Medha employees…</div></div></label><label>Message<textarea id="new-chat-message" rows="3" placeholder="Write an opening message..."></textarea></label><div class="dialog-actions"><button value="cancel" class="secondary-button">Cancel</button><button value="default" class="primary-button">Start chat</button></div></form></dialog>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
