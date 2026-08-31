@@ -27,6 +27,7 @@ create table if not exists public.medha_communications_meetings (
   title text not null check (char_length(title) between 1 and 160),
   start_at timestamptz not null,
   end_at timestamptz not null,
+  location text,
   invitee_ids text[] not null default '{}',
   created_by text not null,
   created_at timestamptz not null default now(),
@@ -34,6 +35,7 @@ create table if not exists public.medha_communications_meetings (
 );
 create index if not exists medha_communications_meetings_start_idx on public.medha_communications_meetings(start_at);
 alter table public.medha_communications_meetings enable row level security;
+alter table public.medha_communications_meetings add column if not exists location text;
 drop policy if exists "communications meetings all" on public.medha_communications_meetings;
 create policy "communications meetings all" on public.medha_communications_meetings for all using (true) with check (true);
 insert into storage.buckets (id, name, public) values ('medha-communications-files', 'medha-communications-files', true) on conflict (id) do update set public = true;
