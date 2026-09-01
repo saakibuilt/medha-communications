@@ -96,11 +96,8 @@ function renderDetailsPanel(){
   const media=(active.messages||[]).flatMap(m=>m.attachments||[]);
   const facts=[
     detailRow("Name",active.name),
-    detailRow("Department",person?.department),
-    detailRow("Role",person?.role),
-    detailRow("Email",person?.email),
-    detailRow("Messages",String((active.messages||[]).length)+(active.hasMore?"+":"")),
-    detailRow("Status",isSelf?"This is you":status)
+    detailRow("Status",isSelf?"This is you":status),
+    detailRow("Email",person?.email)
   ].filter(Boolean).join("");
   const facts_el=$("#details-facts");
   if(facts_el)facts_el.innerHTML=facts||'<div class="directory-empty">No details available</div>';
@@ -536,22 +533,9 @@ $("#chat-actions").addEventListener("click",async e=>{
     sessionStorage.setItem(key,JSON.stringify(next));renderList();
   }else if(action==="unread"){
     chat.unread=1;renderList();toast("Conversation marked unread");
-  }else if(action==="delete"){
-    await deleteConversation(chat);
   }
   closeChatActions();
 });
-
-async function deleteConversation(chat){
-  if(!confirm(`Delete your copy of the conversation with ${chat.name}? Messages stay with the other person.`))return;
-  try{
-    await db(`medha_communications_user_conversations?user_id=eq.${encodeURIComponent(viewerId())}&cid=eq.${encodeURIComponent(chat.cid)}`,{method:"DELETE",headers:{Prefer:"return=minimal"}});
-    conversations=conversations.filter(c=>c.id!==chat.id);
-    if(active?.id===chat.id)active=null;
-    renderList();renderMessages();toast("Conversation removed");
-  }catch(error){toast(error.message)}
-}
-$("#delete-chat").addEventListener("click",()=>{if(active)deleteConversation(active)});
 
 /* Load earlier messages when scrolled to the top. */
 $("#message-area").addEventListener("scroll",async()=>{
