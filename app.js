@@ -96,9 +96,9 @@ function hydrateFromCache(){
       hasMore:true,
       fromCache:true};
   });
-  active=conversations.find(c=>c.id===cached.activeId)||null;
+  active=conversations.find(c=>c.id===cached.activeId)||conversations[0]||null;
   renderList();
-  if(active)renderMessages();
+  if(active){renderMessages();scrollMessagesToEnd()}
   return true;
 }
 
@@ -249,7 +249,26 @@ function renderMessages(){
   area.innerHTML=html;
 }
 
-function scrollMessagesToEnd(){const area=$("#message-area");area.scrollTop=area.scrollHeight}
+let stickToBottom=true;
+function scrollMessagesToEnd(){
+  const area=$("#message-area");
+  if(!area)return;
+  stickToBottom=true;
+  /* Jump immediately, then again after layout and once more after images
+     and fonts settle - otherwise the height is still growing and the view
+     ends up part-way up the thread. */
+  area.scrollTop=area.scrollHeight;
+  requestAnimationFrame(()=>{
+    area.scrollTop=area.scrollHeight;
+    setTimeout(()=>{area.scrollTop=area.scrollHeight},60);
+  });
+  /* An attached image that decodes late would otherwise push the newest
+     message below the fold. */
+  area.querySelectorAll("img").forEach(img=>{
+    if(img.complete)return;
+    img.addEventListener("load",()=>{if(stickToBottom)area.scrollTop=area.scrollHeight},{once:true});
+  });
+}
 
 /* ---------- message loading (server is the source of truth) ---------- */
 const PAGE_SIZE=25;
@@ -701,6 +720,7 @@ $("#chat-actions").addEventListener("click",async e=>{
 /* Load earlier messages when scrolled to the top. */
 $("#message-area").addEventListener("scroll",async()=>{
   const area=$("#message-area");
+  stickToBottom=area.scrollHeight-area.scrollTop-area.clientHeight<60;
   if(area.scrollTop>40||!active?.messagesLoaded||!active.hasMore||active.loadingMessages)return;
   const oldHeight=area.scrollHeight,oldTop=area.scrollTop;
   await loadChatPage(active,active.messageOffset);
@@ -1085,7 +1105,11 @@ async function initializeAuthorizedUser(user){
   hydrateFromCache();
   startPresenceHeartbeat();
   await Promise.all([hydrateConversations(),loadMeetings()]);
-  if(conversations.length&&!active)await switchChat(conversations[0].id);
+  /* Open the most recent chat and land on the newest message. The cache
+     may already have set `active`, so this must not be skipped - that is
+     what left the view sitting at the top of the day on refresh. */
+  const openId=active?.id||conversations[0]?.id;
+  if(openId)await switchChat(openId);
   if(syncTimer)clearInterval(syncTimer);
   syncTimer=setInterval(()=>{syncIncomingMessages();refreshContactPresence()},5000);
   setInterval(async()=>{try{firebaseIdToken=await user.getIdToken(true)}catch{}},30*60*1000);
