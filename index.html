@@ -8,7 +8,20 @@
   <link rel="apple-touch-icon" href="medha-circular.png">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="space-booting">
+  <section id="space-launch-loader" class="space-launch-loader" role="status" aria-live="polite" aria-label="Opening Space">
+    <div class="space-loader-scene" aria-hidden="true">
+      <span class="space-loader-ring space-loader-ring-one"></span>
+      <span class="space-loader-ring space-loader-ring-two"></span>
+      <span class="space-loader-node space-loader-node-one"><i></i></span>
+      <span class="space-loader-node space-loader-node-two"><i></i></span>
+      <span class="space-loader-node space-loader-node-three"><i></i></span>
+      <div class="space-loader-core"><img src="medha-circular.png" alt=""><span></span></div>
+      <div class="space-loader-message space-loader-message-one"><b></b><b></b><b></b></div>
+      <div class="space-loader-message space-loader-message-two"><b></b><b></b></div>
+    </div>
+    <div class="space-loader-copy"><span><i></i> Medha Space</span><strong>Opening your connections</strong><small id="space-loader-status">Synchronizing conversations and presence</small><div class="space-loader-signal"><b>LIVE</b><span>Secure team communication</span></div></div>
+  </section>
   <div id="launch-gate" class="launch-gate" hidden><div><strong>Open Space from Medha Hub</strong><p>This app requires an authenticated Medha Hub launch.</p></div></div>
   <div class="app-shell">
     <aside class="rail">
@@ -53,7 +66,7 @@
   <dialog id="gif-dialog"><form method="dialog" id="gif-form"><div class="dialog-head"><div><p class="eyebrow">Add media</p><h2>Add a GIF</h2></div><button value="cancel" class="close-dialog">×</button></div><label>GIF URL<input id="gif-url" type="url" required placeholder="https://…" inputmode="url"><small class="dialog-hint">Paste a GIF link from a service you trust.</small></label><div class="dialog-actions"><button value="cancel" class="secondary-button">Cancel</button><button value="default" class="primary-button">Attach GIF</button></div></form></dialog>
   <dialog id="emoji-dialog"><div class="emoji-picker"><div class="dialog-head"><div><p class="eyebrow">Message</p><h2>Choose an emoji</h2></div><button type="button" class="close-dialog" id="close-emoji">×</button></div><input id="emoji-search" class="emoji-search" type="search" placeholder="Search emoji"><div id="emoji-grid" class="emoji-grid"></div></div></dialog>
   <dialog id="event-dialog"><form method="dialog" id="event-form"><div class="dialog-head"><div><p class="eyebrow">Calendar</p><h2>New meeting</h2></div><button value="cancel" class="close-dialog">×</button></div><label>Title<input id="event-title" required maxlength="160" placeholder="Meeting title"></label><label>Start<input id="event-start" required type="datetime-local"></label><label>End<input id="event-end" required type="datetime-local"></label><label>Invitees<input id="event-invitees" placeholder="Employee IDs, comma-separated"></label><div class="dialog-actions"><button value="cancel" class="secondary-button">Cancel</button><button value="default" class="primary-button">Create meeting</button></div></form></dialog>
-  <dialog id="new-chat-dialog"><form method="dialog" id="new-chat-form"><div class="dialog-head"><div><p class="eyebrow">New conversation</p><h2>Start a new chat</h2></div><button value="cancel" class="close-dialog">×</button></div><label>To<input id="new-chat-person" required placeholder="Search Medha employees..." autocomplete="off"><div class="employee-list" id="employee-list"><div class="directory-loading">Loading Medha employees…</div></div></label><label>Message<textarea id="new-chat-message" rows="3" placeholder="Write an opening message..."></textarea></label><div class="dialog-actions"><button value="cancel" class="secondary-button">Cancel</button><button value="default" class="primary-button">Start chat</button></div></form></dialog>
+  <dialog id="new-chat-dialog"><form method="dialog" id="new-chat-form"><div class="dialog-head"><div><p class="eyebrow">New conversation</p><h2>Start a chat</h2></div><button value="cancel" class="close-dialog">×</button></div><label class="visually-hidden" for="new-chat-person">Search</label><div class="dialog-search"><span>⌕</span><input id="new-chat-person" placeholder="Search people" autocomplete="off"></div><div class="employee-list" id="employee-list"><div class="directory-loading">Loading Medha employees…</div></div><div class="dialog-actions"><button value="cancel" class="secondary-button">Cancel</button></div></form></dialog>
   <script type="module" src="app.js"></script>
   <script type="module" src="suggestions-details.js"></script>
 </body>

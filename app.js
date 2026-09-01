@@ -103,6 +103,17 @@ function hydrateFromCache(){
 }
 
 /* ---------- rendering ---------- */
+/* All / Unread / Pinned filter for the sidebar tabs. */
+let chatFilter="all";
+document.querySelectorAll(".sidebar-tabs .tab").forEach(tab=>{
+  tab.addEventListener("click",()=>{
+    document.querySelectorAll(".sidebar-tabs .tab").forEach(t=>t.classList.remove("active"));
+    tab.classList.add("active");
+    chatFilter=tab.textContent.trim().toLowerCase();
+    renderList();
+  });
+});
+
 function renderList(){
   const q=$("#chat-search").value.trim().toLowerCase();
   const favorites=JSON.parse(sessionStorage.getItem(`medha-favorites-${viewerId()||"guest"}`)||"[]");
@@ -122,7 +133,12 @@ function renderList(){
     if(ap)return rank.get(String(a.id))-rank.get(String(b.id));
     return new Date(b.updatedAt||0)-new Date(a.updatedAt||0);
   });
-  const shown=ordered.filter(c=>!q||`${c.name} ${c.preview}`.toLowerCase().includes(q));
+  const shown=ordered.filter(c=>{
+    if(q&&!`${c.name} ${c.preview}`.toLowerCase().includes(q))return false;
+    if(chatFilter==="unread")return !!c.unread;
+    if(chatFilter==="pinned")return rank.has(String(c.id));
+    return true;
+  });
   $("#chat-list").innerHTML=shown.length?shown.map(c=>{
     const state=presenceFor(c.participantId);
     const pinned=rank.has(String(c.id));
@@ -139,7 +155,10 @@ function renderList(){
         </div>
       </div>
     </div>`}).join("")
-    :'<p class="empty">No conversations yet. Select + to start a chat.</p>';
+    :`<p class="empty">${chatFilter==="unread"?"No unread conversations."
+       :chatFilter==="pinned"?"No pinned conversations. Long-press or right-click a chat to pin it."
+       :q?"No conversations match that search."
+       :"No conversations yet. Select + to start a chat."}</p>`;
 }
 
 function messageHtml(m){
@@ -185,11 +204,13 @@ function renderDetailsPanel(){
 function openDetails(){
   if(!active){toast("Select a conversation first");return}
   renderDetailsPanel();
+  if(isMobile())document.body.classList.add("details-page");
   $("#details-panel").classList.add("open");
   $("#details-panel").classList.remove("closed");
   document.body.classList.add("details-open");
 }
 function closeDetails(){
+  document.body.classList.remove("details-page");
   $("#details-panel").classList.remove("open");
   $("#details-panel").classList.add("closed");
   document.body.classList.remove("details-open");
@@ -368,7 +389,7 @@ async function hydrateConversations(){
   if(!me){conversations=[];active=null;renderList();renderMessages();return}
   try{
     const cache=readChatNameCache();
-    const rows=await db(`medha_communications_my_conversations?user_id=eq.${encodeURIComponent(me)}&select=cid,conversation_key,kind,title,participant_ids,last_message,updated_at&order=updated_at.desc`);
+    const rows=await db(`medha_communications_my_conversations?user_id=eq.${encodeURIComponent(me)}&select=cid,conversation_key,kind,title,participant_ids,last_message,updated_at,last_read_at&order=updated_at.desc`);
     if(rows?.length)ensureDirectory();
     const nameOf=id=>directory.find(p=>String(p.id)===String(id))?.full_name||cache[String(id)]||"";
 
@@ -390,7 +411,11 @@ async function hydrateConversations(){
         initials:initialsFor(name),color:row.kind==="channel"?"amber":"blue",
         team:row.kind==="channel"?"Team channel":"",
         preview:row.last_message||"",updatedAt:row.updated_at,time:"",
-        unread:previous?.unread||0,
+        lastReadAt:row.last_read_at,
+        /* Unread lives on the server, so reading on a phone clears it on a
+           laptop too, and it never returns for those messages. */
+        unread:row.last_read_at&&row.updated_at
+          ?(new Date(row.updated_at)>new Date(row.last_read_at)?1:0):0,
         messages:previous?.messages||[],messagesLoaded:previous?.messagesLoaded||false,
         messageOffset:previous?.messageOffset||0,hasMore:previous?.hasMore!==false};
     });
@@ -407,8 +432,10 @@ async function hydrateConversations(){
 async function switchChat(id){
   const chat=conversations.find(c=>String(c.id)===String(id));
   if(!chat)return;
-  active=chat;chat.unread=0;
+  active=chat;
+  if(chat.unread){chat.unread=0;markConversationRead(chat)}
   renderList();renderMessages();
+  if(isMobile())document.body.classList.add("chat-open");
   closeMobileSidebar();
   if(document.body.classList.contains("details-open"))renderDetailsPanel();
   /* Cached messages paint instantly, then we always refresh from the
@@ -422,6 +449,18 @@ async function switchChat(id){
 }
 
 /* ---------- starting a chat ---------- */
+/* Records that this person has read the thread, for every device. */
+async function markConversationRead(chat){
+  if(!viewerId()||!chat?.cid)return;
+  const now=new Date().toISOString();
+  chat.lastReadAt=now;
+  writeCache();
+  try{
+    await db(`medha_communications_user_conversations?user_id=eq.${encodeURIComponent(viewerId())}&cid=eq.${encodeURIComponent(chat.cid)}`,
+      {method:"PATCH",headers:{Prefer:"return=minimal"},body:JSON.stringify({last_read_at:now})});
+  }catch{}
+}
+
 async function openDirectChat(person,openingText){
   const me=viewerId();
   if(!me)throw Error("Sign in to Medha Hub before starting a chat");
@@ -453,25 +492,46 @@ async function openDirectChat(person,openingText){
 
 
 /* ---------- responsive: chat list drawer on small screens ---------- */
-const mobileQuery=window.matchMedia("(max-width:760px)");
+/* Must match the CSS drawer breakpoint below, or the menu button and
+   the drawer disagree about when they apply. */
+const mobileQuery=window.matchMedia("(max-width:1024px)");
 function isMobile(){return mobileQuery.matches}
 function openMobileSidebar(){if(isMobile()){document.body.classList.add("sidebar-open");$("#chat-sidebar").setAttribute("aria-hidden","false")}}
-function closeMobileSidebar(){document.body.classList.remove("sidebar-open");$("#chat-sidebar").setAttribute("aria-hidden",isMobile()?"true":"false")}
+function closeMobileSidebar(){
+  document.body.classList.remove("sidebar-open");
+  $("#chat-sidebar").setAttribute("aria-hidden",isMobile()?"true":"false");
+}
 function syncResponsiveChrome(){
   const mobile=isMobile();
   document.body.classList.toggle("is-mobile",mobile);
-  if(!mobile){document.body.classList.remove("sidebar-open");$("#chat-sidebar").setAttribute("aria-hidden","false")}
+  if(!mobile){
+    document.body.classList.remove("sidebar-open","chat-open","details-page");
+    $("#chat-sidebar").setAttribute("aria-hidden","false");
+  }else if(active){document.body.classList.add("chat-open")}
   else $("#chat-sidebar").setAttribute("aria-hidden",document.body.classList.contains("sidebar-open")?"false":"true");
 }
 mobileQuery.addEventListener("change",syncResponsiveChrome);
 syncResponsiveChrome();
 
 /* Back / menu button in the conversation header, only shown on small screens. */
+/* Small screens get a three-line menu button that opens the rail and the
+   conversation list together, and a back arrow once a chat is open. */
+const menuButton=document.createElement("button");
+menuButton.type="button";menuButton.className="chat-menu-btn";menuButton.id="chat-menu";
+menuButton.setAttribute("aria-label","Open menu");
+menuButton.innerHTML='<span></span><span></span><span></span>';
+$(".conversation-header").prepend(menuButton);
+menuButton.addEventListener("click",openMobileSidebar);
+
 const backButton=document.createElement("button");
 backButton.type="button";backButton.className="chat-back";backButton.id="chat-back";
-backButton.setAttribute("aria-label","Show conversations");backButton.innerHTML="‹";
+backButton.setAttribute("aria-label","Back to conversations");backButton.innerHTML="\u2039";
 $(".conversation-header").prepend(backButton);
-backButton.addEventListener("click",openMobileSidebar);
+backButton.addEventListener("click",()=>{
+  /* On a phone the list is the previous "page", so go back to it. */
+  document.body.classList.remove("chat-open");
+  openMobileSidebar();
+});
 
 const scrim=document.createElement("div");
 scrim.className="sidebar-scrim";scrim.id="sidebar-scrim";
@@ -635,35 +695,49 @@ async function loadEmployeeDirectory(){
   else renderDirectory("");
 }
 
+/* Presence for everyone in the picker, so you can see who is available
+   before starting a conversation. */
+async function refreshDirectoryPresence(){
+  const ids=directory.map(p=>String(p.id)).filter(Boolean);
+  if(!ids.length)return;
+  try{
+    const list=ids.map(id=>`"${id.replace(/"/g,'')}"`).join(",");
+    const rows=await db(`medha_communications_presence?user_id=in.(${list})&select=user_id,is_open,last_seen`);
+    (rows||[]).forEach(r=>contactPresence.set(String(r.user_id),r));
+    renderDirectory($("#new-chat-person").value||"");
+  }catch{}
+}
+
 function renderDirectory(query){
   const list=$("#employee-list"),q=String(query||"").toLowerCase();
   const matches=directory.filter(p=>`${p.full_name} ${p.email||""} ${p.department||""}`.toLowerCase().includes(q));
-  list.innerHTML=matches.length?matches.map(p=>`<button type="button" class="employee-option ${selectedEmployee&&String(selectedEmployee.id)===String(p.id)?"selected":""}" data-person-id="${esc(p.id)}"><div class="person-avatar blue">${esc(initialsFor(p.full_name))}</div><div><strong>${esc(p.full_name)}</strong><small>${esc(p.department||p.role||"Medha employee")}${p.email?` · ${esc(p.email)}`:""}</small></div></button>`).join("")
-    :'<div class="directory-empty">No Medha employees found</div>';
+  list.innerHTML=matches.length?matches.map(p=>{
+    const state=presenceFor(p.id);
+    return `<button type="button" class="employee-option" data-person-id="${esc(p.id)}">
+      <span class="avatar-stack"><span class="person-avatar blue">${esc(initialsFor(p.full_name))}</span><i class="presence-dot ${state}" title="${state}"></i></span>
+      <span class="employee-copy"><strong>${esc(p.full_name)}</strong><small>${esc(p.department||p.role||"Medha employee")}</small></span>
+      <span class="employee-state ${state}">${state}</span>
+    </button>`}).join("")
+    :'<div class="directory-empty">No people found</div>';
 }
 $("#new-chat").addEventListener("click",async()=>{
   selectedEmployee=null;
-  $("#new-chat-person").value="";$("#new-chat-message").value="";
+  $("#new-chat-person").value="";
   $("#new-chat-dialog").showModal();
   await loadEmployeeDirectory();
+  await refreshDirectoryPresence();
 });
 $("#new-chat-person").addEventListener("input",e=>{selectedEmployee=null;renderDirectory(e.target.value)});
-$("#employee-list").addEventListener("click",e=>{
+$("#employee-list").addEventListener("click",async e=>{
   const button=e.target.closest("[data-person-id]");
   if(!button)return;
-  selectedEmployee=directory.find(p=>String(p.id)===String(button.dataset.personId))||null;
-  $("#new-chat-person").value=selectedEmployee?.full_name||"";
-  renderDirectory($("#new-chat-person").value);
-});
-$("#new-chat-form").addEventListener("submit",async event=>{
-  if(event.submitter?.value==="cancel"){$("#new-chat-dialog").close();return}
-  event.preventDefault();
-  if(!selectedEmployee){toast("Select an employee from the directory");return}
-  try{
-    await openDirectChat(selectedEmployee,$("#new-chat-message").value);
-    $("#new-chat-dialog").close();
-    $("#new-chat-message").value="";selectedEmployee=null;
-  }catch(error){toast(error.message)}
+  const person=directory.find(p=>String(p.id)===String(button.dataset.personId));
+  if(!person)return;
+  /* Selecting someone opens the conversation straight away; there is no
+     opening-message step to fill in. */
+  $("#new-chat-dialog").close();
+  try{await openDirectChat(person,"")}
+  catch(error){toast(error.message)}
 });
 
 /* ---------- details panel wiring ---------- */
@@ -952,6 +1026,7 @@ async function syncIncomingMessages(){
     fresh.forEach(row=>{
       const chat=conversations.find(c=>String(c.cid)===String(row.cid));
       if(chat&&chat.cid!==active?.cid)chat.unread=(chat.unread||0)+1;
+      else if(chat&&chat.cid===active?.cid)markConversationRead(chat);
       if(notificationReady)showDesktopNotification(row);
     });
     if(fresh.length)renderList();
@@ -960,6 +1035,13 @@ async function syncIncomingMessages(){
 }
 
 /* ---------- profile + boot ---------- */
+const spaceLaunchLoader=document.querySelector("#space-launch-loader");
+const spaceLoaderStatus=document.querySelector("#space-loader-status");
+function finishSpaceLoading(message){
+  if(spaceLoaderStatus&&message)spaceLoaderStatus.textContent=message;
+  document.body.classList.remove("space-booting");
+  spaceLaunchLoader?.setAttribute("aria-hidden","true");
+}
 async function loadCurrentProfile(user){
   if(!user)return;
   let name=user.displayName||user.email||"Signed-in user";
@@ -993,7 +1075,7 @@ async function initializeAuthorizedUser(user){
 }
 
 async function authorizeHubLaunch(){
-  if(!launchToken){launchGate.hidden=false;return}
+  if(!launchToken){launchGate.hidden=false;finishSpaceLoading("Waiting for a secure Hub launch");return}
   try{
     let customToken;
     if(location.hostname==="localhost"&&launchToken.startsWith("custom:")){customToken=launchToken.slice(7)}
@@ -1006,11 +1088,13 @@ async function authorizeHubLaunch(){
     launchAuthorized=true;
     const signedIn=await signInWithCustomToken(auth,customToken);
     await initializeAuthorizedUser(signedIn.user);
+    finishSpaceLoading("Your conversations are ready");
     launchGate.hidden=true;
     history.replaceState(null,"",location.pathname+location.search);
   }catch{
     sessionStorage.removeItem(launchStorageKey);
     launchAuthorized=false;
+    finishSpaceLoading("Return to Medha Hub to open Space");
     launchGate.hidden=false;
     try{await signOut(auth)}catch{}
   }
@@ -1025,4 +1109,3 @@ renderList();
 renderMessages();
 authorizeHubLaunch();
 loadSuggestions();
-
