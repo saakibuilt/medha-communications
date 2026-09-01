@@ -616,6 +616,26 @@ messageInput.addEventListener("keydown",e=>{
   if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("#composer").requestSubmit()}
 });
 
+/* On phones and tablets the composer tools collapse behind a three-dot
+   button, so the message row keeps its full width. */
+const toolsMore=$("#tools-more");
+function closeComposerTools(){
+  document.body.classList.remove("tools-open");
+  toolsMore?.setAttribute("aria-expanded","false");
+}
+toolsMore?.addEventListener("click",e=>{
+  e.stopPropagation();
+  const open=document.body.classList.toggle("tools-open");
+  toolsMore.setAttribute("aria-expanded",open?"true":"false");
+});
+document.addEventListener("click",e=>{
+  if(!e.target.closest(".composer-tools"))closeComposerTools();
+});
+/* Picking a tool closes the menu. */
+["#attach-file","#emoji-button","#gif-button"].forEach(sel=>
+  $(sel)?.addEventListener("click",()=>closeComposerTools()));
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeComposerTools()});
+
 /* ---------- chat list interaction ---------- */
 $("#chat-list").addEventListener("click",e=>{
   const row=e.target.closest("[data-id]");

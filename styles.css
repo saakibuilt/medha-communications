@@ -443,3 +443,52 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
   .employee-state{display:none}   /* the dot already says it */
 }
 @media(pointer:coarse){.employee-option{padding:12px 10px}}
+
+/* ============================================================
+   Icons — one size, one stroke weight, everywhere.
+   ============================================================ */
+svg{fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round}
+
+/* Every icon button is the same box with the same glyph size. */
+.header-action,.tool-btn,.icon-button{
+  display:inline-grid;place-items:center;flex:0 0 auto;
+  width:38px;height:38px;padding:0;border:0;border-radius:10px;
+  background:none;color:#68758a;cursor:pointer;
+  transition:background .15s ease,color .15s ease}
+.header-action svg,.tool-btn svg,.icon-button svg{width:20px;height:20px;display:block}
+.header-action:hover,.tool-btn:hover{background:#f1f3f6;color:var(--ink)}
+.icon-button{background:var(--brand);color:#fff}
+.icon-button:hover{background:#6f0f2d;color:#fff}
+.search-icon{width:16px;height:16px;flex:0 0 auto;color:#8a98a9;stroke-width:2}
+
+.composer-tools{display:flex;align-items:center;gap:2px;padding:6px 6px 0}
+.tools-more{display:none}
+
+/* Details panel icon sits with the title, same box as the rest. */
+#close-details{display:inline-grid;place-items:center;width:38px;height:38px}
+
+/* --- phones and tablets: tools collapse behind the three dots --- */
+@media(max-width:1024px){
+  .composer-tools{position:relative;gap:0;padding:5px 5px 0}
+  .tools-more{display:inline-grid}
+  /* The tools become a small popover above the button. */
+  .composer-tools #attach-file,
+  .composer-tools #emoji-button,
+  .composer-tools #gif-button{display:none}
+  body.tools-open .composer-tools{gap:2px}
+  body.tools-open .composer-tools #attach-file,
+  body.tools-open .composer-tools #emoji-button,
+  body.tools-open .composer-tools #gif-button{
+    display:inline-grid;animation:toolIn .16s ease both}
+  body.tools-open .tools-more{background:var(--brand-soft);color:var(--brand)}
+}
+@keyframes toolIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+@media(pointer:coarse){
+  .header-action,.tool-btn,.icon-button,#close-details{width:44px;height:44px}
+  .header-action svg,.tool-btn svg,.icon-button svg{width:21px;height:21px}
+}
+@media(prefers-reduced-motion:reduce){
+  body.tools-open .composer-tools>button{animation:none}
+}
