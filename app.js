@@ -7,11 +7,12 @@ const launchStorageKey="medha-communications-hub-token";
 const launchToken=new URLSearchParams(location.hash.slice(1)).get("token")||sessionStorage.getItem(launchStorageKey);
 const launchGate=$("#launch-gate");
 const SUPABASE_URL="https://nnvyfeckimnjvmeneiro.supabase.co";
+/* Only used for the public files bucket upload below; conversation data
+   never touches this key. */
 const SUPABASE_ANON_KEY="sb_publishable_H-o5HRFu3lCq5E9Hf1s3uA_Hi_LaMnY";
 const headers={apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`};
 let conversations=[];
 let active=null;
-let firebaseIdToken=null;
 
 /* ---------- identity ----------
    Every user id in this app is the Firebase uid (text). users.id === uid.
@@ -19,17 +20,37 @@ let firebaseIdToken=null;
 function viewerId(){return currentUserId?String(currentUserId):null}
 function isMine(senderId){const me=viewerId();return me!==null&&String(senderId)===me}
 
-/* Supabase is reached with the anon key. Once Firebase is registered as a
-   third-party auth provider in the Supabase dashboard, flip USE_FIREBASE_JWT
-   to true and the RLS policies in supabase-communications-security.sql
-   start being enforced per user. Until then the token is sent as a separate
-   header that PostgREST ignores, so nothing breaks. */
-const USE_FIREBASE_JWT=false;
-async function db(path,options={}){
-  const authHeader=USE_FIREBASE_JWT&&firebaseIdToken?{Authorization:`Bearer ${firebaseIdToken}`}:{};
-  const r=await fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...options,headers:{...headers,...authHeader,"Content-Type":"application/json",...(options.headers||{})}});
-  if(!r.ok){let detail="";try{detail=(await r.text()).slice(0,300)}catch{}throw Error(`Supabase ${r.status}${detail?`: ${detail}`:""}`)}
-  if(r.status===204)return null;const t=await r.text();return t?JSON.parse(t):null}
+/* All conversation data goes through /api/space, which verifies the caller's
+   Firebase ID token server-side and then queries Supabase with the
+   service-role key. The browser never holds a key that can read anyone
+   else's conversations, and nothing needs registering in the Supabase
+   dashboard. */
+async function api(action,payload={}){
+  const user=auth.currentUser;
+  if(!user)throw Error("Sign in to Medha Hub");
+  let token;
+  try{token=await user.getIdToken()}catch{throw Error("Could not refresh your session")}
+  const r=await fetch("/api/space",{method:"POST",
+    headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},
+    body:JSON.stringify({action,...payload})});
+  const text=await r.text();
+  let parsed=null;
+  try{parsed=text?JSON.parse(text):null}catch{}
+  if(!r.ok){
+    if(r.status===401){
+      /* A stale token is the usual cause; force a refresh and retry once. */
+      try{
+        const fresh=await user.getIdToken(true);
+        const retry=await fetch("/api/space",{method:"POST",
+          headers:{"Content-Type":"application/json",Authorization:`Bearer ${fresh}`},
+          body:JSON.stringify({action,...payload})});
+        if(retry.ok)return (await retry.json())?.data;
+      }catch{}
+    }
+    throw Error(parsed?.error||`Request failed (${r.status})`);
+  }
+  return parsed?.data;
+}
 
 function avatar(c,small=false){return `<div class="person-avatar ${c.color||"blue"}${small?" small":""}">${esc(c.initials||"")}</div>`}
 function initialsFor(name){return String(name||"?").trim().split(/\s+/).map(x=>x[0]||"").join("").slice(0,2).toUpperCase()||"?"}
@@ -169,14 +190,10 @@ function mapRow(m,nameFor){
     createdAt:m.created_at,time:new Date(m.created_at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
 }
 async function fetchMessagePage(cid,offset=0){
-  const cols="id,sender_id,body,attachments,reactions,created_at";
-  const query=extra=>`medha_communications_messages?cid=eq.${encodeURIComponent(cid)}&select=${extra}&order=created_at.desc,id.desc&offset=${offset}&limit=${PAGE_SIZE}`;
-  let rows;
-  try{rows=await db(query(cols))}
-  catch(error){if(!String(error.message).includes("Supabase 400"))throw error;rows=await db(query("id,sender_id,body,created_at"))}
-  rows=rows||[];
+  const rows=await api("messages",{cid,offset,limit:PAGE_SIZE})||[];
   return {messages:rows.slice().reverse().map(m=>mapRow(m)),hasMore:rows.length===PAGE_SIZE};
 }
+
 async function loadChatPage(chat,offset=0){
   if(chat.loadingMessages)return;
   chat.loadingMessages=true;
@@ -212,19 +229,8 @@ async function refreshActiveMessages(){
 /* ---------- sending ---------- */
 async function ensureConversationRow(chat){
   if(chat.cid)return chat.cid;
-  const participants=[...new Set([viewerId(),chat.participantId].filter(Boolean).map(String))].sort();
-  const existing=await db(`medha_communications_conversations?id=eq.${encodeURIComponent(chat.id)}&select=cid,participant_ids`);
-  if(existing?.length){chat.cid=existing[0].cid;return chat.cid}
-  /* resolution=merge-duplicates makes this safe when both people open the
-     same new chat at once - the unique key on id decides one winner. */
-  const created=await db("medha_communications_conversations",
-    {method:"POST",headers:{Prefer:"resolution=merge-duplicates,return=representation"},
-     body:JSON.stringify({id:chat.id,title:chat.name,kind:chat.kind||"direct",participant_ids:participants})});
-  chat.cid=created?.[0]?.cid;
-  if(!chat.cid){
-    const row=await db(`medha_communications_conversations?id=eq.${encodeURIComponent(chat.id)}&select=cid`);
-    chat.cid=row?.[0]?.cid;
-  }
+  const row=await api("openDirect",{withUserId:chat.participantId});
+  chat.cid=row?.cid;
   if(!chat.cid)throw Error("Could not open that conversation");
   return chat.cid;
 }
@@ -236,18 +242,10 @@ async function persistMessage(chat,text,attachments){
   if(!body)throw Error("Enter a message before sending");
   if(body.length>4000)throw Error("Message is too long (4000 characters maximum)");
   const cid=await ensureConversationRow(chat);
-  const payload={cid,sender_id:me,body,attachments:attachments||[]};
-  let saved;
-  try{saved=await db("medha_communications_messages",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(payload)})}
-  catch(error){
-    if(!String(error.message).includes("Supabase 400"))throw error;
-    saved=await db("medha_communications_messages",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({cid,sender_id:me,body})});
-  }
-  /* last_message and updated_at are set by a database trigger, so there is
-     no follow-up PATCH and no second copy of the preview to keep in sync. */
+  const saved=await api("send",{cid,body,attachments:attachments||[]});
   chat.preview=body.slice(0,120);
   chat.updatedAt=new Date().toISOString();
-  return saved?.[0]?mapRow(saved[0]):null;
+  return saved?mapRow(saved):null;
 }
 
 /* ---------- conversation list ---------- */
@@ -260,7 +258,7 @@ let directoryLoadedAt=0;
 async function ensureDirectory(){
   if(directory.length&&Date.now()-directoryLoadedAt<10*60*1000)return directory;
   try{
-    const rows=await db("users?select=id,full_name,email,department,role&is_active=eq.true&order=full_name.asc");
+    const rows=await api("directory");
     directory=(rows||[]).filter(x=>x.full_name);
     directoryLoadedAt=Date.now();
     const cache=readChatNameCache();
@@ -275,7 +273,7 @@ async function hydrateConversations(){
   if(!me){conversations=[];active=null;renderList();renderMessages();return}
   try{
     const cache=readChatNameCache();
-    const rows=await db(`medha_communications_my_conversations?user_id=eq.${encodeURIComponent(me)}&select=cid,conversation_key,kind,title,participant_ids,last_message,updated_at&order=updated_at.desc`);
+    const rows=await api("conversations");
     if(rows?.length)ensureDirectory();
     const nameOf=id=>directory.find(p=>String(p.id)===String(id))?.full_name||cache[String(id)]||"";
 
@@ -328,8 +326,7 @@ async function openDirectChat(person,openingText){
     const name=person.full_name||"Conversation";
     /* The thread may already exist from the other side. Look it up by the
        deterministic key so existing history is shown, not a blank chat. */
-    const existing=await db(`medha_communications_conversations?id=eq.${encodeURIComponent(id)}&select=cid,last_message,updated_at`);
-    const found=existing?.[0];
+    const found=await api("openDirect",{withUserId:otherId});
     chat={id,cid:found?.cid,name,participantId:otherId,kind:"direct",
       initials:initialsFor(name),color:"blue",team:"",
       preview:found?.last_message||"",
@@ -414,7 +411,7 @@ async function uploadFile(file){
   const path=`${viewerId()}/${crypto.randomUUID()}-${safe}`;
   const encoded=path.split("/").map(encodeURIComponent).join("/");
   const r=await fetch(`${SUPABASE_URL}/storage/v1/object/medha-communications-files/${encoded}`,
-    {method:"POST",headers:{...headers,...(USE_FIREBASE_JWT&&firebaseIdToken?{Authorization:`Bearer ${firebaseIdToken}`}:{}),"Content-Type":file.type||"application/octet-stream","x-upsert":"false"},body:file});
+    {method:"POST",headers:{...headers,"Content-Type":file.type||"application/octet-stream","x-upsert":"false"},body:file});
   if(!r.ok)throw Error(`Could not upload ${file.name}`);
   return {kind:"file",name:file.name,url:`${SUPABASE_URL}/storage/v1/object/public/medha-communications-files/${encoded}`};
 }
@@ -519,7 +516,7 @@ $("#chat-actions").addEventListener("click",async e=>{
 async function deleteConversation(chat){
   if(!confirm(`Delete your copy of the conversation with ${chat.name}? Messages stay with the other person.`))return;
   try{
-    await db(`medha_communications_user_conversations?user_id=eq.${encodeURIComponent(viewerId())}&cid=eq.${encodeURIComponent(chat.cid)}`,{method:"DELETE",headers:{Prefer:"return=minimal"}});
+    await api("leave",{cid:chat.cid});
     conversations=conversations.filter(c=>c.id!==chat.id);
     if(active?.id===chat.id)active=null;
     renderList();renderMessages();toast("Conversation removed");
@@ -623,7 +620,7 @@ reactionMenu.addEventListener("click",async e=>{
   const next=users.includes(me)?users.filter(u=>u!==me):[...users,me];
   const reactions=next.length?{[emoji]:next}:{};
   try{
-    await db(`medha_communications_messages?id=eq.${encodeURIComponent(reactionTargetId)}`,{method:"PATCH",headers:{Prefer:"return=minimal"},body:JSON.stringify({reactions})});
+    await api("react",{cid:active.cid,messageId:reactionTargetId,reactions});
     message.reactions=reactions;renderMessages();
   }catch(error){toast(error.message)}
 });
@@ -638,15 +635,15 @@ let allEmojis=Object.entries(emojiGroups).flatMap(([group,value])=>value.split("
 
 let meetings=[];let calendarCursor=new Date();
 function renderCalendar(){const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth();$("#calendar-month").textContent=calendarCursor.toLocaleDateString([], {month:"long",year:"numeric"});const first=(new Date(y,m,1).getDay()+6)%7,last=new Date(y,m+1,0).getDate(),cells=[];for(let i=0;i<first;i++)cells.push('<div class="muted"></div>');for(let d=1;d<=last;d++){const date=new Date(y,m,d),key=date.toISOString().slice(0,10),items=meetings.filter(x=>x.start.slice(0,10)===key);cells.push(`<div class="${key===new Date().toISOString().slice(0,10)?"today":""}">${d}${items.map(x=>`<i title="${esc(x.title)}">${esc(x.title)}</i>`).join("")}</div>`)}$("#calendar-grid").innerHTML=cells.join("")||'<div class="empty-state">No scheduled meetings.</div>';const future=meetings.filter(x=>new Date(x.start)>=new Date()).sort((a,b)=>new Date(a.start)-new Date(b.start));$("#agenda-list").innerHTML=future.length?future.map(x=>`<div class="agenda-item"><b>${new Date(x.start).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</b><div><strong>${esc(x.title)}</strong><span>${new Date(x.start).toLocaleDateString([], {weekday:"short",month:"short",day:"numeric"})}</span></div></div>`).join(""):"<div class=\"empty-state\">No upcoming meetings.</div>"}
-async function loadMeetings(){try{meetings=await db(`medha_communications_meetings?select=id,title,start_at,end_at,invitee_ids,created_by&order=start_at.asc`)||[];meetings=meetings.map(x=>({...x,start:String(x.start_at||""),end:String(x.end_at||x.start_at||"")}));renderCalendar();if(typeof refreshContactPresence==="function")refreshContactPresence()}catch{meetings=[];renderCalendar()}}
-$("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);renderCalendar()};$("#calendar-next").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);renderCalendar()};$("#calendar-today").onclick=()=>{calendarCursor=new Date();renderCalendar()};$("#new-event").onclick=()=>$("#event-dialog").showModal();$("#event-form").addEventListener("submit",async e=>{if(e.submitter?.value==="cancel"){e.target.closest("dialog").close();return}e.preventDefault();if(!currentUserId){toast("Sign in to create meetings");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db("medha_communications_meetings",{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean),created_by:currentUserId})});$("#event-dialog").close();e.target.reset();await loadMeetings();toast("Meeting created")}catch(err){toast(err.message)}});
+async function loadMeetings(){try{meetings=await api("meetings")||[];meetings=meetings.map(x=>({...x,start:String(x.start_at||""),end:String(x.end_at||x.start_at||"")}));renderCalendar();if(typeof refreshContactPresence==="function")refreshContactPresence()}catch{meetings=[];renderCalendar()}}
+$("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);renderCalendar()};$("#calendar-next").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);renderCalendar()};$("#calendar-today").onclick=()=>{calendarCursor=new Date();renderCalendar()};$("#new-event").onclick=()=>$("#event-dialog").showModal();$("#event-form").addEventListener("submit",async e=>{if(e.submitter?.value==="cancel"){e.target.closest("dialog").close();return}e.preventDefault();if(!currentUserId){toast("Sign in to create meetings");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await api("createMeeting",{title,startAt:start,endAt:end,location:$("#event-location")?.value.trim()||null,inviteeIds:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean)});$("#event-dialog").close();e.target.reset();await loadMeetings();toast("Meeting created")}catch(err){toast(err.message)}});
 function openEventForCalendarDate(day){const date=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),day,9,0);const end=new Date(date);end.setHours(10);const localValue=value=>{const pad=n=>String(n).padStart(2,"0");return `${value.getFullYear()}-${pad(value.getMonth()+1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`};$("#event-form").reset();$("#event-start").value=localValue(date);$("#event-end").value=localValue(end);$("#event-dialog").showModal()}
 $("#calendar-grid").addEventListener("dblclick",event=>{const cell=event.target.closest("#calendar-grid>div");if(!cell||cell.classList.contains("muted"))return;const first=(new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1).getDay()+6)%7;const day=[...$("#calendar-grid").children].indexOf(cell)-first+1;if(day>0)openEventForCalendarDate(day)});
 document.querySelectorAll("#event-start,#event-end").forEach(input=>input.addEventListener("click",()=>input.showPicker?.()));document.querySelectorAll("dialog .close-dialog").forEach(button=>button.addEventListener("click",()=>button.closest("dialog").close()));
 const locationInput=document.createElement("input");locationInput.id="event-location";locationInput.maxLength=240;locationInput.placeholder="Optional meeting location";const locationLabel=document.createElement("label");locationLabel.textContent="Meeting location";locationLabel.append(locationInput);const locationTags=document.createElement("div");locationTags.className="location-tags";locationTags.innerHTML='<button type="button" data-location-tag="Online">Online</button><button type="button" data-location-tag="Office">Office</button>';locationLabel.append(locationTags);$("#event-invitees").closest("label").before(locationLabel);locationTags.addEventListener("click",e=>{const tag=e.target.closest("[data-location-tag]");if(tag)locationInput.value=tag.dataset.locationTag});window.addEventListener("communications:add-suggestion-event",event=>{const d=event.detail||{},dateText=String(d.start||""),dateMatch=dateText.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/)||dateText.match(/([A-Za-z]{3,9})\s+(\d{1,2})(?:.*?(\d{4}))?/),date=dateMatch?(dateMatch[3]?new Date(+dateMatch[3],+dateMatch[1]-1,+dateMatch[2]):new Date(`${dateMatch[1]} ${dateMatch[2]}, ${dateMatch[3]||new Date().getFullYear()}`)):new Date(),timeMatch=String(d.time||"").match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i),hour=timeMatch?(+timeMatch[1]%12)+(timeMatch[3].toUpperCase()==="PM"?12:0):9,minute=timeMatch?+(timeMatch[2]||0):0,pad=n=>String(n).padStart(2,"0"),value=`${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(hour)}:${pad(minute)}`;$("#event-form").reset();$("#event-title").value=d.title||"";$("#event-start").value=value;const end=new Date(date);end.setHours(hour+1,minute,0,0);$("#event-end").value=`${end.getFullYear()}-${pad(end.getMonth()+1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;locationInput.value=d.location&&d.location!=="Not published"?d.location:"";$("#event-dialog").showModal()});
 $("#event-title").closest("label").childNodes[0].textContent="Event Title";$("#event-title").placeholder="Event title";
-const communicationsDb=db;db=async(path,options={})=>{if(path==="medha_communications_meetings"&&options.method==="POST"&&options.body){const payload=JSON.parse(options.body);payload.location=$("#event-location")?.value.trim()||null;options={...options,body:JSON.stringify(payload)}}return communicationsDb(path,options)};
-let editingMeeting=null;const eventDialogTitle=$("#event-dialog h2"),eventDialogSubmit=$("#event-form button[value=default]");function dateTimeValue(value){if(!value)return"";const d=new Date(value),pad=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`}function openMeetingEditor(meeting){editingMeeting=meeting;eventDialogTitle.textContent="Edit event";eventDialogSubmit.textContent="Save changes";$("#event-title").value=meeting.title||"";$("#event-start").value=dateTimeValue(meeting.start);$("#event-end").value=dateTimeValue(meeting.end);$("#event-invitees").value=(meeting.invitee_ids||[]).join(",");$("#event-location").value=meeting.location||"";$("#event-dialog").showModal()}$("#calendar-grid").addEventListener("click",async event=>{const marker=event.target.closest("#calendar-grid i");if(!marker)return;const cell=marker.closest("#calendar-grid>div"),first=(new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1).getDay()+6)%7,day=[...$("#calendar-grid").children].indexOf(cell)-first+1,key=`${calendarCursor.getFullYear()}-${String(calendarCursor.getMonth()+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`,meeting=meetings.find(item=>item.title===marker.title&&item.start?.slice(0,10)===key);if(!meeting)return;try{const rows=await db(`medha_communications_meetings?id=eq.${encodeURIComponent(meeting.id)}&select=id,title,start_at,end_at,invitee_ids,location`);openMeetingEditor({...meeting,...(rows?.[0]||{}),start:rows?.[0]?.start_at||meeting.start,end:rows?.[0]?.end_at||meeting.end})}catch{openMeetingEditor(meeting)}});$("#event-form").addEventListener("submit",async event=>{if(!editingMeeting)return;event.preventDefault();event.stopImmediatePropagation();if(!currentUserId){toast("Sign in to edit events");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db(`medha_communications_meetings?id=eq.${encodeURIComponent(editingMeeting.id)}`,{method:"PATCH",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),location:$("#event-location").value.trim()||null,invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean)})});$("#event-dialog").close();event.target.reset();editingMeeting=null;eventDialogTitle.textContent="New meeting";eventDialogSubmit.textContent="Create meeting";await loadMeetings();toast("Event updated")}catch(error){toast(error.message)}},true);
+/* meeting location is sent explicitly by the createMeeting call above */
+let editingMeeting=null;const eventDialogTitle=$("#event-dialog h2"),eventDialogSubmit=$("#event-form button[value=default]");function dateTimeValue(value){if(!value)return"";const d=new Date(value),pad=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`}function openMeetingEditor(meeting){editingMeeting=meeting;eventDialogTitle.textContent="Edit event";eventDialogSubmit.textContent="Save changes";$("#event-title").value=meeting.title||"";$("#event-start").value=dateTimeValue(meeting.start);$("#event-end").value=dateTimeValue(meeting.end);$("#event-invitees").value=(meeting.invitee_ids||[]).join(",");$("#event-location").value=meeting.location||"";$("#event-dialog").showModal()}$("#calendar-grid").addEventListener("click",async event=>{const marker=event.target.closest("#calendar-grid i");if(!marker)return;const cell=marker.closest("#calendar-grid>div"),first=(new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1).getDay()+6)%7,day=[...$("#calendar-grid").children].indexOf(cell)-first+1,key=`${calendarCursor.getFullYear()}-${String(calendarCursor.getMonth()+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`,meeting=meetings.find(item=>item.title===marker.title&&item.start?.slice(0,10)===key);if(!meeting)return;try{openMeetingEditor(meeting)}catch{openMeetingEditor(meeting)}});$("#event-form").addEventListener("submit",async event=>{if(!editingMeeting)return;event.preventDefault();event.stopImmediatePropagation();if(!currentUserId){toast("Sign in to edit events");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await api("updateMeeting",{id:editingMeeting.id,title,startAt:start,endAt:end,location:$("#event-location").value.trim()||null,inviteeIds:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean)});$("#event-dialog").close();event.target.reset();editingMeeting=null;eventDialogTitle.textContent="New meeting";eventDialogSubmit.textContent="Create meeting";await loadMeetings();toast("Event updated")}catch(error){toast(error.message)}},true);
 $("#new-event").addEventListener("click",()=>{editingMeeting=null;eventDialogTitle.textContent="New meeting";eventDialogSubmit.textContent="Create meeting"});
 const calendarRender=renderCalendar;renderCalendar=function(){calendarRender();const list=$("#calendar-sidebar-list"),future=meetings.filter(x=>x.start&&new Date(x.start)>=new Date()).sort((a,b)=>new Date(a.start)-new Date(b.start));if(list)list.innerHTML=future.length?future.map(x=>`<div class="calendar-side-event"><time>${new Date(x.start).toLocaleDateString([], {month:"short",day:"numeric"})}</time><div><strong>${esc(x.title||"Meeting")}</strong><span>${new Date(x.start).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</span></div></div>`).join(""):"<div class=\"empty-state\">No upcoming meetings.</div>"};
 function externalStartDate(value){const text=String(value||""),numeric=text.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/),named=text.match(/([A-Za-z]{3,9})\s+(\d{1,2})(?:.*?(\d{4}))?/);if(numeric)return new Date(Number(numeric[3]),Number(numeric[1])-1,Number(numeric[2]));if(named){const year=Number(named[3]||new Date().getFullYear()),date=new Date(`${named[1]} ${named[2]}, ${year}`);if(!Number.isNaN(date.getTime()))return date}return null}
@@ -701,16 +698,15 @@ function setPresenceLabel(){
 async function refreshContactPresence(){
   if(!active?.participantId)return;
   try{
-    const rows=await db(`medha_communications_presence?user_id=eq.${encodeURIComponent(active.participantId)}&select=user_id,is_open,last_seen`);
-    if(rows?.[0])contactPresence.set(String(rows[0].user_id),rows[0]);
+    const result=await api("presence",{isOpen:document.visibilityState==="visible",peerId:active.participantId});
+    if(result?.peer)contactPresence.set(String(result.peer.user_id),result.peer);
     setPresenceLabel();
   }catch{}
 }
 async function publishPresence(isOpen){
   if(!viewerId())return;
   try{
-    await db("medha_communications_presence",{method:"POST",headers:{Prefer:"resolution=merge-duplicates,return=minimal"},
-      body:JSON.stringify({user_id:viewerId(),is_open:isOpen,last_seen:new Date().toISOString()})});
+    await api("presence",{isOpen});
   }catch{}
 }
 function startPresenceHeartbeat(){
@@ -770,10 +766,7 @@ async function syncIncomingMessages(){
   try{
     await hydrateConversations();
     if(active?.messagesLoaded)await refreshActiveMessages();
-    const ids=conversations.map(c=>c.cid).filter(Boolean);
-    if(!ids.length){notificationCursor=new Date().toISOString();return}
-    const list=ids.join(",");
-    const rows=await db(`medha_communications_messages?cid=in.(${list})&sender_id=neq.${encodeURIComponent(viewerId())}&created_at=gt.${encodeURIComponent(notificationCursor)}&select=id,cid,sender_id,body,created_at&order=created_at.asc`);
+    const rows=await api("incoming",{since:notificationCursor});
     notificationCursor=new Date().toISOString();
     /* One ping per batch, so ten messages arriving together do not
        machine-gun the speaker. Push notifications are handled server-side
@@ -794,8 +787,8 @@ async function loadCurrentProfile(user){
   if(!user)return;
   let name=user.displayName||user.email||"Signed-in user";
   try{
-    const rows=await db(`users?id=eq.${encodeURIComponent(user.uid)}&select=id,full_name,email,department,role,is_active`);
-    currentAppUser=rows?.[0]||null;
+    const people=await api("directory");
+    currentAppUser=(people||[]).find(p=>String(p.id)===String(user.uid))||null;
     name=currentAppUser?.full_name||name;
   }catch{currentAppUser=null}
   $("#current-user").textContent=name;
@@ -806,7 +799,6 @@ let syncTimer=null;
 async function initializeAuthorizedUser(user){
   if(!user)return;
   currentUserId=user.uid;
-  try{firebaseIdToken=await user.getIdToken()}catch{firebaseIdToken=null}
   $("#current-user").textContent=user.displayName||user.email||"Authenticating…";
   await loadCurrentProfile(user);
   startPresenceHeartbeat();
@@ -814,7 +806,6 @@ async function initializeAuthorizedUser(user){
   if(conversations.length&&!active)await switchChat(conversations[0].id);
   if(syncTimer)clearInterval(syncTimer);
   syncTimer=setInterval(()=>{syncIncomingMessages();refreshContactPresence()},5000);
-  setInterval(async()=>{try{firebaseIdToken=await user.getIdToken(true)}catch{}},30*60*1000);
   if("Notification" in window&&Notification.permission==="default"){
     document.addEventListener("pointerdown",()=>Notification.requestPermission().catch(()=>{}),{once:true});
   }
