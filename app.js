@@ -751,6 +751,7 @@ function startPresenceHeartbeat(){
 /* ---------- incoming message sync + notifications ---------- */
 let syncInProgress=false;
 let notificationCursor=new Date().toISOString();
+const pingedMessageIds=new Set();
 let notificationReady=false,audioContext=null;
 /* Browsers only allow audio after a user gesture, and a resumed context can
    be suspended again when the tab is backgrounded. Unlock on the first
@@ -780,6 +781,16 @@ function playIncomingPing(){
     osc.connect(gain).connect(audioContext.destination);osc.start(now);osc.stop(now+.2);
   }catch{}
 }
+/* Type testping() in the browser console to hear the sound on demand.
+   If that is silent the problem is the audio device, tab mute or system
+   volume - not the message polling. */
+window.testping=()=>{
+  unlockNotifications();
+  playIncomingPing();
+  const ctx=audioContext;
+  return ctx?`audio context: ${ctx.state}`:"audio context could not be created";
+};
+
 function notificationText(text){
   const words=String(text||"New message").trim().split(/\s+/);
   return words.slice(0,10).join(" ")+(words.length>10?" …":"");
@@ -797,20 +808,33 @@ async function syncIncomingMessages(){
     await hydrateConversations();
     if(active?.messagesLoaded)await refreshActiveMessages();
     const ids=conversations.map(c=>c.cid).filter(Boolean);
-    if(!ids.length){notificationCursor=new Date().toISOString();return}
+    if(!ids.length)return;
     const list=ids.join(",");
     const rows=await db(`medha_communications_messages?cid=in.(${list})&sender_id=neq.${encodeURIComponent(viewerId())}&created_at=gt.${encodeURIComponent(notificationCursor)}&select=id,cid,sender_id,body,created_at&order=created_at.asc`);
-    notificationCursor=new Date().toISOString();
+    /* Advance the cursor to the newest message we actually saw, using the
+       database's own timestamp. Setting it to the browser clock skipped
+       anything that arrived while this sync was running, and any clock
+       skew between the browser and the database made it worse - which is
+       why new messages often never pinged. */
+    if((rows||[]).length){
+      notificationCursor=rows[rows.length-1].created_at;
+    }
     /* One ping per batch, so ten messages arriving together do not
        machine-gun the speaker. Push notifications are handled server-side
        and are deliberately untouched here. */
-    if((rows||[]).length)playIncomingPing();
-    (rows||[]).forEach(row=>{
+    const fresh=(rows||[]).filter(row=>!pingedMessageIds.has(String(row.id)));
+    fresh.forEach(row=>pingedMessageIds.add(String(row.id)));
+    if(pingedMessageIds.size>500){
+      /* Keep the guard set small; anything this old cannot recur. */
+      pingedMessageIds.clear();
+    }
+    if(fresh.length)playIncomingPing();
+    fresh.forEach(row=>{
       const chat=conversations.find(c=>String(c.cid)===String(row.cid));
       if(chat&&chat.cid!==active?.cid)chat.unread=(chat.unread||0)+1;
       if(notificationReady)showDesktopNotification(row);
     });
-    if(rows?.length)renderList();
+    if(fresh.length)renderList();
   }catch{}
   finally{syncInProgress=false}
 }
