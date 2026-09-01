@@ -241,12 +241,28 @@ async function persistMessage(chat,text,attachments){
   if(!body)throw Error("Enter a message before sending");
   if(body.length>4000)throw Error("Message is too long (4000 characters maximum)");
   const cid=await ensureConversationRow(chat);
-  const payload={cid,sender_id:me,body,attachments:attachments||[]};
+  const base={cid,sender_id:me,body};
+  const post=payload=>db("medha_communications_messages",
+    {method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(payload)});
   let saved;
-  try{saved=await db("medha_communications_messages",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(payload)})}
-  catch(error){
-    if(!String(error.message).includes("Supabase 400"))throw error;
-    saved=await db("medha_communications_messages",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({cid,sender_id:me,body})});
+  try{
+    saved=await post({...base,attachments:attachments||[]});
+  }catch(error){
+    const message=String(error.message);
+    /* Older databases still carry the pre-compaction text key alongside
+       cid, and it is NOT NULL, so an insert without it is rejected. Send
+       both until supabase-communications-fix-send.sql has been applied. */
+    if(message.includes("conversation_id")){
+      const legacy={...base,conversation_id:chat.id,attachments:attachments||[]};
+      try{saved=await post(legacy)}
+      catch(retry){
+        if(!String(retry.message).includes("Supabase 400"))throw retry;
+        saved=await post({...legacy,attachments:undefined});
+      }
+    }else if(message.includes("Supabase 400")){
+      /* Attachments column missing on very old databases. */
+      saved=await post(base);
+    }else throw error;
   }
   /* last_message and updated_at are set by a database trigger, so there is
      no follow-up PATCH and no second copy of the preview to keep in sync. */
