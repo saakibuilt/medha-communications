@@ -775,41 +775,37 @@ function playIncomingPing(){
     audioContext??=new (window.AudioContext||window.webkitAudioContext)();
     if(audioContext.state==="suspended"){audioContext.resume().catch(()=>{})}
     if(audioContext.state!=="running")return;
-    const ctx=audioContext,now=ctx.currentTime;
-    /* Two-note chime, repeated, so it is clearly audible over a room and
-       long enough to notice if you are not looking at the screen.
-       Roughly 2 seconds in total. */
-    const notes=[
-      {at:0.00, from:988, to:988, dur:0.30},  // B5
-      {at:0.28, from:1319,to:1319,dur:0.46},  // E6
-      {at:0.84, from:988, to:988, dur:0.30},
-      {at:1.12, from:1319,to:1319,dur:0.46},
-      {at:1.66, from:1319,to:1319,dur:0.36}   // final accent, ~2.0s total
-    ];
-    /* Compressor lets the chime sit near full scale without clipping. */
+    const ctx=audioContext,now=ctx.currentTime,DUR=1.1;
+
+    /* One warm bell: a root note with two quieter harmonics, a soft swell
+       instead of a click, and a long even decay so it fades out gently.
+       No compressor - it was pulling the level down rather than adding
+       loudness. The gain is held near full scale for most of the sound. */
     const master=ctx.createGain();
-    master.gain.setValueAtTime(1.0,now);
-    if(ctx.createDynamicsCompressor){
-      const comp=ctx.createDynamicsCompressor();
-      comp.threshold.setValueAtTime(-10,now);
-      comp.ratio.setValueAtTime(12,now);
-      master.connect(comp);comp.connect(ctx.destination);
-    }else{
-      master.connect(ctx.destination);
-    }
-    notes.forEach(n=>{
-      const t=now+n.at;
+    master.gain.setValueAtTime(0.0001,now);
+    master.gain.linearRampToValueAtTime(0.95,now+0.05);      /* soft swell */
+    master.gain.setValueAtTime(0.95,now+0.42);               /* hold, stays loud */
+    master.gain.exponentialRampToValueAtTime(0.0001,now+DUR);/* smooth fade */
+
+    /* Rounds off the top end so the tone is warm, not piercing. */
+    const tone=ctx.createBiquadFilter();
+    tone.type="lowpass";
+    tone.frequency.setValueAtTime(3200,now);
+    tone.Q.setValueAtTime(0.5,now);
+    master.connect(tone);
+    tone.connect(ctx.destination);
+
+    /* G5 with its octave and twelfth, each softer than the last. */
+    [{f:784,g:0.95},{f:1568,g:0.25},{f:2352,g:0.10}].forEach(p=>{
       const osc=ctx.createOscillator(),gain=ctx.createGain();
-      osc.type="triangle";                     /* richer than sine, carries further */
-      osc.frequency.setValueAtTime(n.from,t);
-      if(n.to!==n.from)osc.frequency.exponentialRampToValueAtTime(n.to,t+n.dur);
-      gain.gain.setValueAtTime(0.0001,t);
-      gain.gain.exponentialRampToValueAtTime(1.0,t+0.010);   /* fast attack, full scale */
-      gain.gain.exponentialRampToValueAtTime(0.45,t+n.dur*0.55);
-      gain.gain.exponentialRampToValueAtTime(0.0001,t+n.dur);
+      osc.type="sine";
+      osc.frequency.setValueAtTime(p.f,now);
+      gain.gain.setValueAtTime(p.g,now);
+      /* Upper partials fade first, the way a real bell behaves. */
+      gain.gain.exponentialRampToValueAtTime(p.g*0.04,now+DUR*(p.f>1000?0.6:1));
       osc.connect(gain).connect(master);
-      osc.start(t);
-      osc.stop(t+n.dur+0.02);
+      osc.start(now);
+      osc.stop(now+DUR+0.05);
     });
   }catch{}
 }
