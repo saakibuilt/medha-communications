@@ -84,6 +84,50 @@ function dayLabel(date){
   return d.toLocaleDateString([],{weekday:"long",month:"short",day:"numeric",year:d.getFullYear()===now.getFullYear()?undefined:"numeric"});
 }
 
+/* ---------- chat details panel ---------- */
+function detailRow(label,value){
+  return value?`<div class="detail-fact"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`:"";
+}
+function renderDetailsPanel(){
+  if(!active)return;
+  const person=directory.find(p=>String(p.id)===String(active.participantId));
+  const isSelf=String(active.participantId)===String(viewerId());
+  const status=$("#conversation-status").textContent||"";
+  const media=(active.messages||[]).flatMap(m=>m.attachments||[]);
+  const facts=[
+    detailRow("Name",active.name),
+    detailRow("Department",person?.department),
+    detailRow("Role",person?.role),
+    detailRow("Email",person?.email),
+    detailRow("Messages",String((active.messages||[]).length)+(active.hasMore?"+":"")),
+    detailRow("Status",isSelf?"This is you":status)
+  ].filter(Boolean).join("");
+  const facts_el=$("#details-facts");
+  if(facts_el)facts_el.innerHTML=facts||'<div class="directory-empty">No details available</div>';
+  const presence=$(".details-person .presence");
+  if(presence&&isSelf){presence.textContent="This is you";presence.className="presence"}
+  $("#shared-media").innerHTML=media.length
+    ?media.map(a=>a.kind==="gif"
+      ?`<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.name||"GIF")}"><img src="${esc(a.url)}" alt="Shared GIF" loading="lazy"></a>`
+      :`<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.name||"File")}">📎 ${esc(a.name||"File")}</a>`).join("")
+    :'<div class="directory-empty">No shared media</div>';
+}
+function openDetails(){
+  if(!active){toast("Select a conversation first");return}
+  renderDetailsPanel();
+  $("#details-panel").classList.add("open");
+  $("#details-panel").classList.remove("closed");
+  document.body.classList.add("details-open");
+}
+function closeDetails(){
+  $("#details-panel").classList.remove("open");
+  $("#details-panel").classList.add("closed");
+  document.body.classList.remove("details-open");
+}
+function toggleDetails(){
+  document.body.classList.contains("details-open")?closeDetails():openDetails();
+}
+
 function renderMessages(){
   const area=$("#message-area");
   if(!active){
@@ -95,6 +139,7 @@ function renderMessages(){
   }
   $("#conversation-name").textContent=active.name;
   $("#details-name").textContent=active.name;
+  renderDetailsPanel();
   const headerAvatar=$(".conversation-header .person-avatar"); if(headerAvatar)headerAvatar.outerHTML=avatar(active);
   const detailAvatar=$(".details-person .person-avatar"); if(detailAvatar)detailAvatar.outerHTML=avatar(active,false);
   const media=(active.messages||[]).flatMap(m=>m.attachments||[]);
@@ -123,9 +168,9 @@ function mapRow(m,nameFor){
     text:m.body||"",attachments:Array.isArray(m.attachments)?m.attachments:[],reactions:m.reactions||{},
     createdAt:m.created_at,time:new Date(m.created_at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
 }
-async function fetchMessagePage(conversationId,offset=0){
+async function fetchMessagePage(cid,offset=0){
   const cols="id,sender_id,body,attachments,reactions,created_at";
-  const query=extra=>`medha_communications_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&select=${extra}&order=created_at.desc,id.desc&offset=${offset}&limit=${PAGE_SIZE}`;
+  const query=extra=>`medha_communications_messages?cid=eq.${encodeURIComponent(cid)}&select=${extra}&order=created_at.desc,id.desc&offset=${offset}&limit=${PAGE_SIZE}`;
   let rows;
   try{rows=await db(query(cols))}
   catch(error){if(!String(error.message).includes("Supabase 400"))throw error;rows=await db(query("id,sender_id,body,created_at"))}
@@ -136,7 +181,7 @@ async function loadChatPage(chat,offset=0){
   if(chat.loadingMessages)return;
   chat.loadingMessages=true;
   try{
-    const page=await fetchMessagePage(chat.id,offset);
+    const page=await fetchMessagePage(chat.cid,offset);
     if(offset===0)chat.messages=page.messages;
     else{
       const seen=new Set(chat.messages.map(m=>m.id));
@@ -155,7 +200,7 @@ async function refreshActiveMessages(){
   if(!active||active.loadingMessages)return;
   const chat=active,before=chat.messages?.length||0;
   const atBottom=(()=>{const a=$("#message-area");return a.scrollHeight-a.scrollTop-a.clientHeight<80})();
-  const page=await fetchMessagePage(chat.id,0);
+  const page=await fetchMessagePage(chat.cid,0);
   const older=(chat.messages||[]).filter(m=>m.id&&!page.messages.some(p=>p.id===m.id));
   const keptOlder=older.filter(m=>page.messages.length===0||new Date(m.createdAt)<new Date(page.messages[0].createdAt));
   chat.messages=[...keptOlder,...page.messages];
@@ -165,19 +210,23 @@ async function refreshActiveMessages(){
 }
 
 /* ---------- sending ---------- */
-async function ensureConversationRow(chat,lastMessage){
-  const participants=[...new Set([viewerId(),chat.participantId].filter(Boolean).map(String))];
-  const existing=await db(`medha_communications_conversations?id=eq.${encodeURIComponent(chat.id)}&select=id,participant_ids`);
-  if(!existing?.length){
-    await db("medha_communications_conversations",{method:"POST",headers:{Prefer:"resolution=merge-duplicates,return=minimal"},
-      body:JSON.stringify({id:chat.id,title:chat.name,kind:chat.kind||"direct",participant_ids:participants,last_message:lastMessage})});
-  }else{
-    const current=(existing[0].participant_ids||[]).map(String);
-    const merged=[...new Set([...current,...participants])];
-    if(merged.length!==current.length){
-      await db(`medha_communications_conversations?id=eq.${encodeURIComponent(chat.id)}`,{method:"PATCH",headers:{Prefer:"return=minimal"},body:JSON.stringify({participant_ids:merged})});
-    }
+async function ensureConversationRow(chat){
+  if(chat.cid)return chat.cid;
+  const participants=[...new Set([viewerId(),chat.participantId].filter(Boolean).map(String))].sort();
+  const existing=await db(`medha_communications_conversations?id=eq.${encodeURIComponent(chat.id)}&select=cid,participant_ids`);
+  if(existing?.length){chat.cid=existing[0].cid;return chat.cid}
+  /* resolution=merge-duplicates makes this safe when both people open the
+     same new chat at once - the unique key on id decides one winner. */
+  const created=await db("medha_communications_conversations",
+    {method:"POST",headers:{Prefer:"resolution=merge-duplicates,return=representation"},
+     body:JSON.stringify({id:chat.id,title:chat.name,kind:chat.kind||"direct",participant_ids:participants})});
+  chat.cid=created?.[0]?.cid;
+  if(!chat.cid){
+    const row=await db(`medha_communications_conversations?id=eq.${encodeURIComponent(chat.id)}&select=cid`);
+    chat.cid=row?.[0]?.cid;
   }
+  if(!chat.cid)throw Error("Could not open that conversation");
+  return chat.cid;
 }
 
 async function persistMessage(chat,text,attachments){
@@ -186,44 +235,60 @@ async function persistMessage(chat,text,attachments){
   const body=(text||"").trim()||(attachments?.length?"Attachment":"");
   if(!body)throw Error("Enter a message before sending");
   if(body.length>4000)throw Error("Message is too long (4000 characters maximum)");
-  await ensureConversationRow(chat,body);
-  const payload={conversation_id:chat.id,sender_id:me,body,attachments:attachments||[]};
+  const cid=await ensureConversationRow(chat);
+  const payload={cid,sender_id:me,body,attachments:attachments||[]};
   let saved;
   try{saved=await db("medha_communications_messages",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(payload)})}
   catch(error){
     if(!String(error.message).includes("Supabase 400"))throw error;
-    saved=await db("medha_communications_messages",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({conversation_id:payload.conversation_id,sender_id:me,body})});
+    saved=await db("medha_communications_messages",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({cid,sender_id:me,body})});
   }
-  await db(`medha_communications_conversations?id=eq.${encodeURIComponent(chat.id)}`,{method:"PATCH",headers:{Prefer:"return=minimal"},
-    body:JSON.stringify({last_message:body,updated_at:new Date().toISOString()})});
-  chat.preview=body;chat.updatedAt=new Date().toISOString();
+  /* last_message and updated_at are set by a database trigger, so there is
+     no follow-up PATCH and no second copy of the preview to keep in sync. */
+  chat.preview=body.slice(0,120);
+  chat.updatedAt=new Date().toISOString();
   return saved?.[0]?mapRow(saved[0]):null;
 }
 
 /* ---------- conversation list ---------- */
+/* One read for the whole sidebar: the view already joins membership to the
+   conversation, so opening Space is
+     1. select from my_conversations where user_id = me
+     2. select messages for the conversation you actually open
+   The directory is fetched once and cached, not on every 5s poll. */
+let directoryLoadedAt=0;
+async function ensureDirectory(){
+  if(directory.length&&Date.now()-directoryLoadedAt<10*60*1000)return directory;
+  try{
+    const rows=await db("users?select=id,full_name,email,department,role&is_active=eq.true&order=full_name.asc");
+    directory=(rows||[]).filter(x=>x.full_name);
+    directoryLoadedAt=Date.now();
+    const cache=readChatNameCache();
+    directory.forEach(p=>{cache[String(p.id)]=p.full_name});
+    writeChatNameCache(cache);
+  }catch{}
+  return directory;
+}
+
 async function hydrateConversations(){
   const me=viewerId();
   if(!me){conversations=[];active=null;renderList();renderMessages();return}
   try{
     const cache=readChatNameCache();
-    const membership=await db(`medha_communications_user_chats?user_id=eq.${encodeURIComponent(me)}&select=conversation_id&order=updated_at.desc`);
-    const ids=[...new Set((membership||[]).map(r=>r.conversation_id).filter(Boolean))];
-    const rows=ids.length?await db(`medha_communications_conversations?id=in.(${ids.map(id=>`"${String(id).replace(/"/g,'')}"`).join(",")})&select=id,title,kind,last_message,updated_at,participant_ids&order=updated_at.desc`):[];
-    const people=await db("users?select=id,full_name");
-    (people||[]).forEach(p=>{if(p.id&&p.full_name)cache[String(p.id)]=p.full_name});
-    writeChatNameCache(cache);
-    const nameOf=id=>(people||[]).find(p=>String(p.id)===String(id))?.full_name||cache[String(id)]||"";
+    const rows=await db(`medha_communications_my_conversations?user_id=eq.${encodeURIComponent(me)}&select=cid,conversation_key,kind,title,participant_ids,last_message,updated_at&order=updated_at.desc`);
+    if(rows?.length)ensureDirectory();
+    const nameOf=id=>directory.find(p=>String(p.id)===String(id))?.full_name||cache[String(id)]||"";
 
-    const loaded=(rows||[]).filter(row=>(row.participant_ids||[]).map(String).includes(me)).map(row=>{
+    const loaded=(rows||[]).map(row=>{
       const participantIds=(row.participant_ids||[]).map(String);
       const others=participantIds.filter(id=>id!==me);
       const selfOnly=others.length===0;
       const otherId=selfOnly?me:others[0];
-      const name=row.kind==="channel"?row.title
+      const name=row.kind==="channel"?(row.title||"Channel")
         :selfOnly?(currentAppUser?.full_name||nameOf(me)||"Myself")
-        :(nameOf(otherId)||row.title||"Conversation");
-      const previous=conversations.find(c=>String(c.id)===String(row.id));
-      return {id:row.id,name,participantId:otherId,kind:row.kind||"direct",
+        :(nameOf(otherId)||"Conversation");
+      const previous=conversations.find(c=>String(c.cid)===String(row.cid));
+      return {cid:row.cid,id:row.conversation_key,name,participantId:otherId,kind:row.kind||"direct",
         initials:initialsFor(name),color:row.kind==="channel"?"amber":"blue",
         team:row.kind==="channel"?"Team channel":"",
         preview:row.last_message||"",updatedAt:row.updated_at,time:"",
@@ -231,9 +296,9 @@ async function hydrateConversations(){
         messages:previous?.messages||[],messagesLoaded:previous?.messagesLoaded||false,
         messageOffset:previous?.messageOffset||0,hasMore:previous?.hasMore!==false};
     });
-    const previousId=active?.id;
+    const previousCid=active?.cid;
     conversations=loaded;
-    active=conversations.find(c=>String(c.id)===String(previousId))||null;
+    active=conversations.find(c=>String(c.cid)===String(previousCid))||null;
     renderList();renderMessages();
   }catch(error){
     toast(`Conversations unavailable: ${error.message}`);
@@ -246,7 +311,8 @@ async function switchChat(id){
   active=chat;chat.unread=0;
   renderList();renderMessages();
   closeMobileSidebar();
-  if(!chat.messagesLoaded){await loadChatPage(chat,0)}
+  if(document.body.classList.contains("details-open"))renderDetailsPanel();
+  if(!chat.messagesLoaded&&chat.cid){await loadChatPage(chat,0)}
   scrollMessagesToEnd();
   setPresenceLabel?.();
 }
@@ -260,13 +326,19 @@ async function openDirectChat(person,openingText){
   let chat=conversations.find(c=>String(c.id)===id);
   if(!chat){
     const name=person.full_name||"Conversation";
-    chat={id,name,participantId:otherId,kind:"direct",initials:initialsFor(name),color:"blue",team:"",
-      preview:"",updatedAt:new Date().toISOString(),time:"Now",unread:0,
-      messages:[],messagesLoaded:true,messageOffset:0,hasMore:false};
+    /* The thread may already exist from the other side. Look it up by the
+       deterministic key so existing history is shown, not a blank chat. */
+    const existing=await db(`medha_communications_conversations?id=eq.${encodeURIComponent(id)}&select=cid,last_message,updated_at`);
+    const found=existing?.[0];
+    chat={id,cid:found?.cid,name,participantId:otherId,kind:"direct",
+      initials:initialsFor(name),color:"blue",team:"",
+      preview:found?.last_message||"",
+      updatedAt:found?.updated_at||new Date().toISOString(),time:"Now",unread:0,
+      messages:[],messagesLoaded:!found,messageOffset:0,hasMore:!!found};
     conversations.unshift(chat);
   }
   active=chat;
-  if(!chat.messagesLoaded)await loadChatPage(chat,0);
+  if(!chat.messagesLoaded&&chat.cid)await loadChatPage(chat,0);
   if(openingText&&openingText.trim()){
     const saved=await persistMessage(chat,openingText,[]);
     if(saved&&!chat.messages.some(m=>m.id===saved.id))chat.messages.push(saved);
@@ -300,7 +372,7 @@ backButton.addEventListener("click",openMobileSidebar);
 const scrim=document.createElement("div");
 scrim.className="sidebar-scrim";scrim.id="sidebar-scrim";
 document.body.append(scrim);
-scrim.addEventListener("click",closeMobileSidebar);
+scrim.addEventListener("click",()=>{closeMobileSidebar();closeDetails()});
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMobileSidebar()});
 
 /* Keep the layout correct when the viewport or on-screen keyboard changes. */
@@ -447,7 +519,7 @@ $("#chat-actions").addEventListener("click",async e=>{
 async function deleteConversation(chat){
   if(!confirm(`Delete your copy of the conversation with ${chat.name}? Messages stay with the other person.`))return;
   try{
-    await db(`medha_communications_user_chats?user_id=eq.${encodeURIComponent(viewerId())}&conversation_id=eq.${encodeURIComponent(chat.id)}`,{method:"DELETE",headers:{Prefer:"return=minimal"}});
+    await db(`medha_communications_user_conversations?user_id=eq.${encodeURIComponent(viewerId())}&cid=eq.${encodeURIComponent(chat.cid)}`,{method:"DELETE",headers:{Prefer:"return=minimal"}});
     conversations=conversations.filter(c=>c.id!==chat.id);
     if(active?.id===chat.id)active=null;
     renderList();renderMessages();toast("Conversation removed");
@@ -467,15 +539,11 @@ $("#message-area").addEventListener("scroll",async()=>{
 /* ---------- new chat dialog ---------- */
 let directory=[],selectedEmployee=null;
 async function loadEmployeeDirectory(){
-  try{
-    const rows=await db("users?select=id,full_name,email,department,role,is_active&is_active=eq.true&order=full_name.asc");
-    directory=(rows||[]).filter(x=>x.full_name);
-    renderDirectory("");
-  }catch{
-    directory=[];
-    $("#employee-list").innerHTML='<div class="directory-empty">Employee directory unavailable.</div>';
-  }
+  await ensureDirectory();
+  if(!directory.length)$("#employee-list").innerHTML='<div class="directory-empty">Employee directory unavailable.</div>';
+  else renderDirectory("");
 }
+
 function renderDirectory(query){
   const list=$("#employee-list"),q=String(query||"").toLowerCase();
   const matches=directory.filter(p=>`${p.full_name} ${p.email||""} ${p.department||""}`.toLowerCase().includes(q));
@@ -505,6 +573,25 @@ $("#new-chat-form").addEventListener("submit",async event=>{
     $("#new-chat-dialog").close();
     $("#new-chat-message").value="";selectedEmployee=null;
   }catch(error){toast(error.message)}
+});
+
+/* ---------- details panel wiring ---------- */
+$("#open-details").addEventListener("click",toggleDetails);
+$("#close-details").addEventListener("click",closeDetails);
+/* Clicking the name (or avatar) in the conversation header opens details. */
+$(".conversation-title").addEventListener("click",openDetails);
+$(".conversation-header .person-avatar")?.addEventListener("click",openDetails);
+$(".conversation-header").addEventListener("click",e=>{
+  if(e.target.closest(".person-avatar"))openDetails();
+});
+$("#conversation-name").setAttribute("role","button");
+$("#conversation-name").setAttribute("tabindex","0");
+$("#conversation-name").setAttribute("title","View chat details");
+$("#conversation-name").addEventListener("keydown",e=>{
+  if(e.key==="Enter"||e.key===" "){e.preventDefault();openDetails()}
+});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&document.body.classList.contains("details-open"))closeDetails();
 });
 
 /* ---------- reactions ---------- */
@@ -639,15 +726,28 @@ function startPresenceHeartbeat(){
 let syncInProgress=false;
 let notificationCursor=new Date().toISOString();
 let notificationReady=false,audioContext=null;
+/* Browsers only allow audio after a user gesture, and a resumed context can
+   be suspended again when the tab is backgrounded. Unlock on the first
+   gesture, then re-check before every ping. Not once:true — if the first
+   attempt is blocked, later gestures get another chance. */
 function unlockNotifications(){
-  try{audioContext??=new (window.AudioContext||window.webkitAudioContext)();if(audioContext.state==="suspended")audioContext.resume()}catch{}
+  try{
+    audioContext??=new (window.AudioContext||window.webkitAudioContext)();
+    if(audioContext.state==="suspended")audioContext.resume();
+  }catch{}
   notificationReady=true;
 }
-document.addEventListener("pointerdown",unlockNotifications,{once:true,capture:true});
-document.addEventListener("keydown",unlockNotifications,{once:true,capture:true});
+["pointerdown","keydown","touchstart"].forEach(evt=>
+  document.addEventListener(evt,unlockNotifications,{capture:true,passive:true}));
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible"&&audioContext?.state==="suspended")
+    audioContext.resume().catch(()=>{});
+});
 function playIncomingPing(){
   try{
-    if(!audioContext)return;
+    audioContext??=new (window.AudioContext||window.webkitAudioContext)();
+    if(audioContext.state==="suspended"){audioContext.resume().catch(()=>{})}
+    if(audioContext.state!=="running")return;
     const now=audioContext.currentTime,osc=audioContext.createOscillator(),gain=audioContext.createGain();
     osc.type="sine";osc.frequency.setValueAtTime(880,now);osc.frequency.exponentialRampToValueAtTime(660,now+.12);
     gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(.16,now+.01);gain.gain.exponentialRampToValueAtTime(.0001,now+.18);
@@ -658,10 +758,9 @@ function notificationText(text){
   const words=String(text||"New message").trim().split(/\s+/);
   return words.slice(0,10).join(" ")+(words.length>10?" …":"");
 }
-function notifyIncomingMessage(row){
-  playIncomingPing();
+function showDesktopNotification(row){
   if("Notification" in window&&Notification.permission==="granted"){
-    const chat=conversations.find(c=>String(c.id)===String(row.conversation_id));
+    const chat=conversations.find(c=>String(c.cid)===String(row.cid));
     try{new Notification(chat?.name||"New message",{body:notificationText(row.body),tag:`medha-message-${row.id}`})}catch{}
   }
 }
@@ -671,15 +770,19 @@ async function syncIncomingMessages(){
   try{
     await hydrateConversations();
     if(active?.messagesLoaded)await refreshActiveMessages();
-    const ids=conversations.map(c=>c.id).filter(Boolean);
+    const ids=conversations.map(c=>c.cid).filter(Boolean);
     if(!ids.length){notificationCursor=new Date().toISOString();return}
-    const list=ids.map(id=>`"${String(id).replace(/"/g,'')}"`).join(",");
-    const rows=await db(`medha_communications_messages?conversation_id=in.(${list})&sender_id=neq.${encodeURIComponent(viewerId())}&created_at=gt.${encodeURIComponent(notificationCursor)}&select=id,conversation_id,sender_id,body,created_at&order=created_at.asc`);
+    const list=ids.join(",");
+    const rows=await db(`medha_communications_messages?cid=in.(${list})&sender_id=neq.${encodeURIComponent(viewerId())}&created_at=gt.${encodeURIComponent(notificationCursor)}&select=id,cid,sender_id,body,created_at&order=created_at.asc`);
     notificationCursor=new Date().toISOString();
+    /* One ping per batch, so ten messages arriving together do not
+       machine-gun the speaker. Push notifications are handled server-side
+       and are deliberately untouched here. */
+    if((rows||[]).length)playIncomingPing();
     (rows||[]).forEach(row=>{
-      const chat=conversations.find(c=>String(c.id)===String(row.conversation_id));
-      if(chat&&chat.id!==active?.id)chat.unread=(chat.unread||0)+1;
-      if(notificationReady)notifyIncomingMessage(row);
+      const chat=conversations.find(c=>String(c.cid)===String(row.cid));
+      if(chat&&chat.cid!==active?.cid)chat.unread=(chat.unread||0)+1;
+      if(notificationReady)showDesktopNotification(row);
     });
     if(rows?.length)renderList();
   }catch{}

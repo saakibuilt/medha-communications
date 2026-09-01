@@ -47,12 +47,12 @@ language sql stable as $$
   );
 $$;
 
-create or replace function public.medha_is_participant(conversation text) returns boolean
+create or replace function public.medha_is_participant(conversation bigint) returns boolean
 language sql stable security definer set search_path=public as $$
   select exists (
-    select 1 from public.medha_communications_conversations c
-    where c.id = conversation
-      and public.medha_current_uid() = any (c.participant_ids)
+    select 1 from public.medha_communications_user_conversations uc
+    where uc.cid = conversation
+      and uc.user_id = public.medha_current_uid()
   );
 $$;
 
@@ -73,18 +73,18 @@ create policy "conversations update own" on public.medha_communications_conversa
 drop policy if exists "communications messages all" on public.medha_communications_messages;
 drop policy if exists "messages select own" on public.medha_communications_messages;
 create policy "messages select own" on public.medha_communications_messages
-  for select using (public.medha_is_participant(conversation_id));
+  for select using (public.medha_is_participant(cid));
 drop policy if exists "messages insert own" on public.medha_communications_messages;
 create policy "messages insert own" on public.medha_communications_messages
   for insert with check (
     sender_id = public.medha_current_uid()
-    and public.medha_is_participant(conversation_id)
+    and public.medha_is_participant(cid)
   );
 -- Reactions are the only field a participant may change on someone else's message.
 drop policy if exists "messages update reactions" on public.medha_communications_messages;
 create policy "messages update reactions" on public.medha_communications_messages
-  for update using (public.medha_is_participant(conversation_id))
-         with check (public.medha_is_participant(conversation_id));
+  for update using (public.medha_is_participant(cid))
+         with check (public.medha_is_participant(cid));
 drop policy if exists "messages delete own" on public.medha_communications_messages;
 create policy "messages delete own" on public.medha_communications_messages
   for delete using (sender_id = public.medha_current_uid());
@@ -93,7 +93,7 @@ create policy "messages delete own" on public.medha_communications_messages
 create or replace function public.medha_communications_message_immutable() returns trigger
 language plpgsql as $$
 begin
-  if new.sender_id <> old.sender_id or new.conversation_id <> old.conversation_id
+  if new.sender_id <> old.sender_id or new.cid <> old.cid
      or new.body <> old.body or new.created_at <> old.created_at then
     raise exception 'Only reactions may be updated on a message';
   end if;
@@ -104,12 +104,15 @@ create trigger medha_communications_message_immutable_trigger
   before update on public.medha_communications_messages
   for each row execute function public.medha_communications_message_immutable();
 
--- ---------- per-user chat list: only your own rows ----------
-drop policy if exists "communications user chats all" on public.medha_communications_user_chats;
-drop policy if exists "user chats own" on public.medha_communications_user_chats;
-create policy "user chats own" on public.medha_communications_user_chats
+-- ---------- per-user conversation list: only your own rows ----------
+drop policy if exists "user conversations own" on public.medha_communications_user_conversations;
+create policy "user conversations own" on public.medha_communications_user_conversations
   for all using (user_id = public.medha_current_uid())
           with check (user_id = public.medha_current_uid());
+
+-- The sidebar view runs with the caller's rights, so it inherits the
+-- policies above rather than bypassing them.
+alter view public.medha_communications_my_conversations set (security_invoker = true);
 
 -- ---------- presence: read all, write only yourself ----------
 drop policy if exists "communications presence all" on public.medha_communications_presence;
