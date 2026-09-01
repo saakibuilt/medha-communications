@@ -1,1 +1,10 @@
-{"name":"medha-communications","private":true,"type":"module","scripts":{"dev":"node server.js","check":"node --check app.js && node --check server.js"}}
+{
+  "name": "medha-communications",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "check": "node --check app.js && node --check server.js",
+    "test": "node test/conversation-integrity.mjs"
+  }
+}
