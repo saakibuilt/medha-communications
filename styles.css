@@ -236,3 +236,51 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
   letter-spacing:.08em;color:#9aa6b5}
 
 @media(prefers-reduced-motion:reduce){.details-panel{transition:none}}
+
+/* ============================================================
+   Conversation list — modern rows with live presence.
+   ============================================================ */
+.chat-item{display:flex;gap:12px;align-items:center;padding:11px 14px;margin:2px 8px;
+  border-radius:12px;cursor:pointer;position:relative;
+  transition:background .15s ease}
+.chat-item:hover{background:#f5f7fa}
+.chat-item.selected{background:var(--brand-soft)}
+.chat-item.selected strong{color:var(--brand)}
+.chat-item.selected::before{content:"";position:absolute;left:0;top:14px;bottom:14px;
+  width:3px;border-radius:0 3px 3px 0;background:var(--brand)}
+
+.avatar-stack{position:relative;flex:0 0 auto}
+.chat-item .person-avatar{width:42px;height:42px;font-size:13px;font-weight:700}
+
+/* Presence dot on the avatar. */
+.presence-dot{position:absolute;right:-1px;bottom:-1px;width:12px;height:12px;
+  border-radius:50%;border:2.5px solid #fff;box-sizing:border-box;display:block}
+.presence-dot.online{background:#16a34a}
+.presence-dot.offline{background:#9aa6b5}
+.presence-dot.busy{background:#dc2626}
+
+.chat-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.chat-line-2{display:flex;align-items:center;gap:8px}
+.chat-line-2 p{margin:0;flex:1;min-width:0;color:var(--muted);font-size:12px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-fav{color:#eab308;margin-right:3px}
+
+.unread-badge{flex:0 0 auto;min-width:19px;height:19px;padding:0 6px;
+  border-radius:999px;background:var(--brand);color:#fff;
+  font-size:10px;font-weight:800;display:grid;place-items:center}
+
+/* Status text in the conversation header. */
+#conversation-status.online{color:#16a34a;font-weight:650}
+#conversation-status.offline{color:var(--muted)}
+#conversation-status.busy{color:#dc2626;font-weight:650}
+.online-dot{width:8px;height:8px;border-radius:50%;display:inline-block;
+  margin-right:6px;background:#9aa6b5;vertical-align:middle}
+.online-dot.online{background:#16a34a}
+.online-dot.busy{background:#dc2626}
+.online-dot.offline{background:#9aa6b5}
+
+.presence.online{color:#16a34a}
+.presence.busy{color:#dc2626}
+.presence.offline{color:var(--muted)}
+
+@media(pointer:coarse){.chat-item{padding:13px 14px}}

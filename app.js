@@ -44,6 +44,64 @@ const chatNameCacheKey=()=>`medha-chat-names-${viewerId()||"guest"}`;
 function readChatNameCache(){try{return JSON.parse(sessionStorage.getItem(chatNameCacheKey())||"{}")}catch{return{}}}
 function writeChatNameCache(cache){try{sessionStorage.setItem(chatNameCacheKey(),JSON.stringify(cache))}catch{}}
 
+/* ---------- local cache ----------
+   Keeps the sidebar and the newest messages of the 5 most recent chats in
+   localStorage, so reopening Space (or a chat) paints instantly instead of
+   showing an empty pane while the network round-trip finishes. The server
+   remains the source of truth and overwrites this as soon as it answers. */
+const CACHE_KEY=()=>`medha-space-cache-${viewerId()||"guest"}`;
+const CACHE_CHATS=5, CACHE_MESSAGES=10;
+
+function readCache(){
+  try{
+    const raw=localStorage.getItem(CACHE_KEY());
+    if(!raw)return null;
+    const parsed=JSON.parse(raw);
+    /* Ignore anything older than a day; stale previews are worse than none. */
+    if(!parsed?.savedAt||Date.now()-parsed.savedAt>86400000)return null;
+    return parsed;
+  }catch{return null}
+}
+
+function writeCache(){
+  if(!viewerId())return;
+  try{
+    const ordered=[...conversations].sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0));
+    const payload={
+      savedAt:Date.now(),
+      activeId:active?.id||null,
+      conversations:ordered.map(c=>({
+        cid:c.cid,id:c.id,name:c.name,participantId:c.participantId,kind:c.kind,
+        initials:c.initials,color:c.color,team:c.team,preview:c.preview,
+        updatedAt:c.updatedAt,unread:c.unread||0
+      })),
+      /* Only the newest messages, only for the most recent chats. */
+      messages:Object.fromEntries(ordered.slice(0,CACHE_CHATS)
+        .filter(c=>c.messagesLoaded&&c.messages?.length)
+        .map(c=>[String(c.cid),c.messages.slice(-CACHE_MESSAGES)]))
+    };
+    localStorage.setItem(CACHE_KEY(),JSON.stringify(payload));
+  }catch{/* quota or private mode - the app works without the cache */}
+}
+
+/* Paint from cache before the first network response arrives. */
+function hydrateFromCache(){
+  const cached=readCache();
+  if(!cached?.conversations?.length)return false;
+  conversations=cached.conversations.map(c=>{
+    const msgs=cached.messages?.[String(c.cid)]||[];
+    return {...c,messages:msgs,
+      messagesLoaded:msgs.length>0,
+      messageOffset:msgs.length,
+      hasMore:true,
+      fromCache:true};
+  });
+  active=conversations.find(c=>c.id===cached.activeId)||null;
+  renderList();
+  if(active)renderMessages();
+  return true;
+}
+
 /* ---------- rendering ---------- */
 function renderList(){
   const q=$("#chat-search").value.trim().toLowerCase();
@@ -65,7 +123,22 @@ function renderList(){
     return new Date(b.updatedAt||0)-new Date(a.updatedAt||0);
   });
   const shown=ordered.filter(c=>!q||`${c.name} ${c.preview}`.toLowerCase().includes(q));
-  $("#chat-list").innerHTML=shown.length?shown.map(c=>`<div class="chat-item ${active&&c.id===active.id?"selected":""}" data-id="${esc(c.id)}"><div class="avatar-stack">${avatar(c)}${c.unread?'<i class="unread-dot"></i>':''}</div><div class="chat-copy"><div class="chat-line"><strong>${rank.has(String(c.id))?'<span class="chat-pin" title="Pinned chat">📌</span>':""}${favorites.includes(c.id)?"☆ ":""}${esc(c.name)}</strong><time>${esc(c.time||"")}</time></div><p>${esc(c.preview||"")}</p></div></div>`).join("")
+  $("#chat-list").innerHTML=shown.length?shown.map(c=>{
+    const state=presenceFor(c.participantId);
+    const pinned=rank.has(String(c.id));
+    return `<div class="chat-item ${active&&c.id===active.id?"selected":""}" data-id="${esc(c.id)}">
+      <div class="avatar-stack">${avatar(c)}<i class="presence-dot ${state}" title="${state}"></i></div>
+      <div class="chat-copy">
+        <div class="chat-line">
+          <strong>${pinned?'<span class="chat-pin" title="Pinned">\u{1F4CC}</span>':""}${favorites.includes(c.id)?'<span class="chat-fav">\u2605</span>':""}${esc(c.name)}</strong>
+          <time>${esc(c.time||"")}</time>
+        </div>
+        <div class="chat-line-2">
+          <p>${esc(c.preview||"")}</p>
+          ${c.unread?`<span class="unread-badge">${c.unread>9?"9+":c.unread}</span>`:""}
+        </div>
+      </div>
+    </div>`}).join("")
     :'<p class="empty">No conversations yet. Select + to start a chat.</p>';
 }
 
@@ -188,6 +261,7 @@ async function loadChatPage(chat,offset=0){
     chat.hasMore=page.hasMore;
     chat.messagesLoaded=true;
     if(active?.id===chat.id)renderMessages();
+    writeCache();
   }finally{chat.loadingMessages=false}
 }
 
@@ -265,6 +339,7 @@ async function persistMessage(chat,text,attachments){
      no follow-up PATCH and no second copy of the preview to keep in sync. */
   chat.preview=body.slice(0,120);
   chat.updatedAt=new Date().toISOString();
+  writeCache();
   return saved?.[0]?mapRow(saved[0]):null;
 }
 
@@ -323,6 +398,7 @@ async function hydrateConversations(){
     conversations=loaded;
     active=conversations.find(c=>String(c.cid)===String(previousCid))||null;
     renderList();renderMessages();
+    writeCache();
   }catch(error){
     toast(`Conversations unavailable: ${error.message}`);
   }
@@ -335,7 +411,12 @@ async function switchChat(id){
   renderList();renderMessages();
   closeMobileSidebar();
   if(document.body.classList.contains("details-open"))renderDetailsPanel();
-  if(!chat.messagesLoaded&&chat.cid){await loadChatPage(chat,0)}
+  /* Cached messages paint instantly, then we always refresh from the
+     server so nothing shown is stale. */
+  if(chat.cid&&(!chat.messagesLoaded||chat.fromCache)){
+    await loadChatPage(chat,0);
+    chat.fromCache=false;
+  }
   scrollMessagesToEnd();
   setPresenceLabel?.();
 }
@@ -699,22 +780,37 @@ function setPresenceLabel(){
   const userId=active?.participantId;
   const statusEl=$("#conversation-status");
   if(!userId){statusEl.textContent="";return}
-  const record=contactPresence.get(String(userId));
-  const online=record?.is_open&&Date.now()-new Date(record.last_seen).getTime()<35000;
-  const status=meetingStatusFor(userId)?"Busy":online?"Online":"Offline";
-  statusEl.textContent=status;statusEl.className=status.toLowerCase();
+  const state=presenceFor(userId);
+  const label=state.charAt(0).toUpperCase()+state.slice(1);
+  statusEl.textContent=label;statusEl.className=state;
   const detail=$(".details-person .presence");
-  if(detail){detail.textContent=status;detail.className=`presence ${status.toLowerCase()}`}
+  if(detail){detail.textContent=label;detail.className=`presence ${state}`}
   const dot=$(".conversation-header .online-dot");
-  if(dot){dot.classList.toggle("offline",status==="Offline");dot.classList.toggle("busy",status==="Busy")}
+  if(dot){dot.className=`online-dot ${state}`}
 }
+
+/* Presence for EVERY person in the sidebar, not just the open chat, so
+   the list can show a live dot next to each name. */
 async function refreshContactPresence(){
-  if(!active?.participantId)return;
+  const ids=[...new Set(conversations.map(c=>c.participantId).filter(Boolean).map(String))];
+  if(!ids.length){setPresenceLabel();return}
   try{
-    const rows=await db(`medha_communications_presence?user_id=eq.${encodeURIComponent(active.participantId)}&select=user_id,is_open,last_seen`);
-    if(rows?.[0])contactPresence.set(String(rows[0].user_id),rows[0]);
+    const list=ids.map(id=>`"${id.replace(/"/g,'')}"`).join(",");
+    const rows=await db(`medha_communications_presence?user_id=in.(${list})&select=user_id,is_open,last_seen`);
+    (rows||[]).forEach(r=>contactPresence.set(String(r.user_id),r));
     setPresenceLabel();
+    renderList();
   }catch{}
+}
+
+/* One place that decides Online / Busy / Offline for a person. */
+function presenceFor(userId){
+  if(!userId)return "offline";
+  if(String(userId)===String(viewerId()))return "online";
+  if(meetingStatusFor(userId))return "busy";
+  const record=contactPresence.get(String(userId));
+  const fresh=record?.is_open&&Date.now()-new Date(record.last_seen).getTime()<45000;
+  return fresh?"online":"offline";
 }
 async function publishPresence(isOpen){
   if(!viewerId())return;
@@ -725,11 +821,15 @@ async function publishPresence(isOpen){
 }
 function startPresenceHeartbeat(){
   if(presenceTimer)clearInterval(presenceTimer);
-  const publish=()=>publishPresence(document.visibilityState==="visible");
+  /* Online means the tab is OPEN, not focused. A background tab still
+     counts - previously visibilityState made you look offline the moment
+     you switched tabs. Only closing the page marks you offline. */
+  const publish=()=>publishPresence(true);
   publish();
   presenceTimer=setInterval(publish,15000);
-  document.addEventListener("visibilitychange",publish);
-  window.addEventListener("pagehide",()=>publishPresence(false));
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")publish()});
+  window.addEventListener("pagehide",()=>{publishPresence(false);writeCache()});
+  window.addEventListener("beforeunload",()=>publishPresence(false));
 }
 
 /* ---------- incoming message sync + notifications ---------- */
@@ -797,6 +897,13 @@ function playIncomingPing(){
 /* Type testping() in the browser console to hear the sound on demand.
    If that is silent the problem is the audio device, tab mute or system
    volume - not the message polling. */
+/* Exposed for diagnostics and tests. */
+window.__space={get presenceFor(){return presenceFor},get writeCache(){return writeCache},
+  get readCache(){return readCache},get hydrateFromCache(){return hydrateFromCache},
+  get conversations(){return conversations},set conversations(v){conversations=v},
+  get active(){return active},set active(v){active=v},
+  get contactPresence(){return contactPresence},
+  set currentUserId(v){currentUserId=v}};
 window.testping=()=>{
   unlockNotifications();
   playIncomingPing();
@@ -872,6 +979,8 @@ async function initializeAuthorizedUser(user){
   try{firebaseIdToken=await user.getIdToken()}catch{firebaseIdToken=null}
   $("#current-user").textContent=user.displayName||user.email||"Authenticating…";
   await loadCurrentProfile(user);
+  /* Show the cached sidebar immediately; the fetch below replaces it. */
+  hydrateFromCache();
   startPresenceHeartbeat();
   await Promise.all([hydrateConversations(),loadMeetings()]);
   if(conversations.length&&!active)await switchChat(conversations[0].id);
