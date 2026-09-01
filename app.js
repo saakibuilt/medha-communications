@@ -781,13 +781,12 @@ $("#employee-list").addEventListener("click",async e=>{
 });
 
 /* ---------- details panel wiring ---------- */
-$("#open-details").addEventListener("click",toggleDetails);
 $("#close-details").addEventListener("click",closeDetails);
-/* Clicking the name (or avatar) in the conversation header opens details. */
-$(".conversation-title").addEventListener("click",openDetails);
-$(".conversation-header .person-avatar")?.addEventListener("click",openDetails);
+/* Clicking anywhere in the conversation header opens details. The mobile
+   navigation controls are the only exceptions. */
 $(".conversation-header").addEventListener("click",e=>{
-  if(e.target.closest(".person-avatar"))openDetails();
+  if(e.target.closest(".chat-menu-btn,.chat-back"))return;
+  openDetails();
 });
 $("#conversation-name").setAttribute("role","button");
 $("#conversation-name").setAttribute("tabindex","0");

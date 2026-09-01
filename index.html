@@ -10,17 +10,29 @@
 </head>
 <body class="space-booting">
   <section id="space-launch-loader" class="space-launch-loader" role="status" aria-live="polite" aria-label="Opening Space">
-    <div class="space-loader-scene" aria-hidden="true">
-      <span class="space-loader-ring space-loader-ring-one"></span>
-      <span class="space-loader-ring space-loader-ring-two"></span>
-      <span class="space-loader-node space-loader-node-one"><i></i></span>
-      <span class="space-loader-node space-loader-node-two"><i></i></span>
-      <span class="space-loader-node space-loader-node-three"><i></i></span>
-      <div class="space-loader-core"><img src="medha-circular.png" alt=""><span></span></div>
-      <div class="space-loader-message space-loader-message-one"><b></b><b></b><b></b></div>
-      <div class="space-loader-message space-loader-message-two"><b></b><b></b></div>
+    <div class="space-loader-stars" aria-hidden="true"></div>
+    <div class="space-loader-grid" aria-hidden="true"></div>
+    <div class="space-loader-layout">
+      <div class="space-loader-scene" aria-hidden="true">
+        <span class="space-loader-orbit space-loader-orbit-one"></span>
+        <span class="space-loader-orbit space-loader-orbit-two"></span>
+        <span class="space-loader-orbit space-loader-orbit-three"></span>
+        <span class="space-loader-node space-loader-node-one"><i></i></span>
+        <span class="space-loader-node space-loader-node-two"><i></i></span>
+        <span class="space-loader-node space-loader-node-three"><i></i></span>
+        <span class="space-loader-node space-loader-node-four"><i></i></span>
+        <div class="space-loader-core"><span class="space-loader-core-glow"></span><img src="medha-circular.png" alt=""><span class="space-loader-presence"></span></div>
+        <div class="space-loader-message space-loader-message-one"><b>NEW</b><span></span><span></span><span></span></div>
+        <div class="space-loader-message space-loader-message-two"><span></span><span></span><b></b></div>
+      </div>
+      <div class="space-loader-copy">
+        <span class="space-loader-kicker"><i></i> Medha / Space <em>01</em></span>
+        <strong>Where your team<br><span>comes into focus.</span></strong>
+        <small id="space-loader-status">Synchronizing conversations and presence</small>
+        <div class="space-loader-progress" aria-hidden="true"><i></i></div>
+        <div class="space-loader-signal"><b><i></i> LIVE</b><span>Secure team communication</span><small>◆</small></div>
+      </div>
     </div>
-    <div class="space-loader-copy"><span><i></i> Medha Space</span><strong>Opening your connections</strong><small id="space-loader-status">Synchronizing conversations and presence</small><div class="space-loader-signal"><b>LIVE</b><span>Secure team communication</span></div></div>
   </section>
   <div id="launch-gate" class="launch-gate" hidden><div><strong>Open Space from Medha Hub</strong><p>This app requires an authenticated Medha Hub launch.</p></div></div>
   <div class="app-shell">
@@ -48,7 +60,7 @@
 
     <main class="main-area">
       <section id="chat-view" class="view active-view">
-        <header class="conversation-header"><div class="person-avatar blue"></div><div class="conversation-title"><h2 id="conversation-name">No conversation selected</h2><p><span class="online-dot"></span><span id="conversation-status"></span></p></div><div class="header-actions"><button class="header-action" id="open-details" title="Chat details" aria-label="Chat details"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.6v.6"/></svg></button></div></header>
+        <header class="conversation-header"><div class="person-avatar blue"></div><div class="conversation-title"><h2 id="conversation-name">No conversation selected</h2><p><span class="online-dot"></span><span id="conversation-status"></span></p></div></header>
         <div class="message-area" id="message-area"><div class="date-divider"><span>Today</span></div></div>
         <div class="typing" id="typing" hidden><span></span><span></span><span></span></div>
         <form class="composer" id="composer"><div class="composer-tools"><button type="button" id="attach-file" class="tool-btn" title="Attach a file" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7.5-7.5"/></svg></button><button type="button" id="emoji-button" class="tool-btn" title="Add an emoji" aria-label="Add an emoji"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0"/><path d="M9 9.5v.01"/><path d="M15 9.5v.01"/></svg></button><button type="button" id="gif-button" class="tool-btn" title="Add a GIF" aria-label="Add a GIF"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M11 10.5H9.5a1.5 1.5 0 0 0-1.5 1.5v0a1.5 1.5 0 0 0 1.5 1.5H11v-1.4"/><path d="M13.6 10.5v3"/><path d="M16.2 13.5v-3H18"/><path d="M16.2 12h1.4"/></svg></button><input id="file-input" type="file" multiple hidden><button type="button" id="tools-more" class="tool-btn tools-more" title="More" aria-label="More options" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button></div><div id="pending-attachments" class="pending-attachments"></div><textarea id="message-input" rows="1" placeholder="Type a new message" aria-label="Message"></textarea><div class="composer-bottom"><span>Press Enter to send · Shift + Enter for a new line</span><button class="send-button" type="submit">Send <span>➤</span></button></div></form>
