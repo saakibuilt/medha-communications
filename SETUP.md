@@ -15,8 +15,16 @@ are open (`using (true)`).
 ```
 supabase-communications-migration.sql   # merges duplicate direct threads
 supabase-communications-compact.sql     # compact storage
+supabase-communications-cleanup.sql     # removes orphaned conversations
 supabase-communications-rollback.sql    # only if you hit an RLS error
 ```
+
+`supabase-communications-cleanup.sql` fixes nameless "Conversation" rows in
+the sidebar. The old client sometimes saved `participant_ids` with only the
+recipient, leaving threads nobody could reply in. The script repairs those
+where the message history identifies the missing person, deletes the ones
+that are genuinely unusable, and drops direct threads that have no messages.
+It has a preview query at the top so you can see what will change first.
 
 `supabase-communications-rollback.sql` fixes:
 

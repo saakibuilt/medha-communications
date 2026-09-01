@@ -213,6 +213,11 @@ async function refreshActiveMessages(){
 async function ensureConversationRow(chat){
   if(chat.cid)return chat.cid;
   const participants=[...new Set([viewerId(),chat.participantId].filter(Boolean).map(String))].sort();
+  /* A direct thread needs both people. Writing a one-participant row
+     creates a conversation nobody can reply in - that is what left the
+     orphaned "Conversation" rows in the sidebar. */
+  if((chat.kind||"direct")==="direct"&&participants.length<2)
+    throw Error("Could not identify who this chat is with. Reopen it from the directory.");
   const existing=await db(`medha_communications_conversations?id=eq.${encodeURIComponent(chat.id)}&select=cid,participant_ids`);
   if(existing?.length){chat.cid=existing[0].cid;return chat.cid}
   /* resolution=merge-duplicates makes this safe when both people open the
@@ -279,7 +284,12 @@ async function hydrateConversations(){
     if(rows?.length)ensureDirectory();
     const nameOf=id=>directory.find(p=>String(p.id)===String(id))?.full_name||cache[String(id)]||"";
 
-    const loaded=(rows||[]).map(row=>{
+    /* Only show threads this user is actually in. A one-participant row is
+       ambiguous - it is either a deliberate self-chat or an orphan left by
+       the old client - so it is kept here and cleaned up in SQL, where the
+       message history can tell the two apart. */
+    const usable=(rows||[]).filter(row=>(row.participant_ids||[]).map(String).includes(me));
+    const loaded=usable.map(row=>{
       const participantIds=(row.participant_ids||[]).map(String);
       const others=participantIds.filter(id=>id!==me);
       const selfOnly=others.length===0;
