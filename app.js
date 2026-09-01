@@ -775,12 +775,45 @@ function playIncomingPing(){
     audioContext??=new (window.AudioContext||window.webkitAudioContext)();
     if(audioContext.state==="suspended"){audioContext.resume().catch(()=>{})}
     if(audioContext.state!=="running")return;
-    const now=audioContext.currentTime,osc=audioContext.createOscillator(),gain=audioContext.createGain();
-    osc.type="sine";osc.frequency.setValueAtTime(880,now);osc.frequency.exponentialRampToValueAtTime(660,now+.12);
-    gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(.16,now+.01);gain.gain.exponentialRampToValueAtTime(.0001,now+.18);
-    osc.connect(gain).connect(audioContext.destination);osc.start(now);osc.stop(now+.2);
+    const ctx=audioContext,now=ctx.currentTime;
+    /* Two-note chime, repeated, so it is clearly audible over a room and
+       long enough to notice if you are not looking at the screen.
+       Roughly 2 seconds in total. */
+    const notes=[
+      {at:0.00, from:988, to:988, dur:0.30},  // B5
+      {at:0.28, from:1319,to:1319,dur:0.46},  // E6
+      {at:0.84, from:988, to:988, dur:0.30},
+      {at:1.12, from:1319,to:1319,dur:0.46},
+      {at:1.66, from:1319,to:1319,dur:0.36}   // final accent, ~2.0s total
+    ];
+    /* Compressor lets the chime sit near full scale without clipping. */
+    const master=ctx.createGain();
+    master.gain.setValueAtTime(1.0,now);
+    if(ctx.createDynamicsCompressor){
+      const comp=ctx.createDynamicsCompressor();
+      comp.threshold.setValueAtTime(-10,now);
+      comp.ratio.setValueAtTime(12,now);
+      master.connect(comp);comp.connect(ctx.destination);
+    }else{
+      master.connect(ctx.destination);
+    }
+    notes.forEach(n=>{
+      const t=now+n.at;
+      const osc=ctx.createOscillator(),gain=ctx.createGain();
+      osc.type="triangle";                     /* richer than sine, carries further */
+      osc.frequency.setValueAtTime(n.from,t);
+      if(n.to!==n.from)osc.frequency.exponentialRampToValueAtTime(n.to,t+n.dur);
+      gain.gain.setValueAtTime(0.0001,t);
+      gain.gain.exponentialRampToValueAtTime(1.0,t+0.010);   /* fast attack, full scale */
+      gain.gain.exponentialRampToValueAtTime(0.45,t+n.dur*0.55);
+      gain.gain.exponentialRampToValueAtTime(0.0001,t+n.dur);
+      osc.connect(gain).connect(master);
+      osc.start(t);
+      osc.stop(t+n.dur+0.02);
+    });
   }catch{}
 }
+
 /* Type testping() in the browser console to hear the sound on demand.
    If that is silent the problem is the audio device, tab mute or system
    volume - not the message polling. */
