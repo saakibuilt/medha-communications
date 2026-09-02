@@ -23,8 +23,6 @@ let activeCall=null;
 let incomingCall=null;
 let ringTimer=null;
 let ringAudioContext=null;
-let ringVibrationTimer=null;
-let incomingCallTimeout=null;
 let streamSessionToken=null;
 const streamChannels=new Map();
 
@@ -974,10 +972,9 @@ function startRingTone(){
     ringAudioContext=ringAudioContext||new AudioContextClass();ringAudioContext.resume();
     const play=()=>{if(!ringAudioContext)return;const now=ringAudioContext.currentTime,gain=ringAudioContext.createGain();gain.gain.setValueAtTime(.001,now);gain.gain.exponentialRampToValueAtTime(.22,now+.12);gain.gain.exponentialRampToValueAtTime(.001,now+1.5);gain.connect(ringAudioContext.destination);[523.25,659.25,783.99].forEach((frequency,index)=>{const oscillator=ringAudioContext.createOscillator();oscillator.type="sine";oscillator.frequency.value=frequency;oscillator.connect(gain);oscillator.start(now+index*.12);oscillator.stop(now+1.6)});};
     play();ringTimer=setInterval(play,2200);
-    if("vibrate" in navigator){navigator.vibrate([260,120,260,500]);ringVibrationTimer=setInterval(()=>navigator.vibrate([260,120,260,500]),2200)}
   }catch{}
 }
-function stopRingTone(){if(ringTimer){clearInterval(ringTimer);ringTimer=null}if(ringVibrationTimer){clearInterval(ringVibrationTimer);ringVibrationTimer=null}try{navigator.vibrate?.(0)}catch{}if(incomingCallTimeout){clearTimeout(incomingCallTimeout);incomingCallTimeout=null}if(ringAudioContext?.state!=="closed")try{ringAudioContext?.suspend()}catch{} }
+function stopRingTone(){if(ringTimer){clearInterval(ringTimer);ringTimer=null}if(ringAudioContext?.state!=="closed")try{ringAudioContext?.suspend()}catch{} }
 document.addEventListener("pointerdown",()=>{if(ringTimer)try{ringAudioContext?.resume()}catch{}},{passive:true});
 function showCallSurface(call,title,mode){
   activeCall=call;$("#call-title").textContent=title;$("#incoming-call-actions").hidden=true;$("#call-dialog").showModal();
@@ -993,14 +990,10 @@ function setupVideoClient(body){
   }catch(error){console.warn("Stream Video unavailable",error)}
 }
 function showIncomingCall(call){
-  incomingCall=call;const isVideo=call.state.custom?.mode!=="audio";$("#call-title").textContent=(isVideo?"Incoming video":"Incoming audio")+" call";$("#incoming-call-actions").hidden=false;$("#call-minimized").hidden=true;$("#call-participants").innerHTML='<div class="incoming-call-card"><strong>Incoming call</strong><span>Answer when you are ready</span></div>';$("#call-dialog").showModal();startRingTone();incomingCallTimeout=setTimeout(()=>ignoreIncomingCall(),30000);
+  incomingCall=call;const isVideo=call.state.custom?.mode!=="audio";$("#call-title").textContent=(isVideo?"Incoming video":"Incoming audio")+" call";$("#incoming-call-actions").hidden=false;$("#call-participants").innerHTML='<div class="incoming-call-card"><strong>Incoming call</strong><span>Answer when you are ready</span></div>';$("#call-dialog").showModal();startRingTone();
 }
-function minimizeIncomingCall(){if(!incomingCall)return;$("#call-dialog").close();$("#call-minimized").hidden=false}
-function restoreIncomingCall(){if(!incomingCall)return;$("#call-minimized").hidden=true;$("#call-dialog").showModal()}
-async function ignoreIncomingCall(){if(incomingCall){try{await incomingCall.leave({reject:true,reason:"timeout"})}catch{}incomingCall=null}stopRingTone();$("#call-minimized").hidden=true;$("#call-dialog").close()}
 $("#accept-call").addEventListener("click",async()=>{if(!incomingCall)return;try{stopRingTone();const call=incomingCall,mode=call.state.custom?.mode||"video";await call.join();await call.microphone.enable();if(mode==="video")await call.camera.enable();incomingCall=null;showCallSurface(call,"Call · "+(active?.name||"Medha"),mode)}catch(error){toast(error.message)}});
 $("#decline-call").addEventListener("click",async()=>{if(incomingCall){try{await incomingCall.leave({reject:true,reason:"decline"})}catch{}incomingCall=null}stopRingTone();$("#call-dialog").close()});
-$("#ignore-call").addEventListener("click",minimizeIncomingCall);$("#minimize-call").addEventListener("click",minimizeIncomingCall);$("#restore-call").addEventListener("click",restoreIncomingCall);$("#ignore-minimized-call").addEventListener("click",ignoreIncomingCall);
 async function startStreamCall(mode){
   if(!active||!streamClient){toast("Open a Stream conversation first");return}
   try{
@@ -1027,7 +1020,9 @@ $("#message-area").addEventListener("click",async e=>{
 $("#toggle-call-mic").addEventListener("click",async()=>{if(activeCall){await activeCall.microphone.toggle();const off=activeCall.microphone.state.status!=="enabled";$("#toggle-call-mic").classList.toggle("off",off);$("#toggle-call-mic").title=off?"Turn microphone on":"Mute microphone"}});
 $("#toggle-call-camera").addEventListener("click",async()=>{if(activeCall){await activeCall.camera.toggle();const off=activeCall.camera.state.status!=="enabled";$("#toggle-call-camera").classList.toggle("off",off);$("#toggle-call-camera").title=off?"Turn camera on":"Turn camera off"}});
 async function leaveStreamCall(){stopRingTone();if(activeCall){try{await activeCall.leave()}catch{}activeCall=null}incomingCall=null;$("#call-dialog").close();$("#call-participants").innerHTML=""}
-$("#leave-call").addEventListener("click",leaveStreamCall);
+/* Optional chaining: #close-call is not present in every layout, and a
+   missing one used to throw here and abort the rest of boot. */
+$("#leave-call")?.addEventListener("click",leaveStreamCall);$("#close-call")?.addEventListener("click",leaveStreamCall);
 
 /* ---------- rich Stream message actions ---------- */
 let replyTarget=null,actionMessageId=null;
@@ -1117,7 +1112,98 @@ let allEmojis=Object.entries(emojiGroups).flatMap(([group,value])=>value.split("
 /* ---------- calendar ---------- */
 
 let meetings=[];let calendarCursor=new Date();
-function renderCalendar(){const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth();$("#calendar-month").textContent=calendarCursor.toLocaleDateString([], {month:"long",year:"numeric"});const first=(new Date(y,m,1).getDay()+6)%7,last=new Date(y,m+1,0).getDate(),cells=[];for(let i=0;i<first;i++)cells.push('<div class="muted"></div>');for(let d=1;d<=last;d++){const date=new Date(y,m,d),key=date.toISOString().slice(0,10),items=meetings.filter(x=>x.start.slice(0,10)===key);cells.push(`<div class="${key===new Date().toISOString().slice(0,10)?"today":""}">${d}${items.map(x=>`<i title="${esc(x.title)}">${esc(x.title)}</i>`).join("")}</div>`)}$("#calendar-grid").innerHTML=cells.join("")||'<div class="empty-state">No scheduled meetings.</div>';const future=meetings.filter(x=>new Date(x.start)>=new Date()).sort((a,b)=>new Date(a.start)-new Date(b.start));$("#agenda-list").innerHTML=future.length?future.map(x=>`<div class="agenda-item"><b>${new Date(x.start).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</b><div><strong>${esc(x.title)}</strong><span>${new Date(x.start).toLocaleDateString([], {weekday:"short",month:"short",day:"numeric"})}</span></div></div>`).join(""):"<div class=\"empty-state\">No upcoming meetings.</div>"}
+/* Stretches each multi-day bar across the days it covers. Done from JS
+   because a CSS percentage resolves against the day cell, not the strip,
+   so the bar either fell short of, or ran past, the final day. */
+function sizeCalendarSpans(){
+  const grid=$("#calendar-grid");
+  if(!grid)return;
+  const cells=[...grid.querySelectorAll("div[data-day]")];
+  if(!cells.length)return;
+  const byDay=new Map(cells.map(c=>[c.dataset.day,c]));
+  const gridBox=grid.getBoundingClientRect();
+  const pad=n=>String(n).padStart(2,"0");
+  grid.querySelectorAll("i.span-start[style*='--span-days']").forEach(bar=>{
+    const cell=bar.closest("div[data-day]");
+    if(!cell)return;
+    const days=Number(getComputedStyle(bar).getPropertyValue("--span-days"))||1;
+    if(days<2)return;
+    const first=new Date(cell.dataset.day+"T00:00:00");
+    const lastDate=new Date(first);
+    lastDate.setDate(lastDate.getDate()+days-1);
+    const lastCell=byDay.get(`${lastDate.getFullYear()}-${pad(lastDate.getMonth()+1)}-${pad(lastDate.getDate())}`);
+    if(!lastCell)return;
+    const from=cell.getBoundingClientRect(),to=lastCell.getBoundingClientRect();
+    bar.style.left=`${Math.round(from.left-gridBox.left)+6}px`;
+    bar.style.top=`${Math.round(from.top-gridBox.top)+26}px`;
+    bar.style.width=`${Math.max(0,Math.round(to.right-from.left)-14)}px`;
+  });
+}
+
+function renderCalendar(){
+  const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth();
+  $("#calendar-month").textContent=calendarCursor.toLocaleDateString([],{month:"long",year:"numeric"});
+  const first=(new Date(y,m,1).getDay()+6)%7,last=new Date(y,m+1,0).getDate(),cells=[];
+  const pad=n=>String(n).padStart(2,"0");
+  const dayKey=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const todayKey=dayKey(new Date());
+  /* A meeting covers every day from its start to its end, so a 1-3 Sept
+     event appears on the 1st, 2nd and 3rd rather than only the 1st. */
+  const coversDay=(meeting,key)=>{
+    if(!meeting.start)return false;
+    const s=new Date(meeting.start),e=new Date(meeting.end||meeting.start);
+    if(Number.isNaN(s.getTime()))return false;
+    const startKey=dayKey(s),endKey=Number.isNaN(e.getTime())?startKey:dayKey(e);
+    return key>=startKey&&key<=endKey;
+  };
+  for(let i=0;i<first;i++)cells.push('<div class="muted"></div>');
+  for(let d=1;d<=last;d++){
+    const key=dayKey(new Date(y,m,d));
+    const items=meetings.filter(x=>coversDay(x,key));
+    cells.push(`<div class="${key===todayKey?"today":""}" data-day="${key}">${d}${items.map(x=>{
+      const s=new Date(x.start),e=new Date(x.end||x.start);
+      const multi=dayKey(s)!==dayKey(e);
+      const isStart=dayKey(s)===key,isEnd=dayKey(e)===key;
+      const weekday=(new Date(key+"T00:00:00").getDay()+6)%7;   /* Mon = 0 */
+      /* The bar restarts on each calendar row, so a span crossing a week
+         boundary gets a fresh rounded edge and its own label. */
+      const rowStart=isStart||weekday===0;
+      const rowEnd=isEnd||weekday===6;
+      const span=multi?` span${rowStart?" span-start":""}${rowEnd?" span-end":""}${!rowStart&&!rowEnd?" span-mid":""}`:"";
+      const range=multi?` (${s.toLocaleDateString([],{month:"short",day:"numeric"})} – ${e.toLocaleDateString([],{month:"short",day:"numeric"})})`:"";
+      /* How many days this run covers in this week row, so the label can be
+         centred over the whole strip instead of just its first day. */
+      let daysInRow=1;
+      if(multi&&rowStart){
+        const endKey=dayKey(e);
+        const probe=new Date(key+"T00:00:00");
+        daysInRow=0;
+        while(dayKey(probe)<=endKey){
+          daysInRow++;
+          if(((probe.getDay()+6)%7)===6)break;
+          probe.setDate(probe.getDate()+1);
+        }
+        daysInRow=Math.max(1,daysInRow);
+      }
+      const label=(!multi||rowStart)?esc(x.title):"";
+      const style=multi&&rowStart&&daysInRow>1?` style="--span-days:${daysInRow}"`:"";
+      return `<i class="${span.trim()}" title="${esc(x.title)}${esc(range)}" data-meeting-id="${esc(x.id||"")}"${style}>${label}</i>`;
+    }).join("")}</div>`);
+  }
+  $("#calendar-grid").innerHTML=cells.join("")||'<div class="empty-state">No scheduled meetings.</div>';
+  sizeCalendarSpans();
+  const now=new Date();
+  const future=meetings.filter(x=>new Date(x.end||x.start)>=now).sort((a,b)=>new Date(a.start)-new Date(b.start));
+  $("#agenda-list").innerHTML=future.length?future.map(x=>{
+    const s=new Date(x.start),e=new Date(x.end||x.start);
+    const multi=s.toDateString()!==e.toDateString();
+    const when=multi
+      ?`${s.toLocaleDateString([],{month:"short",day:"numeric"})} – ${e.toLocaleDateString([],{month:"short",day:"numeric"})}`
+      :s.toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
+    return `<div class="agenda-item"><b>${s.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</b><div><strong>${esc(x.title)}</strong><span>${esc(when)}</span></div></div>`;
+  }).join(""):'<div class="empty-state">No upcoming meetings.</div>';
+}
+
 async function loadMeetings(){try{meetings=await db(`medha_communications_meetings?select=id,title,start_at,end_at,invitee_ids,created_by&order=start_at.asc`)||[];meetings=meetings.map(x=>({...x,start:String(x.start_at||""),end:String(x.end_at||x.start_at||"")}));renderCalendar();if(typeof refreshContactPresence==="function")refreshContactPresence()}catch{meetings=[];renderCalendar()}}
 $("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);renderCalendar()};$("#calendar-next").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);renderCalendar()};$("#calendar-today").onclick=()=>{calendarCursor=new Date();renderCalendar()};$("#new-event").onclick=()=>$("#event-dialog").showModal();$("#event-form").addEventListener("submit",async e=>{if(e.submitter?.value==="cancel"){e.target.closest("dialog").close();return}e.preventDefault();if(!currentUserId){toast("Sign in to create meetings");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db("medha_communications_meetings",{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean),created_by:currentUserId})});$("#event-dialog").close();e.target.reset();await loadMeetings();toast("Meeting created")}catch(err){toast(err.message)}});
 function openEventForCalendarDate(day){const date=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),day,9,0);const end=new Date(date);end.setHours(10);const localValue=value=>{const pad=n=>String(n).padStart(2,"0");return `${value.getFullYear()}-${pad(value.getMonth()+1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`};$("#event-form").reset();$("#event-start").value=localValue(date);$("#event-end").value=localValue(end);$("#event-dialog").showModal()}
@@ -1126,9 +1212,28 @@ document.querySelectorAll("#event-start,#event-end").forEach(input=>input.addEve
 const locationInput=document.createElement("input");locationInput.id="event-location";locationInput.maxLength=240;locationInput.placeholder="Optional meeting location";const locationLabel=document.createElement("label");locationLabel.textContent="Meeting location";locationLabel.append(locationInput);const locationTags=document.createElement("div");locationTags.className="location-tags";locationTags.innerHTML='<button type="button" data-location-tag="Online">Online</button><button type="button" data-location-tag="Office">Office</button>';locationLabel.append(locationTags);$("#event-invitees").closest("label").before(locationLabel);locationTags.addEventListener("click",e=>{const tag=e.target.closest("[data-location-tag]");if(tag)locationInput.value=tag.dataset.locationTag});window.addEventListener("communications:add-suggestion-event",event=>{const d=event.detail||{},dateText=String(d.start||""),dateMatch=dateText.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/)||dateText.match(/([A-Za-z]{3,9})\s+(\d{1,2})(?:.*?(\d{4}))?/),date=dateMatch?(dateMatch[3]?new Date(+dateMatch[3],+dateMatch[1]-1,+dateMatch[2]):new Date(`${dateMatch[1]} ${dateMatch[2]}, ${dateMatch[3]||new Date().getFullYear()}`)):new Date(),timeMatch=String(d.time||"").match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i),hour=timeMatch?(+timeMatch[1]%12)+(timeMatch[3].toUpperCase()==="PM"?12:0):9,minute=timeMatch?+(timeMatch[2]||0):0,pad=n=>String(n).padStart(2,"0"),value=`${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(hour)}:${pad(minute)}`;$("#event-form").reset();$("#event-title").value=d.title||"";$("#event-start").value=value;const end=new Date(date);end.setHours(hour+1,minute,0,0);$("#event-end").value=`${end.getFullYear()}-${pad(end.getMonth()+1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;locationInput.value=d.location&&d.location!=="Not published"?d.location:"";$("#event-dialog").showModal()});
 $("#event-title").closest("label").childNodes[0].textContent="Event Title";$("#event-title").placeholder="Event title";
 const communicationsDb=db;db=async(path,options={})=>{if(path==="medha_communications_meetings"&&options.method==="POST"&&options.body){const payload=JSON.parse(options.body);payload.location=$("#event-location")?.value.trim()||null;options={...options,body:JSON.stringify(payload)}}return communicationsDb(path,options)};
-let editingMeeting=null;const eventDialogTitle=$("#event-dialog h2"),eventDialogSubmit=$("#event-form button[value=default]");function dateTimeValue(value){if(!value)return"";const d=new Date(value),pad=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`}function openMeetingEditor(meeting){editingMeeting=meeting;eventDialogTitle.textContent="Edit event";eventDialogSubmit.textContent="Save changes";$("#event-title").value=meeting.title||"";$("#event-start").value=dateTimeValue(meeting.start);$("#event-end").value=dateTimeValue(meeting.end);$("#event-invitees").value=(meeting.invitee_ids||[]).join(",");$("#event-location").value=meeting.location||"";$("#event-dialog").showModal()}$("#calendar-grid").addEventListener("click",async event=>{const marker=event.target.closest("#calendar-grid i");if(!marker)return;const cell=marker.closest("#calendar-grid>div"),first=(new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1).getDay()+6)%7,day=[...$("#calendar-grid").children].indexOf(cell)-first+1,key=`${calendarCursor.getFullYear()}-${String(calendarCursor.getMonth()+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`,meeting=meetings.find(item=>item.title===marker.title&&item.start?.slice(0,10)===key);if(!meeting)return;try{const rows=await db(`medha_communications_meetings?id=eq.${encodeURIComponent(meeting.id)}&select=id,title,start_at,end_at,invitee_ids,location`);openMeetingEditor({...meeting,...(rows?.[0]||{}),start:rows?.[0]?.start_at||meeting.start,end:rows?.[0]?.end_at||meeting.end})}catch{openMeetingEditor(meeting)}});$("#event-form").addEventListener("submit",async event=>{if(!editingMeeting)return;event.preventDefault();event.stopImmediatePropagation();if(!currentUserId){toast("Sign in to edit events");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db(`medha_communications_meetings?id=eq.${encodeURIComponent(editingMeeting.id)}`,{method:"PATCH",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),location:$("#event-location").value.trim()||null,invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean)})});$("#event-dialog").close();event.target.reset();editingMeeting=null;eventDialogTitle.textContent="New meeting";eventDialogSubmit.textContent="Create meeting";await loadMeetings();toast("Event updated")}catch(error){toast(error.message)}},true);
+let editingMeeting=null;const eventDialogTitle=$("#event-dialog h2"),eventDialogSubmit=$("#event-form button[value=default]");function dateTimeValue(value){if(!value)return"";const d=new Date(value),pad=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`}function openMeetingEditor(meeting){editingMeeting=meeting;eventDialogTitle.textContent="Edit event";eventDialogSubmit.textContent="Save changes";$("#event-title").value=meeting.title||"";$("#event-start").value=dateTimeValue(meeting.start);$("#event-end").value=dateTimeValue(meeting.end);$("#event-invitees").value=(meeting.invitee_ids||[]).join(",");$("#event-location").value=meeting.location||"";$("#event-dialog").showModal()}$("#calendar-grid").addEventListener("click",async event=>{
+  const marker=event.target.closest("#calendar-grid i");
+  if(!marker)return;
+  /* Markers carry their meeting id, so clicking any day of a multi-day
+     event opens the right one. Matching on title plus date used to fail
+     on every day except the first. */
+  const meeting=meetings.find(item=>String(item.id)===String(marker.dataset.meetingId));
+  if(!meeting)return;
+  try{
+    const rows=await db(`medha_communications_meetings?id=eq.${encodeURIComponent(meeting.id)}&select=id,title,start_at,end_at,invitee_ids,location`);
+    openMeetingEditor({...meeting,...(rows?.[0]||{}),start:rows?.[0]?.start_at||meeting.start,end:rows?.[0]?.end_at||meeting.end});
+  }catch{openMeetingEditor(meeting)}
+});$("#event-form").addEventListener("submit",async event=>{if(!editingMeeting)return;event.preventDefault();event.stopImmediatePropagation();if(!currentUserId){toast("Sign in to edit events");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db(`medha_communications_meetings?id=eq.${encodeURIComponent(editingMeeting.id)}`,{method:"PATCH",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),location:$("#event-location").value.trim()||null,invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean)})});$("#event-dialog").close();event.target.reset();editingMeeting=null;eventDialogTitle.textContent="New meeting";eventDialogSubmit.textContent="Create meeting";await loadMeetings();toast("Event updated")}catch(error){toast(error.message)}},true);
 $("#new-event").addEventListener("click",()=>{editingMeeting=null;eventDialogTitle.textContent="New meeting";eventDialogSubmit.textContent="Create meeting"});
-const calendarRender=renderCalendar;renderCalendar=function(){calendarRender();const list=$("#calendar-sidebar-list"),future=meetings.filter(x=>x.start&&new Date(x.start)>=new Date()).sort((a,b)=>new Date(a.start)-new Date(b.start));if(list)list.innerHTML=future.length?future.map(x=>`<div class="calendar-side-event"><time>${new Date(x.start).toLocaleDateString([], {month:"short",day:"numeric"})}</time><div><strong>${esc(x.title||"Meeting")}</strong><span>${new Date(x.start).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</span></div></div>`).join(""):"<div class=\"empty-state\">No upcoming meetings.</div>"};
+const calendarRender=renderCalendar;renderCalendar=function(){calendarRender();const list=$("#calendar-sidebar-list"),future=meetings.filter(x=>x.start&&new Date(x.end||x.start)>=new Date()).sort((a,b)=>new Date(a.start)-new Date(b.start));if(list)list.innerHTML=future.length?future.map(x=>{
+  const s=new Date(x.start),e=new Date(x.end||x.start);
+  const multi=s.toDateString()!==e.toDateString();
+  const when=multi?`${s.toLocaleDateString([],{month:"short",day:"numeric"})} – ${e.toLocaleDateString([],{month:"short",day:"numeric"})}`
+                  :s.toLocaleDateString([],{month:"short",day:"numeric"});
+  const sub=multi?`${Math.round((e-s)/86400000)+1} days`:s.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+  return `<div class="calendar-side-event"><time>${esc(when)}</time><div><strong>${esc(x.title||"Meeting")}</strong><span>${esc(sub)}</span></div></div>`;
+}).join(""):"<div class=\"empty-state\">No upcoming meetings.</div>"};
 function externalStartDate(value){const text=String(value||""),numeric=text.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/),named=text.match(/([A-Za-z]{3,9})\s+(\d{1,2})(?:.*?(\d{4}))?/);if(numeric)return new Date(Number(numeric[3]),Number(numeric[1])-1,Number(numeric[2]));if(named){const year=Number(named[3]||new Date().getFullYear()),date=new Date(`${named[1]} ${named[2]}, ${year}`);if(!Number.isNaN(date.getTime()))return date}return null}
 async function loadSuggestions(){const list=$("#suggestions-list");try{const [eventsResponse,exhibitionsResponse]=await Promise.all([fetch("https://medha-newsevents.vercel.app/api/events"),fetch("https://medha-newsevents.vercel.app/api/exhibitions")]);if(!eventsResponse.ok||!exhibitionsResponse.ok)throw Error("Events & News unavailable");const [events,exhibitions]=await Promise.all([eventsResponse.json(),exhibitionsResponse.json()]),items=[...(events.sources||[]).flatMap(source=>(source.items||[]).map(item=>({...item,kind:"Event"}))),...(exhibitions.sources||[]).flatMap(source=>(source.items||[]).map(item=>({...item,kind:"Exhibition"})))].map(item=>({...item,start:externalStartDate(item.date)})).filter(item=>item.start&&item.start>=new Date()).sort((a,b)=>a.start-b.start).slice(0,20);list.innerHTML=items.length?items.map(item=>`<a class="suggestion-item" href="${esc(item.link||"https://medha-newsevents.vercel.app/")}" target="_blank" rel="noopener"><span>${item.kind}</span><strong>${esc(item.title)}</strong><time>${item.start.toLocaleDateString([], {month:"short",day:"numeric",year:"numeric"})}</time></a>`).join(""):"<div class=\"empty-state\">No upcoming events or exhibitions.</div>"}catch{list.innerHTML='<div class="empty-state">Events &amp; News is unavailable.</div>'}}
 
