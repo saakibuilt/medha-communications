@@ -40,6 +40,17 @@ async function initializeStream(user){
   streamClient=StreamChat.getInstance(body.apiKey,{timeout:10000});
   streamSessionToken=body.token;
   await streamClient.connectUser(body.user,body.token);
+  /* Stream is the message source now. Listen globally so a background tab
+     receives notifications even when its current channel is not open. A
+     service worker/native push provider is still required when the page is
+     completely closed. */
+  streamClient.on("notification.message_new",event=>{
+    const message=event.message;
+    if(!message||String(message.user?.id)===String(viewerId()))return;
+    if(document.visibilityState!=="hidden")return;
+    const row={cid:event.channel?.cid||event.cid,body:message.text||"New message",id:message.id};
+    showDesktopNotification(row,event.channel?.name||message.user?.name||"New message");
+  });
   setupVideoClient(body);
   return body.user;
 }
@@ -1014,7 +1025,7 @@ async function startStreamCall(mode){
     if(!videoClient)videoClient=new StreamVideoClient({apiKey:streamClient.key,user:streamClient.user,token:streamSessionToken});
     const members=[...(active.participantIds||[viewerId(),active.participantId]).filter(Boolean).map(id=>({user_id:String(id)}))];
     const callId="medha-"+crypto.randomUUID(),call=videoClient.call("default",callId);
-    await call.getOrCreate({ring:true,video:mode==="video",data:{members,custom:{channelCid:active.cid,mode}}});
+    await call.getOrCreate({ring:true,notify:true,video:mode==="video",data:{members,custom:{channelCid:active.cid,mode}}});
     await call.join({create:true});await call.microphone.enable();if(mode==="video")await call.camera.enable();
     showCallSurface(call,(mode==="video"?"Video":"Audio")+" call · "+active.name,mode);
     await streamChannelFor(active).sendMessage({text:(mode==="video"?"🎥 Video":"☎ Audio")+" call started",call_id:callId,call_type:"default"});
@@ -1425,10 +1436,10 @@ function notificationText(text){
   const words=String(text||"New message").trim().split(/\s+/);
   return words.slice(0,10).join(" ")+(words.length>10?" …":"");
 }
-function showDesktopNotification(row){
+function showDesktopNotification(row,explicitTitle=""){
   if("Notification" in window&&Notification.permission==="granted"){
     const chat=conversations.find(c=>String(c.cid)===String(row.cid));
-    try{new Notification(chat?.name||"New message",{body:notificationText(row.body),tag:`medha-message-${row.id}`})}catch{}
+    try{new Notification(explicitTitle||chat?.name||"New message",{body:notificationText(row.body),tag:`medha-message-${row.id}`})}catch{}
   }
 }
 async function syncIncomingMessages(){
