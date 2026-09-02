@@ -1028,7 +1028,12 @@ function setupVideoClient(body){
   if(videoClient)return;
   try{
     videoClient=new StreamVideoClient({apiKey:body.apiKey,user:body.user,token:body.token});
-    videoClient.state.calls$.subscribe(calls=>{if(incomingCall&&incomingCall.state.callingState!==CallingState.RINGING){dismissCallSurface();return}const call=calls.find(item=>!item.isCreatedByMe&&item.state.callingState===CallingState.RINGING);if(call&&incomingCall?.cid!==call.cid)showIncomingCall(call)});
+    const handleCalls=calls=>{if(incomingCall&&incomingCall.state.callingState!==CallingState.RINGING){dismissCallSurface();return}const call=calls.find(item=>!item.isCreatedByMe&&item.state.callingState===CallingState.RINGING);if(call&&incomingCall?.cid!==call.cid)showIncomingCall(call)};
+    videoClient.state.calls$.subscribe(handleCalls);
+    /* calls$ receives live events, but a call that started immediately before
+       Space connected may not emit a second event. Query watched calls once
+       on boot so an already-ringing call opens the popup immediately. */
+    videoClient.queryCalls({filter_conditions:{members:{$in:[String(body.user.id)]}},limit:25,watch:true}).then(result=>handleCalls(result.calls||[])).catch(error=>console.warn("Could not restore incoming calls",error));
   }catch(error){console.warn("Stream Video unavailable",error)}
 }
 function dismissCallSurface(){stopRingTone();activeCallingSubscription?.unsubscribe?.();activeCallingSubscription=null;activeCallParticipantEndSubscription?.unsubscribe?.();activeCallParticipantEndSubscription=null;activeParticipantSubscription?.unsubscribe?.();activeParticipantSubscription=null;activeParticipantSessionKey="";activeMediaUnbinders.forEach(unbind=>{try{unbind()}catch{}});activeMediaUnbinders=[];activeCall=null;incomingCall=null;activeCallMediaEnabled=false;activeCallMediaPromise=null;activeCallHadRemoteParticipant=false;$("#call-dialog")?.close();$("#call-minimized").hidden=true;$("#call-participants").innerHTML=""}
