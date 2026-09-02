@@ -484,8 +484,23 @@ async function fetchMessagePage(cid,offset=0){
     const channel=streamChannels.get(String(cid));
     if(!channel)throw Error("Stream channel is not open");
     const state=await channel.query({messages:{limit:PAGE_SIZE,offset}});
-    const messages=(state.messages||[]).map(streamMessageToApp);
-    return {messages,hasMore:messages.length===PAGE_SIZE};
+    let messages=(state.messages||[]).map(streamMessageToApp);
+    /* Replies sent before show_in_channel was set live inside their thread
+       and never come back from channel.query(). Pull the replies for any
+       message that has them so older conversations stay complete. */
+    const parents=(state.messages||[]).filter(m=>Number(m.reply_count)>0);
+    if(parents.length){
+      const seen=new Set(messages.map(m=>String(m.id)));
+      const threads=await Promise.all(parents.map(parent=>
+        channel.getReplies(parent.id,{limit:50}).catch(()=>null)));
+      threads.forEach(thread=>(thread?.messages||[]).forEach(reply=>{
+        if(seen.has(String(reply.id)))return;
+        seen.add(String(reply.id));
+        messages.push(streamMessageToApp(reply));
+      }));
+      messages.sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+    }
+    return {messages,hasMore:(state.messages||[]).length===PAGE_SIZE};
   }
   const cols="id,sender_id,body,attachments,reactions,created_at";
   const query=extra=>`medha_communications_messages?cid=eq.${encodeURIComponent(cid)}&select=${extra}&order=created_at.desc,id.desc&offset=${offset}&limit=${PAGE_SIZE}`;
@@ -890,7 +905,12 @@ $("#composer").addEventListener("submit",async e=>{
   sending=true;
   const sendButton=$(".send-button");sendButton.disabled=true;
   try{
-    const saved=await persistMessage(active,text,attachments,replyTarget?{parent_id:replyTarget.id}:{});
+    /* show_in_channel keeps a reply in the main message list. Without it
+       Stream files a parent_id message inside its thread only, so the reply
+       disappeared from the conversation after a refresh - channel.query()
+       returns main-channel messages, not thread replies. */
+    const saved=await persistMessage(active,text,attachments,
+      replyTarget?{parent_id:replyTarget.id,show_in_channel:true}:{});
     messageInput.value="";setReplyTarget(null);pendingAttachments=[];renderPending();autosizeComposer();
     if(saved&&!active.messages.some(m=>m.id===saved.id)){active.messages.push(saved);active.messagesLoaded=true}
     renderList();renderMessages();scrollMessagesToEnd();
