@@ -23,6 +23,8 @@ let activeCall=null;
 let incomingCall=null;
 let ringTimer=null;
 let ringAudioContext=null;
+let ringVibrationTimer=null;
+let incomingCallTimeout=null;
 let streamSessionToken=null;
 const streamChannels=new Map();
 
@@ -972,9 +974,10 @@ function startRingTone(){
     ringAudioContext=ringAudioContext||new AudioContextClass();ringAudioContext.resume();
     const play=()=>{if(!ringAudioContext)return;const now=ringAudioContext.currentTime,gain=ringAudioContext.createGain();gain.gain.setValueAtTime(.001,now);gain.gain.exponentialRampToValueAtTime(.22,now+.12);gain.gain.exponentialRampToValueAtTime(.001,now+1.5);gain.connect(ringAudioContext.destination);[523.25,659.25,783.99].forEach((frequency,index)=>{const oscillator=ringAudioContext.createOscillator();oscillator.type="sine";oscillator.frequency.value=frequency;oscillator.connect(gain);oscillator.start(now+index*.12);oscillator.stop(now+1.6)});};
     play();ringTimer=setInterval(play,2200);
+    if("vibrate" in navigator){navigator.vibrate([260,120,260,500]);ringVibrationTimer=setInterval(()=>navigator.vibrate([260,120,260,500]),2200)}
   }catch{}
 }
-function stopRingTone(){if(ringTimer){clearInterval(ringTimer);ringTimer=null}if(ringAudioContext?.state!=="closed")try{ringAudioContext?.suspend()}catch{} }
+function stopRingTone(){if(ringTimer){clearInterval(ringTimer);ringTimer=null}if(ringVibrationTimer){clearInterval(ringVibrationTimer);ringVibrationTimer=null}try{navigator.vibrate?.(0)}catch{}if(incomingCallTimeout){clearTimeout(incomingCallTimeout);incomingCallTimeout=null}if(ringAudioContext?.state!=="closed")try{ringAudioContext?.suspend()}catch{} }
 document.addEventListener("pointerdown",()=>{if(ringTimer)try{ringAudioContext?.resume()}catch{}},{passive:true});
 function showCallSurface(call,title,mode){
   activeCall=call;$("#call-title").textContent=title;$("#incoming-call-actions").hidden=true;$("#call-dialog").showModal();
@@ -990,10 +993,14 @@ function setupVideoClient(body){
   }catch(error){console.warn("Stream Video unavailable",error)}
 }
 function showIncomingCall(call){
-  incomingCall=call;const isVideo=call.state.custom?.mode!=="audio";$("#call-title").textContent=(isVideo?"Incoming video":"Incoming audio")+" call";$("#incoming-call-actions").hidden=false;$("#call-participants").innerHTML='<div class="incoming-call-card"><strong>Incoming call</strong><span>Answer when you are ready</span></div>';$("#call-dialog").showModal();startRingTone();
+  incomingCall=call;const isVideo=call.state.custom?.mode!=="audio";$("#call-title").textContent=(isVideo?"Incoming video":"Incoming audio")+" call";$("#incoming-call-actions").hidden=false;$("#call-minimized").hidden=true;$("#call-participants").innerHTML='<div class="incoming-call-card"><strong>Incoming call</strong><span>Answer when you are ready</span></div>';$("#call-dialog").showModal();startRingTone();incomingCallTimeout=setTimeout(()=>ignoreIncomingCall(),30000);
 }
+function minimizeIncomingCall(){if(!incomingCall)return;$("#call-dialog").close();$("#call-minimized").hidden=false}
+function restoreIncomingCall(){if(!incomingCall)return;$("#call-minimized").hidden=true;$("#call-dialog").showModal()}
+async function ignoreIncomingCall(){if(incomingCall){try{await incomingCall.leave({reject:true,reason:"timeout"})}catch{}incomingCall=null}stopRingTone();$("#call-minimized").hidden=true;$("#call-dialog").close()}
 $("#accept-call").addEventListener("click",async()=>{if(!incomingCall)return;try{stopRingTone();const call=incomingCall,mode=call.state.custom?.mode||"video";await call.join();await call.microphone.enable();if(mode==="video")await call.camera.enable();incomingCall=null;showCallSurface(call,"Call · "+(active?.name||"Medha"),mode)}catch(error){toast(error.message)}});
 $("#decline-call").addEventListener("click",async()=>{if(incomingCall){try{await incomingCall.leave({reject:true,reason:"decline"})}catch{}incomingCall=null}stopRingTone();$("#call-dialog").close()});
+$("#ignore-call").addEventListener("click",minimizeIncomingCall);$("#minimize-call").addEventListener("click",minimizeIncomingCall);$("#restore-call").addEventListener("click",restoreIncomingCall);$("#ignore-minimized-call").addEventListener("click",ignoreIncomingCall);
 async function startStreamCall(mode){
   if(!active||!streamClient){toast("Open a Stream conversation first");return}
   try{
@@ -1020,7 +1027,7 @@ $("#message-area").addEventListener("click",async e=>{
 $("#toggle-call-mic").addEventListener("click",async()=>{if(activeCall){await activeCall.microphone.toggle();const off=activeCall.microphone.state.status!=="enabled";$("#toggle-call-mic").classList.toggle("off",off);$("#toggle-call-mic").title=off?"Turn microphone on":"Mute microphone"}});
 $("#toggle-call-camera").addEventListener("click",async()=>{if(activeCall){await activeCall.camera.toggle();const off=activeCall.camera.state.status!=="enabled";$("#toggle-call-camera").classList.toggle("off",off);$("#toggle-call-camera").title=off?"Turn camera on":"Turn camera off"}});
 async function leaveStreamCall(){stopRingTone();if(activeCall){try{await activeCall.leave()}catch{}activeCall=null}incomingCall=null;$("#call-dialog").close();$("#call-participants").innerHTML=""}
-$("#leave-call").addEventListener("click",leaveStreamCall);$("#close-call").addEventListener("click",leaveStreamCall);
+$("#leave-call").addEventListener("click",leaveStreamCall);
 
 /* ---------- rich Stream message actions ---------- */
 let replyTarget=null,actionMessageId=null;
