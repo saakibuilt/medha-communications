@@ -208,6 +208,7 @@ function renderList(){
     if(chatFilter==="pinned")return rank.has(String(c.id));
     return true;
   });
+  const people=q?directory.filter(person=>String(person.id)!==String(viewerId())&&`${person.full_name} ${person.email||""} ${person.department||""}`.toLowerCase().includes(q)&&!shown.some(chat=>String(chat.participantId)===String(person.id))):[];
   $("#chat-list").innerHTML=shown.length?shown.map(c=>{
     const state=presenceFor(c.participantId);
     const pinned=rank.has(String(c.id));
@@ -226,8 +227,12 @@ function renderList(){
     </div>`}).join("")
     :`<p class="empty">${chatFilter==="unread"?"No unread conversations."
        :chatFilter==="pinned"?"No pinned conversations. Long-press or right-click a chat to pin it."
-       :q?"No conversations match that search."
+       :q&&!people.length?"No conversations or people match that search."
        :"No conversations yet. Select + to start a chat."}</p>`;
+  if(people.length){
+    const heading=document.createElement("p");heading.className="search-result-heading";heading.textContent="People";$("#chat-list").prepend(heading);
+    $("#chat-list").insertAdjacentHTML("beforeend",people.map(person=>`<div class="chat-item search-person" data-person-id="${esc(person.id)}"><div class="avatar-stack"><span class="person-avatar blue">${esc(initialsFor(person.full_name))}</span><i class="presence-dot ${presenceFor(person.id)}"></i></div><div class="chat-copy"><div class="chat-line"><strong>${esc(person.full_name)}</strong><time>Start chat</time></div><div class="chat-line-2"><p>${esc(person.department||person.role||"Medha employee")}</p></div></div></div>`).join(""));
+  }
 }
 
 function messageHtml(m){
@@ -797,8 +802,10 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeComposerTools()
 $("#chat-list").addEventListener("click",e=>{
   const row=e.target.closest("[data-id]");
   if(row){closeChatActions();switchChat(row.dataset.id)}
+  const personRow=e.target.closest("[data-person-id]");
+  if(personRow){const person=directory.find(item=>String(item.id)===String(personRow.dataset.personId));if(person)openDirectChat(person,"").catch(error=>toast(error.message))}
 });
-$("#chat-search").addEventListener("input",renderList);
+$("#chat-search").addEventListener("input",async()=>{await ensureDirectory();renderList()});
 
 function closeChatActions(){$("#chat-actions").hidden=true}
 function openChatActions(row,event){
