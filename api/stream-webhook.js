@@ -4,14 +4,17 @@ const PUSH_ENDPOINT="https://medha-activities.vercel.app/api/space-push";
 const HUB_URL="https://medha-hub.web.app/";
 
 function readRawBody(request){
-  if(typeof request.body==="string")return Promise.resolve(request.body);
-  if(request.body&&typeof request.body==="object")return Promise.resolve(JSON.stringify(request.body));
-  return new Promise((resolve,reject)=>{
+  /* Stream signs the exact JSON bytes. On Vercel, reading request.body first
+     invokes its JSON parser and can throw before we can verify the signature.
+     Consume the raw IncomingMessage stream instead. */
+  if(request&&typeof request.on==="function")return new Promise((resolve,reject)=>{
     let raw="";
     request.on("data",chunk=>{raw+=chunk});
     request.on("end",()=>resolve(raw));
     request.on("error",reject);
   });
+  if(typeof request.body==="string")return Promise.resolve(request.body);
+  return Promise.resolve(JSON.stringify(request.body||{}));
 }
 
 function validSignature(raw,provided,secret){
