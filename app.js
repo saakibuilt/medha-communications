@@ -1042,7 +1042,7 @@ async function startStreamCall(mode){
     if(!videoClient)videoClient=new StreamVideoClient({apiKey:streamClient.key,user:streamClient.user,token:streamSessionToken});
     const members=[...(active.participantIds||[viewerId(),active.participantId]).filter(Boolean).map(id=>({user_id:String(id)}))];
     const callId="medha-"+crypto.randomUUID(),call=videoClient.call("default",callId);
-    await call.getOrCreate({ring:true,notify:true,video:mode==="video",data:{members,custom:{channelCid:active.cid,mode}}});
+    await call.getOrCreate({ring:true,video:mode==="video",data:{members,custom:{channelCid:active.cid,mode}}});
     showCallSurface(call,(mode==="video"?"Video":"Audio")+" call · "+active.name,mode);
     await streamChannelFor(active).sendMessage({text:(mode==="video"?"🎥 Video":"☎ Audio")+" call started",call_id:callId,call_type:"default"});
   }catch(error){toast(error.message)}
