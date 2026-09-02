@@ -35,7 +35,17 @@ let activeCallingSubscription=null;
 let activeCallMediaEnabled=false;
 let activeCallMediaPromise=null;
 let activeCallHadRemoteParticipant=false;
+let pushSetupPromise=null;
 const streamChannels=new Map();
+
+const WEB_PUSH_PUBLIC_KEY="BHZx1IN2FDoblv8PEfq6fTCORea622j9nL9wSIvX-BI4by1ZYqnXR1TTMNAWcP_xuiuJ0rb-d2u6YNNiHo-c1ak";
+const PUSH_SUBSCRIPTION_URL="https://medha-activities.vercel.app/api/push-subscription";
+function vapidBytes(value){const padding="=".repeat((4-value.length%4)%4),base64=(value+padding).replace(/-/g,"+").replace(/_/g,"/");return Uint8Array.from(atob(base64),char=>char.charCodeAt(0))}
+async function setupWebPush(user,requestPermission=false){
+  if(pushSetupPromise||!user?.getIdToken||!window.isSecureContext||!("serviceWorker" in navigator)||!("PushManager" in window)||!("Notification" in window))return pushSetupPromise;
+  pushSetupPromise=(async()=>{let permission=Notification.permission;if(permission==="default"&&requestPermission)permission=await Notification.requestPermission();if(permission!=="granted")return;const registration=await navigator.serviceWorker.register("/sw.js");let subscription=await registration.pushManager.getSubscription();subscription||=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:vapidBytes(WEB_PUSH_PUBLIC_KEY)});const token=await user.getIdToken();const response=await fetch(PUSH_SUBSCRIPTION_URL,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({subscription:subscription.toJSON(),platform:navigator.userAgent})});if(!response.ok)throw Error("Push subscription registration failed")})().catch(error=>console.warn("Medha push is not enabled",error)).finally(()=>{pushSetupPromise=null});
+  return pushSetupPromise;
+}
 
 async function initializeStream(user){
   const localDev=!user&&location.hostname==="localhost";
@@ -1547,8 +1557,12 @@ async function initializeAuthorizedUser(user){
   if(syncTimer)clearInterval(syncTimer);
   syncTimer=setInterval(()=>{syncIncomingMessages();refreshContactPresence()},5000);
   setInterval(async()=>{try{firebaseIdToken=await user.getIdToken(true)}catch{}},30*60*1000);
+  /* Register an existing permission silently. On iOS/iPadOS the first
+     permission request must happen from a user gesture, so subscribe from
+     the first pointer interaction when permission is still undecided. */
+  if("Notification" in window&&Notification.permission==="granted")setupWebPush(user,false);
   if("Notification" in window&&Notification.permission==="default"){
-    document.addEventListener("pointerdown",()=>Notification.requestPermission().catch(()=>{}),{once:true});
+    document.addEventListener("pointerdown",()=>setupWebPush(user,true),{once:true});
   }
 }
 
