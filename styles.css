@@ -609,3 +609,14 @@ dialog:has(.call-shell).video-call{width:min(1180px,calc(100vw - 24px));height:m
 
 @media(pointer:coarse){.poll-option{min-height:44px}}
 @media(prefers-reduced-motion:reduce){.poll-bar{transition:none}}
+
+/* A group avatar carries a people glyph instead of initials, so a group
+   chat is distinguishable from a direct one at a glance. */
+.person-avatar.is-group{background:#ede9fe;color:#6d28d9}
+.person-avatar.is-group .group-glyph{
+  width:58%;height:58%;
+  fill:none;stroke:currentColor;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round;
+}
+.person-avatar.is-group.small .group-glyph{width:64%;height:64%;stroke-width:1.9}
+.person-avatar.is-group.large .group-glyph{width:52%;height:52%;stroke-width:1.5}

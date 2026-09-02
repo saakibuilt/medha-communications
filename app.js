@@ -155,7 +155,15 @@ async function db(path,options={}){
   if(!r.ok){let detail="";try{detail=(await r.text()).slice(0,300)}catch{}throw Error(`Supabase ${r.status}${detail?`: ${detail}`:""}`)}
   if(r.status===204)return null;const t=await r.text();return t?JSON.parse(t):null}
 
-function avatar(c,small=false){return `<div class="person-avatar ${c.color||"blue"}${small?" small":""}">${esc(c.initials||"")}</div>`}
+/* A group shows a people glyph rather than initials, which read like a
+   person's name and made group chats indistinguishable from direct ones. */
+function avatar(c,small=false){
+  const group=c?.kind==="group";
+  const inner=group
+    ?`<svg viewBox="0 0 24 24" aria-hidden="true" class="group-glyph"><circle cx="9" cy="9" r="3.2"/><path d="M3.4 18.2c0-2.7 2.5-4.4 5.6-4.4s5.6 1.7 5.6 4.4"/><circle cx="16.8" cy="10.2" r="2.4"/><path d="M16.8 14.6c2.4 0 4.2 1.4 4.2 3.6"/></svg>`
+    :esc(c?.initials||"");
+  return `<div class="person-avatar ${c?.color||"blue"}${small?" small":""}${group?" is-group":""}"${group?` title="Group chat"`:""}>${inner}</div>`;
+}
 function initialsFor(name){return String(name||"?").trim().split(/\s+/).map(x=>x[0]||"").join("").slice(0,2).toUpperCase()||"?"}
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove("show"),3200)}
 
@@ -341,7 +349,13 @@ function messageHtml(m){
   const links=(m.attachments||[]).length?m.attachments:((m.text||"").match(/https?:\/\/[^\s]+/g)||[]).filter(u=>/\.gif(?:$|\?)/i.test(u)||/giphy\.com|tenor\.com/i.test(u)).map(url=>({kind:"gif",url,name:"GIF"}));
   const reply=m.parentId?active?.messages?.find(item=>String(item.id)===String(m.parentId)):null;
   if(!m._decorated){if(reply)m.text="↩ "+reply.senderName+": "+(reply.text||"Attachment")+"\n"+m.text;if(m.pinned&&!String(m.text||"").startsWith("📌"))m.text="📌 "+m.text;m._decorated=true}
-  const who=mine?{initials:initialsFor(currentAppUser?.full_name||"You"),color:"blue"}:{initials:active?.initials,color:active?.color};
+  /* In a group each message shows its own sender, not the group glyph -
+     otherwise every bubble would carry the same icon. */
+  const who=mine
+    ?{initials:initialsFor(currentAppUser?.full_name||"You"),color:"blue"}
+    :active?.kind==="group"
+      ?{initials:initialsFor(m.senderName||"?"),color:"blue"}
+      :{initials:active?.initials,color:active?.color};
   const reactions=Object.entries(m.reactions||{}).filter(([,u])=>Array.isArray(u)&&u.length);
   const pollCard=m.poll?pollHtml(m.poll,m.id):"";
   return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${m.text&&!m.poll?`<div class="bubble">${esc(m.text)}</div>`:""}${links.map(a=>a.kind==="gif"||a.kind==="image"?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy"></a>`:`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener" download>📎 ${esc(a.name||"Attached file")}</a>`).join("")}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span title="${users.length} reaction${users.length===1?"":"s"}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}</div></div>`;
