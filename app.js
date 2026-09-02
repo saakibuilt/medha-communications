@@ -348,7 +348,14 @@ function messageHtml(m){
   const mine=m.who==="me";
   const links=(m.attachments||[]).length?m.attachments:((m.text||"").match(/https?:\/\/[^\s]+/g)||[]).filter(u=>/\.gif(?:$|\?)/i.test(u)||/giphy\.com|tenor\.com/i.test(u)).map(url=>({kind:"gif",url,name:"GIF"}));
   const reply=m.parentId?active?.messages?.find(item=>String(item.id)===String(m.parentId)):null;
-  if(!m._decorated){if(reply)m.text="↩ "+reply.senderName+": "+(reply.text||"Attachment")+"\n"+m.text;if(m.pinned&&!String(m.text||"").startsWith("📌"))m.text="📌 "+m.text;m._decorated=true}
+  /* The quoted message is rendered as its own block above the reply text
+     rather than being prepended into m.text - editing the stored text meant
+     the quote was saved into the message body and could be double-applied. */
+  if(!m._decorated){if(m.pinned&&!String(m.text||"").startsWith("📌"))m.text="📌 "+m.text;m._decorated=true}
+  const quoted=reply?`<button type="button" class="reply-quote" data-jump-to="${esc(reply.id||"")}">
+      <svg class="reply-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h7a9 9 0 0 1 9 9v2"/></svg>
+      <span class="reply-quote-body"><span class="reply-quote-name">${esc(reply.senderName||"Unknown user")}</span><span class="reply-quote-text">${esc((reply.text||"Attachment").replace(/\s+/g," ").slice(0,120))}</span></span>
+    </button>`:"";
   /* In a group each message shows its own sender, not the group glyph -
      otherwise every bubble would carry the same icon. */
   const who=mine
@@ -358,7 +365,7 @@ function messageHtml(m){
       :{initials:active?.initials,color:active?.color};
   const reactions=Object.entries(m.reactions||{}).filter(([,u])=>Array.isArray(u)&&u.length);
   const pollCard=m.poll?pollHtml(m.poll,m.id):"";
-  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${m.text&&!m.poll?`<div class="bubble">${esc(m.text)}</div>`:""}${links.map(a=>a.kind==="gif"||a.kind==="image"?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy"></a>`:`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener" download>📎 ${esc(a.name||"Attached file")}</a>`).join("")}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span title="${users.length} reaction${users.length===1?"":"s"}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}</div></div>`;
+  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(m.text||"")}</span></div>`:""}${m.text&&!m.poll&&!quoted?`<div class="bubble">${esc(m.text)}</div>`:""}${links.map(a=>a.kind==="gif"||a.kind==="image"?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy"></a>`:`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener" download>📎 ${esc(a.name||"Attached file")}</a>`).join("")}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span title="${users.length} reaction${users.length===1?"":"s"}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}</div></div>`;
 }
 
 function dayLabel(date){
@@ -884,7 +891,7 @@ $("#composer").addEventListener("submit",async e=>{
   const sendButton=$(".send-button");sendButton.disabled=true;
   try{
     const saved=await persistMessage(active,text,attachments,replyTarget?{parent_id:replyTarget.id}:{});
-    messageInput.value="";messageInput.placeholder="Type a new message";replyTarget=null;pendingAttachments=[];renderPending();autosizeComposer();
+    messageInput.value="";setReplyTarget(null);pendingAttachments=[];renderPending();autosizeComposer();
     if(saved&&!active.messages.some(m=>m.id===saved.id)){active.messages.push(saved);active.messagesLoaded=true}
     renderList();renderMessages();scrollMessagesToEnd();
   }catch(error){toast(error.message)}
@@ -1182,6 +1189,21 @@ $("#message-area").addEventListener("click",async e=>{
   if(!message?.callId||!videoClient)return;
   try{const mode=message.text.includes("🎥")?"video":"audio";activeCall=videoClient.call("default",message.callId);await activeCall.join();showCallSurface(activeCall,"Join call · "+active.name,mode);toast("Connected to call")}catch(error){toast(error.message)}
 });
+/* Clicking a quoted message scrolls to the original and flashes it, so a
+   reply can be traced back without hunting through the thread. */
+$("#message-area").addEventListener("click",e=>{
+  const quote=e.target.closest(".reply-quote");
+  if(!quote)return;
+  e.preventDefault();e.stopPropagation();
+  const target=$(`.message[data-message-id="${CSS.escape(String(quote.dataset.jumpTo||""))}"]`);
+  if(!target){toast("That message is further back in the conversation");return}
+  target.scrollIntoView({behavior:"smooth",block:"center"});
+  target.classList.remove("message-flash");
+  void target.offsetWidth;                 /* restart the animation */
+  target.classList.add("message-flash");
+  setTimeout(()=>target.classList.remove("message-flash"),1600);
+});
+
 /* Voting happens on the bars themselves. Clicking your current choice
    removes it, so a vote can be changed or withdrawn. */
 $("#message-area").addEventListener("click",async e=>{
@@ -1240,6 +1262,36 @@ $("#ignore-minimized-call")?.addEventListener("click",ignoreIncomingCall);
 
 /* ---------- rich Stream message actions ---------- */
 let replyTarget=null,actionMessageId=null;
+/* A bar above the composer showing who and what you are replying to, so the
+   context is visible while typing instead of only hinted at in a
+   placeholder. */
+const replyBar=document.createElement("div");
+replyBar.className="reply-bar";
+replyBar.hidden=true;
+replyBar.innerHTML=`<svg class="reply-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h7a9 9 0 0 1 9 9v2"/></svg>
+  <span class="reply-bar-body"><span class="reply-bar-name"></span><span class="reply-bar-text"></span></span>
+  <button type="button" class="reply-cancel" aria-label="Cancel reply" title="Cancel reply">×</button>`;
+$("#composer")?.prepend(replyBar);
+replyBar.querySelector(".reply-cancel").addEventListener("click",()=>setReplyTarget(null));
+
+function setReplyTarget(message){
+  replyTarget=message||null;
+  if(!replyTarget){
+    replyBar.hidden=true;
+    messageInput.placeholder="Type a new message";
+    return;
+  }
+  replyBar.querySelector(".reply-bar-name").textContent=replyTarget.senderName||"Unknown user";
+  replyBar.querySelector(".reply-bar-text").textContent=
+    String(replyTarget.text||"Attachment").replace(/\s+/g," ").slice(0,140);
+  replyBar.hidden=false;
+  messageInput.placeholder="Reply to "+(replyTarget.senderName||"message");
+  messageInput.focus();
+}
+/* Escape cancels a reply, matching the rest of the app's dialogs. */
+messageInput.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&replyTarget){e.preventDefault();setReplyTarget(null)}
+});
 function canEditMessage(message){
   if(!message||!isMine(message.senderId)||!active)return false;
   const own=active.messages.filter(item=>isMine(item.senderId));
@@ -1259,7 +1311,7 @@ $("#message-actions").addEventListener("click",async e=>{
   const button=e.target.closest("[data-message-action]");if(!button||!active)return;$("#message-actions").hidden=true;
   const message=active.messages.find(item=>String(item.id)===String(actionMessageId)),channel=streamChannelFor(active);if(!message||!channel)return;
   try{
-    if(button.dataset.messageAction==="reply"){replyTarget=message;messageInput.placeholder="Reply to "+message.senderName;messageInput.focus()}
+    if(button.dataset.messageAction==="reply"){setReplyTarget(message)}
     else if(button.dataset.messageAction==="edit"){
       if(!canEditMessage(message)){toast("Only your latest unread message can be edited");return}
       const text=prompt("Edit message",message.text||"");if(text===null||!text.trim())return;
