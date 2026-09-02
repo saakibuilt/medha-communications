@@ -45,18 +45,21 @@ function readChatNameCache(){try{return JSON.parse(sessionStorage.getItem(chatNa
 function writeChatNameCache(cache){try{sessionStorage.setItem(chatNameCacheKey(),JSON.stringify(cache))}catch{}}
 
 /* ---------- local cache ----------
-   Keeps the sidebar and the newest messages of the 5 most recent chats in
-   localStorage, so reopening Space (or a chat) paints instantly instead of
-   showing an empty pane while the network round-trip finishes. The server
-   remains the source of truth and overwrites this as soon as it answers. */
+   Keep only non-message sidebar metadata locally. Message bodies and
+   previews belong to Supabase and are fetched when a chat is opened. */
 const CACHE_KEY=()=>`medha-space-cache-${viewerId()||"guest"}`;
-const CACHE_CHATS=5, CACHE_MESSAGES=10;
 
 function readCache(){
   try{
     const raw=localStorage.getItem(CACHE_KEY());
     if(!raw)return null;
     const parsed=JSON.parse(raw);
+    /* Remove caches written by older builds so message content is not left
+       in this browser after upgrading. */
+    if(parsed?.messages||parsed?.conversations?.some(c=>Object.hasOwn(c,"preview"))){
+      localStorage.removeItem(CACHE_KEY());
+      return null;
+    }
     /* Ignore anything older than a day; stale previews are worse than none. */
     if(!parsed?.savedAt||Date.now()-parsed.savedAt>86400000)return null;
     return parsed;
@@ -72,13 +75,9 @@ function writeCache(){
       activeId:active?.id||null,
       conversations:ordered.map(c=>({
         cid:c.cid,id:c.id,name:c.name,participantId:c.participantId,kind:c.kind,
-        initials:c.initials,color:c.color,team:c.team,preview:c.preview,
+        initials:c.initials,color:c.color,team:c.team,
         updatedAt:c.updatedAt,unread:c.unread||0
-      })),
-      /* Only the newest messages, only for the most recent chats. */
-      messages:Object.fromEntries(ordered.slice(0,CACHE_CHATS)
-        .filter(c=>c.messagesLoaded&&c.messages?.length)
-        .map(c=>[String(c.cid),c.messages.slice(-CACHE_MESSAGES)]))
+      }))
     };
     localStorage.setItem(CACHE_KEY(),JSON.stringify(payload));
   }catch{/* quota or private mode - the app works without the cache */}
@@ -89,10 +88,9 @@ function hydrateFromCache(){
   const cached=readCache();
   if(!cached?.conversations?.length)return false;
   conversations=cached.conversations.map(c=>{
-    const msgs=cached.messages?.[String(c.cid)]||[];
-    return {...c,messages:msgs,
-      messagesLoaded:msgs.length>0,
-      messageOffset:msgs.length,
+    return {...c,preview:"",messages:[],
+      messagesLoaded:false,
+      messageOffset:0,
       hasMore:true,
       fromCache:true};
   });
