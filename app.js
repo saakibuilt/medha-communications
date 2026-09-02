@@ -35,6 +35,11 @@ let activeCallingSubscription=null;
 let activeCallMediaEnabled=false;
 let activeCallMediaPromise=null;
 let activeCallHadRemoteParticipant=false;
+let callActivityMessageId=null;
+let callActivityChannel=null;
+let callActivityMode="video";
+let callActivityStartedAt=null;
+let callActivityFinalized=false;
 let pushSetupPromise=null;
 const streamChannels=new Map();
 
@@ -1016,13 +1021,31 @@ function startRingTone(){
 }
 function stopRingTone(){if(ringTimer){clearInterval(ringTimer);ringTimer=null}if(ringVibrationTimer){clearInterval(ringVibrationTimer);ringVibrationTimer=null}try{navigator.vibrate?.(0)}catch{}if(incomingCallTimeout){clearTimeout(incomingCallTimeout);incomingCallTimeout=null}if(ringAudioContext?.state!=="closed")try{ringAudioContext?.suspend()}catch{} }
 document.addEventListener("pointerdown",()=>{if(ringTimer)try{ringAudioContext?.resume()}catch{}},{passive:true});
+function callDurationText(milliseconds){
+  const total=Math.max(0,Math.floor(milliseconds/1000));
+  return `${Math.floor(total/60)}:${String(total%60).padStart(2,"0")}`;
+}
+async function finalizeCallActivity(answered){
+  if(!callActivityMessageId||!callActivityChannel||callActivityFinalized)return;
+  callActivityFinalized=true;
+  const label=callActivityMode==="video"?"🎥 Video call":"☎ Audio call";
+  const text=answered&&callActivityStartedAt
+    ?`${label} (${callDurationText(Date.now()-callActivityStartedAt)})`
+    :`${label} not answered`;
+  try{
+    const updated=await streamClient.updateMessage({id:callActivityMessageId,text});
+    const local=active?.messages?.find(message=>String(message.id)===String(callActivityMessageId));
+    if(local){local.text=updated.text;local.time=new Date(updated.created_at||Date.now()).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
+    if(active?.cid===callActivityChannel.cid)renderMessages();
+  }catch(error){console.warn("Could not update call activity",error)}
+}
 function showCallSurface(call,title,mode){
   activeCall=call;activeCallMode=mode;activeCallHadRemoteParticipant=false;activeCallMediaEnabled=call.state.callingState===CallingState.JOINED;const dialog=$("#call-dialog");dialog.classList.toggle("audio-call",mode==="audio");dialog.classList.toggle("video-call",mode!=="audio");dialog.classList.remove("incoming-call");$("#call-title").textContent=title;$("#incoming-call-actions").hidden=true;$("#call-dialog").showModal();
   activeParticipantSubscription?.unsubscribe?.();activeParticipantSubscription=null;activeParticipantSessionKey="";activeMediaUnbinders.forEach(unbind=>{try{unbind()}catch{}});activeMediaUnbinders=[];
   const holder=$("#call-participants");holder.innerHTML="";call.setViewport(holder);
   activeParticipantSubscription=call.state.participants$.subscribe(participants=>{const sessionKey=participants.map(participant=>`${participant.sessionId}:${participant.isLocalParticipant?"local":"remote"}`).sort().join("|");if(sessionKey===activeParticipantSessionKey)return;activeParticipantSessionKey=sessionKey;activeMediaUnbinders.forEach(unbind=>{try{unbind()}catch{}});activeMediaUnbinders=[];holder.innerHTML="";participants.forEach(participant=>{const tile=document.createElement("div");tile.className="call-participant";const participantId=String(participant.user?.id||participant.user_id||"");const profile=directory.find(person=>String(person.id)===participantId);const label=document.createElement("strong");label.textContent=participant.user?.name||profile?.full_name||participant.name||participantId||"Participant";tile.append(label);let video=null;if(mode!=="audio"){video=document.createElement("video");video.autoplay=true;video.playsInline=true;video.muted=participant.isLocalParticipant;video.dataset.sessionId=participant.sessionId;tile.append(video)}let audio=null;if(!participant.isLocalParticipant){audio=document.createElement("audio");audio.autoplay=true;audio.playsInline=true;audio.dataset.sessionId=participant.sessionId;tile.append(audio)}holder.append(tile);if(video){try{const untrack=call.trackElementVisibility(video,participant.sessionId,"videoTrack");if(typeof untrack==="function")activeMediaUnbinders.push(untrack);const unbind=call.bindVideoElement(video,participant.sessionId,"videoTrack");if(typeof unbind==="function")activeMediaUnbinders.push(unbind);video.play().catch(()=>{})}catch(error){console.warn("Could not bind participant video",error)}}if(audio){try{const unbind=call.bindAudioElement(audio,participant.sessionId);if(typeof unbind==="function")activeMediaUnbinders.push(unbind);audio.play().catch(()=>{})}catch(error){console.warn("Could not bind participant audio",error)}}})});
-  activeCallParticipantEndSubscription?.unsubscribe?.();activeCallParticipantEndSubscription=call.state.participants$.subscribe(participants=>{const remoteCount=participants.filter(participant=>!participant.isLocalParticipant).length;if(remoteCount)activeCallHadRemoteParticipant=true;if(call.state.callingState===CallingState.JOINED&&activeCallHadRemoteParticipant&&!remoteCount)dismissCallSurface()});
-  activeCallingSubscription?.unsubscribe?.();activeCallingSubscription=call.state.callingState$.subscribe(state=>{if(state===CallingState.LEFT){dismissCallSurface();return}if(state===CallingState.JOINED){enableCallMedia(call,mode).catch(error=>toast(error.message||"Could not start call media"))}else if(state!==CallingState.JOINED){$("#toggle-call-mic").classList.add("off");$("#toggle-call-camera").classList.add("off")}});
+  activeCallParticipantEndSubscription?.unsubscribe?.();activeCallParticipantEndSubscription=call.state.participants$.subscribe(participants=>{const remoteCount=participants.filter(participant=>!participant.isLocalParticipant).length;if(remoteCount)activeCallHadRemoteParticipant=true;if(call.state.callingState===CallingState.JOINED&&activeCallHadRemoteParticipant&&!remoteCount){finalizeCallActivity(!!callActivityStartedAt);dismissCallSurface()}});
+  activeCallingSubscription?.unsubscribe?.();activeCallingSubscription=call.state.callingState$.subscribe(state=>{if(state===CallingState.LEFT){finalizeCallActivity(!!callActivityStartedAt);dismissCallSurface();return}if(state===CallingState.JOINED){if(callActivityMessageId&&!callActivityStartedAt)callActivityStartedAt=Date.now();enableCallMedia(call,mode).catch(error=>toast(error.message||"Could not start call media"))}else if(state!==CallingState.JOINED){$("#toggle-call-mic").classList.add("off");$("#toggle-call-camera").classList.add("off")}});
   if(activeCallMediaEnabled)enableCallMedia(call,mode).catch(error=>toast(error.message||"Could not start call media"));
   $("#toggle-call-mic").classList.toggle("off",!activeCallMediaEnabled||call.microphone.state.status!=="enabled");$("#toggle-call-camera").classList.toggle("off",mode!=="video"||!activeCallMediaEnabled||call.camera.state.status!=="enabled");
 }
@@ -1058,12 +1081,16 @@ $("#decline-call").addEventListener("click",async()=>{if(incomingCall){try{await
 async function startStreamCall(mode){
   if(!active||!streamClient){toast("Open a Stream conversation first");return}
   try{
+    callActivityMessageId=null;callActivityChannel=null;callActivityMode=mode;callActivityStartedAt=null;callActivityFinalized=false;
     if(!videoClient)videoClient=new StreamVideoClient({apiKey:streamClient.key,user:streamClient.user,token:streamSessionToken});
     const members=[...(active.participantIds||[viewerId(),active.participantId]).filter(Boolean).map(id=>({user_id:String(id)}))];
     const callId="medha-"+crypto.randomUUID(),call=videoClient.call("default",callId);
     await call.getOrCreate({ring:true,video:mode==="video",settings:{ring:{incoming_call_timeout_ms:60000,auto_cancel_timeout_ms:60000,missed_call_timeout_ms:60000}},data:{members,custom:{channelCid:active.cid,mode}}});
     showCallSurface(call,(mode==="video"?"Video":"Audio")+" call · "+active.name,mode);
-    await streamChannelFor(active).sendMessage({text:(mode==="video"?"🎥 Video":"☎ Audio")+" call started",call_id:callId,call_type:"default"});
+    callActivityChannel=streamChannelFor(active);
+    const activity=await callActivityChannel.sendMessage({text:(mode==="video"?"🎥 Video":"☎ Audio")+" call started",call_id:callId,call_type:"default"});
+    callActivityMessageId=activity.message?.id||null;
+    if(call.state.callingState===CallingState.JOINED)callActivityStartedAt=Date.now();
   }catch(error){toast(error.message)}
 }
 $("#audio-call").addEventListener("click",()=>startStreamCall("audio"));
@@ -1077,7 +1104,7 @@ $("#message-area").addEventListener("click",async e=>{
 });
 $("#toggle-call-mic").addEventListener("click",async()=>{if(!activeCall)return;if(activeCall.state.callingState!==CallingState.JOINED){toast("Microphone starts when the call is connected");return}await activeCall.microphone.toggle();const off=activeCall.microphone.state.status!=="enabled";$("#toggle-call-mic").classList.toggle("off",off);$("#toggle-call-mic").title=off?"Turn microphone on":"Mute microphone"});
 $("#toggle-call-camera").addEventListener("click",async()=>{if(!activeCall)return;if(activeCall.state.callingState!==CallingState.JOINED){toast("Camera starts when the call is connected");return}await activeCall.camera.toggle();const off=activeCall.camera.state.status!=="enabled";$("#toggle-call-camera").classList.toggle("off",off);$("#toggle-call-camera").title=off?"Turn camera on":"Turn camera off"});
-async function leaveStreamCall(){const call=activeCall||incomingCall;if(call){try{await call.camera.disable()}catch{}try{await call.microphone.disable()}catch{}try{if(call.state.callingState===CallingState.RINGING)await call.leave({reject:true,reason:"cancel"});else if(call.state.callingState!==CallingState.LEFT)await call.endCall()}catch{try{await call.leave()}catch{}}}dismissCallSurface()}
+async function leaveStreamCall(){const call=activeCall||incomingCall;if(call){try{await call.camera.disable()}catch{}try{await call.microphone.disable()}catch{}try{if(call.state.callingState===CallingState.RINGING)await call.leave({reject:true,reason:"cancel"});else if(call.state.callingState!==CallingState.LEFT)await call.endCall()}catch{try{await call.leave()}catch{}}}await finalizeCallActivity(!!callActivityStartedAt);dismissCallSurface()}
 /* Optional chaining: #close-call is not present in every layout, and a
    missing one used to throw here and abort the rest of boot. */
 $("#leave-call")?.addEventListener("click",leaveStreamCall);$("#close-call")?.addEventListener("click",leaveStreamCall);
