@@ -1,5 +1,10 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import { Buffer } from "https://esm.sh/buffer@6.0.3";
+import { StreamChat } from "https://esm.sh/stream-chat@9.52.0";
+import { StreamVideoClient, CallingState } from "https://esm.sh/@stream-io/video-client@latest";
+/* stream-chat's browser upload helper uses Buffer for multipart encoding. */
+globalThis.Buffer=Buffer;
 const firebaseApp=initializeApp({apiKey:"AIzaSyDhyDoFRrCXXEkoQ3i6wpqmNd8Po6p_KIw",authDomain:"medhaclockin.firebaseapp.com",projectId:"medhaclockin",storageBucket:"medhaclockin.firebasestorage.app",messagingSenderId:"458648237732",appId:"1:458648237732:web:aadb89db358e0cca7b9831"});
 const auth=getAuth(firebaseApp); let currentUserId=null; let currentAppUser=null; let launchAuthorized=false;
 const $=s=>document.querySelector(s); const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
@@ -12,6 +17,59 @@ const headers={apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KE
 let conversations=[];
 let active=null;
 let firebaseIdToken=null;
+let streamClient=null;
+let videoClient=null;
+let activeCall=null;
+let incomingCall=null;
+let ringTimer=null;
+let ringAudioContext=null;
+let streamSessionToken=null;
+const streamChannels=new Map();
+
+async function initializeStream(user){
+  const localDev=!user&&location.hostname==="localhost";
+  const token=localDev?null:await user.getIdToken();
+  const response=await fetch("/api/stream-token",{method:"POST",headers:localDev?{"Content-Type":"application/json","X-Local-Stream-Dev":"true"}:{Authorization:`Bearer ${token}`},body:localDev?JSON.stringify({}):undefined});
+  const body=await response.json();
+  if(!response.ok)throw Error(body.error||"Could not connect to Stream");
+  /* Stream's default request timeout is 3s; cold starts and mobile networks
+     can exceed that even when the request is healthy. */
+  streamClient=StreamChat.getInstance(body.apiKey,{timeout:10000});
+  streamSessionToken=body.token;
+  await streamClient.connectUser(body.user,body.token);
+  setupVideoClient(body);
+  return body.user;
+}
+function streamMessageToApp(message){
+  const rawSenderId=String(message.user?.id||"");
+  /* Older local development messages used a placeholder ID. Treat those as
+     the current local user so legacy messages remain attributed correctly. */
+  const senderId=(location.hostname==="localhost"&&(rawSenderId==="medha-local-user"||message.user?.name==="Local Medha User"))?viewerId():rawSenderId;
+  const profile=directory.find(person=>String(person.id)===senderId);
+  return {id:String(message.id),senderId,who:isMine(senderId)?"me":"them",parentId:message.parent_id||null,pinned:!!message.pinned,callId:message.call_id||null,pollId:message.poll_id||null,
+    senderName:isMine(senderId)?(currentAppUser?.full_name||currentAppUser?.name||"You"):(profile?.full_name||message.user?.name||active?.name||"Unknown user"),text:message.text||"",
+    attachments:(message.attachments||[]).map(a=>({kind:a.type==="image"?"image":"file",name:a.title||a.asset_url?.split("/").pop()||"File",url:a.image_url||a.asset_url||a.file_url||a.og_scrape_url})).filter(a=>a.url),
+    reactions:(message.latest_reactions||[]).reduce((all,r)=>{(all[r.type]??=[]).push(r.user_id);return all},{}),createdAt:message.created_at,time:new Date(message.created_at||Date.now()).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
+}
+function streamChannelFor(chat){return streamChannels.get(String(chat.cid||chat.id))||null}
+async function ensureStreamUsers(){
+  if(!streamClient||!directory.length)return;
+  const users=[{id:viewerId(),name:currentAppUser?.full_name||"Local Medha User"},...directory.map(person=>({id:String(person.id),name:person.full_name,image:person.avatar_url}))];
+  const response=await fetch("/api/stream-users",{method:"POST",headers:{"Content-Type":"application/json",...(firebaseIdToken?{Authorization:`Bearer ${firebaseIdToken}`}:{"X-Local-Stream-Dev":"true"})},body:JSON.stringify({users})});
+  const body=await response.json();if(!response.ok)throw Error(body.error||"Could not prepare Stream users");
+}
+async function watchStreamChannel(chat){
+  const channel=streamChannelFor(chat)||streamClient.channel("messaging",chat.id,{members:[viewerId(),String(chat.participantId)]});
+  streamChannels.set(String(chat.cid||chat.id),channel);chat.cid=channel.cid;
+  await channel.watch();
+  channel.on("message.new",event=>{
+    if(event.message?.user?.id===viewerId())return;
+    const incoming=streamMessageToApp(event.message);
+    if(active?.cid===chat.cid){chat.messages=[...(chat.messages||[]).filter(m=>m.id!==incoming.id),incoming];chat.messagesLoaded=true;renderMessages();scrollMessagesToEnd();channel.markRead()}
+    else{chat.unread=(chat.unread||0)+1;renderList()}
+  });
+  return channel;
+}
 
 /* ---------- identity ----------
    Every user id in this app is the Firebase uid (text). users.id === uid.
@@ -45,9 +103,10 @@ function readChatNameCache(){try{return JSON.parse(sessionStorage.getItem(chatNa
 function writeChatNameCache(cache){try{sessionStorage.setItem(chatNameCacheKey(),JSON.stringify(cache))}catch{}}
 
 /* ---------- local cache ----------
-   Keep only non-message sidebar metadata locally. Message bodies and
-   previews belong to Supabase and are fetched when a chat is opened. */
+   Keep only non-message sidebar metadata locally. Stream remains the source
+   of truth for channels, messages, previews and attachments. */
 const CACHE_KEY=()=>`medha-space-cache-${viewerId()||"guest"}`;
+const TOP_CHATS_KEY=()=>`medha-top-chats-${viewerId()||"guest"}`;
 
 function readCache(){
   try{
@@ -66,6 +125,13 @@ function readCache(){
   }catch{return null}
 }
 
+function readTopChatsCache(){
+  try{
+    const parsed=JSON.parse(localStorage.getItem(TOP_CHATS_KEY())||"[]");
+    return Array.isArray(parsed)?parsed.slice(0,5):[];
+  }catch{return[]}
+}
+
 function writeCache(){
   if(!viewerId())return;
   try{
@@ -80,14 +146,19 @@ function writeCache(){
       }))
     };
     localStorage.setItem(CACHE_KEY(),JSON.stringify(payload));
+    localStorage.setItem(TOP_CHATS_KEY(),JSON.stringify(ordered.slice(0,5).map(c=>({
+      cid:c.cid,id:c.id,name:c.name,participantId:c.participantId,kind:c.kind,
+      initials:c.initials,color:c.color,team:c.team,updatedAt:c.updatedAt
+    }))));
   }catch{/* quota or private mode - the app works without the cache */}
 }
 
 /* Paint from cache before the first network response arrives. */
 function hydrateFromCache(){
   const cached=readCache();
-  if(!cached?.conversations?.length)return false;
-  conversations=cached.conversations.map(c=>{
+  const cachedConversations=cached?.conversations?.length?cached.conversations:readTopChatsCache();
+  if(!cachedConversations.length)return false;
+  conversations=cachedConversations.map(c=>{
     return {...c,preview:"",messages:[],
       messagesLoaded:false,
       messageOffset:0,
@@ -162,9 +233,11 @@ function renderList(){
 function messageHtml(m){
   const mine=m.who==="me";
   const links=(m.attachments||[]).length?m.attachments:((m.text||"").match(/https?:\/\/[^\s]+/g)||[]).filter(u=>/\.gif(?:$|\?)/i.test(u)||/giphy\.com|tenor\.com/i.test(u)).map(url=>({kind:"gif",url,name:"GIF"}));
+  const reply=m.parentId?active?.messages?.find(item=>String(item.id)===String(m.parentId)):null;
+  if(!m._decorated){if(reply)m.text="↩ "+reply.senderName+": "+(reply.text||"Attachment")+"\n"+m.text;if(m.pinned&&!String(m.text||"").startsWith("📌"))m.text="📌 "+m.text;m._decorated=true}
   const who=mine?{initials:initialsFor(currentAppUser?.full_name||"You"),color:"blue"}:{initials:active?.initials,color:active?.color};
   const reactions=Object.entries(m.reactions||{}).filter(([,u])=>Array.isArray(u)&&u.length);
-  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${mine?"You":esc(m.senderName||active?.name||"")}</strong><time>${esc(m.time)}</time></div>${m.text?`<div class="bubble">${esc(m.text)}</div>`:""}${links.map(a=>a.kind==="gif"?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="Attached GIF" loading="lazy"></a>`:`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener">📎 ${esc(a.name)}</a>`).join("")}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span title="${users.length} reaction${users.length===1?"":"s"}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}</div></div>`;
+  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${m.text?`<div class="bubble">${esc(m.text)}</div>`:""}${links.map(a=>a.kind==="gif"||a.kind==="image"?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy"></a>`:`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener" download>📎 ${esc(a.name||"Attached file")}</a>`).join("")}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span title="${users.length} reaction${users.length===1?"":"s"}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}</div></div>`;
 }
 
 function dayLabel(date){
@@ -277,6 +350,14 @@ function mapRow(m,nameFor){
     createdAt:m.created_at,time:new Date(m.created_at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
 }
 async function fetchMessagePage(cid,offset=0){
+  if(!streamClient)throw Error("Stream is not connected; chat history is unavailable");
+  if(streamClient){
+    const channel=streamChannels.get(String(cid));
+    if(!channel)throw Error("Stream channel is not open");
+    const state=await channel.query({messages:{limit:PAGE_SIZE,offset}});
+    const messages=(state.messages||[]).map(streamMessageToApp);
+    return {messages,hasMore:messages.length===PAGE_SIZE};
+  }
   const cols="id,sender_id,body,attachments,reactions,created_at";
   const query=extra=>`medha_communications_messages?cid=eq.${encodeURIComponent(cid)}&select=${extra}&order=created_at.desc,id.desc&offset=${offset}&limit=${PAGE_SIZE}`;
   let rows;
@@ -343,7 +424,17 @@ async function ensureConversationRow(chat){
   return chat.cid;
 }
 
-async function persistMessage(chat,text,attachments){
+async function persistMessage(chat,text,attachments,extra={}){
+  if(!streamClient)throw Error("Stream is not connected; messages were not sent");
+  if(streamClient){
+    const body=(text||"").trim()||(attachments?.length?"Attachment":"");
+    if(!body)throw Error("Enter a message before sending");
+    const channel=await watchStreamChannel(chat);
+    const mentionIds=(chat.kind==="group"?directory.filter(person=>person.full_name&&body.toLowerCase().includes(`@${person.full_name.toLowerCase()}`)).map(person=>String(person.id)):[]);
+    const saved=await channel.sendMessage({text:body,attachments:(attachments||[]).map(a=>({type:a.kind==="image"?"image":"file",title:a.name,asset_url:a.url})),...(mentionIds.length?{mentioned_users:mentionIds}:{}),...extra});
+    chat.preview=body.slice(0,120);chat.updatedAt=new Date().toISOString();
+    return streamMessageToApp(saved.message);
+  }
   const me=viewerId();
   if(!me)throw Error("Sign in to Medha Hub before sending messages");
   const body=(text||"").trim()||(attachments?.length?"Attachment":"");
@@ -404,6 +495,30 @@ async function ensureDirectory(){
 async function hydrateConversations(){
   const me=viewerId();
   if(!me){conversations=[];active=null;renderList();renderMessages();return}
+  if(!streamClient){conversations=[];active=null;renderList();renderMessages();return}
+  if(streamClient){
+    try{
+      await ensureDirectory();
+      await ensureStreamUsers();
+      const channels=await streamClient.queryChannels({type:"messaging",members:{$in:[me]}},{last_message_at:-1},{limit:100});
+      const nameOf=id=>directory.find(p=>String(p.id)===String(id))?.full_name||readChatNameCache()[String(id)]||"";
+      const loaded=channels.map(channel=>{
+        streamChannels.set(String(channel.cid),channel);
+        const members=Object.keys(channel.state?.members||channel.data?.members||{}).filter(id=>id!==me);
+        const other=members[0]||me;
+        const name=channel.data?.name||nameOf(other)||"Conversation";
+        const last=channel.state?.messages?.at(-1);
+        const participantIds=Object.keys(channel.state?.members||channel.data?.members||{});
+        const kind=participantIds.length>2?"group":"direct";
+        return {cid:channel.cid,id:channel.id,name,participantId:other,participantIds,kind,initials:initialsFor(name),color:kind==="group"?"purple":"blue",team:kind==="group"?"Group chat":"",
+          preview:last?.text||"",updatedAt:channel.data?.last_message_at||channel.data?.updated_at||new Date().toISOString(),time:"",unread:channel.countUnread?.()||0,
+          messages:[],messagesLoaded:false,messageOffset:0,hasMore:true,streamChannel:channel};
+      });
+      const previousCid=active?.cid;conversations=loaded;active=conversations.find(c=>c.cid===previousCid)||null;
+      writeCache();
+      renderList();renderMessages();return;
+    }catch(error){toast(`Stream unavailable: ${error.message}`);return}
+  }
   try{
     const cache=readChatNameCache();
     const rows=await db(`medha_communications_my_conversations?user_id=eq.${encodeURIComponent(me)}&select=cid,conversation_key,kind,title,participant_ids,last_message,updated_at,last_read_at&order=updated_at.desc`);
@@ -457,6 +572,7 @@ async function switchChat(id){
   if(document.body.classList.contains("details-open"))renderDetailsPanel();
   /* Cached messages paint instantly, then we always refresh from the
      server so nothing shown is stale. */
+  if(streamClient)await watchStreamChannel(chat);
   if(chat.cid&&(!chat.messagesLoaded||chat.fromCache)){
     await loadChatPage(chat,0);
     chat.fromCache=false;
@@ -469,23 +585,28 @@ async function switchChat(id){
 /* Records that this person has read the thread, for every device. */
 async function markConversationRead(chat){
   if(!viewerId()||!chat?.cid)return;
-  const now=new Date().toISOString();
-  chat.lastReadAt=now;
-  writeCache();
-  try{
-    await db(`medha_communications_user_conversations?user_id=eq.${encodeURIComponent(viewerId())}&cid=eq.${encodeURIComponent(chat.cid)}`,
-      {method:"PATCH",headers:{Prefer:"return=minimal"},body:JSON.stringify({last_read_at:now})});
-  }catch{}
+  const channel=streamChannelFor(chat);
+  if(channel){chat.unread=0;await channel.markRead();writeCache()}
 }
 
 async function openDirectChat(person,openingText){
   const me=viewerId();
   if(!me)throw Error("Sign in to Medha Hub before starting a chat");
+  if(!streamClient)throw Error("Stream is not connected; chat is unavailable");
   const otherId=String(person.id);
   const id=directConversationId(me,otherId);
-  let chat=conversations.find(c=>String(c.id)===id);
+  let chat=conversations.find(c=>String(c.id)===id||(
+    streamClient&&c.kind==="direct"&&String(c.participantId)===otherId));
   if(!chat){
     const name=person.full_name||"Conversation";
+    if(streamClient){
+      const channel=streamClient.channel("messaging",id,{members:[me,otherId]});
+      chat={id,cid:channel.cid,name,participantId:otherId,kind:"direct",initials:initialsFor(name),color:"blue",team:"",preview:"",updatedAt:new Date().toISOString(),time:"Now",unread:0,messages:[],messagesLoaded:false,messageOffset:0,hasMore:true,streamChannel:channel};
+      streamChannels.set(channel.cid,channel);conversations.unshift(chat);active=chat;
+      await watchStreamChannel(chat);
+      renderList();renderMessages();scrollMessagesToEnd();
+      return chat;
+    }
     /* The thread may already exist from the other side. Look it up by the
        deterministic key so existing history is shown, not a blank chat. */
     const existing=await db(`medha_communications_conversations?id=eq.${encodeURIComponent(id)}&select=cid,last_message,updated_at`);
@@ -498,6 +619,7 @@ async function openDirectChat(person,openingText){
     conversations.unshift(chat);
   }
   active=chat;
+  if(streamClient)await watchStreamChannel(chat);
   if(!chat.messagesLoaded&&chat.cid)await loadChatPage(chat,0);
   if(openingText&&openingText.trim()){
     const saved=await persistMessage(chat,openingText,[]);
@@ -591,6 +713,24 @@ autosizeComposer();
 
 async function uploadFile(file){
   if(!viewerId())throw Error("Sign in before attaching files");
+  if(!streamClient)throw Error("Stream is not connected; attachments were not uploaded");
+  if(streamClient){
+    if(!active)throw Error("Select a conversation first");
+    const channel=await watchStreamChannel(active);
+    /* Use the browser's native multipart implementation. Stream Chat's
+       bundled upload helper can mis-detect File objects as Node streams and
+       call .on(), which breaks PDF, Office, image and HEIC uploads in-browser. */
+    const form=new FormData();
+    form.append("file",file,file.name);
+    const token=streamClient.tokenManager?.token;
+    const response=await fetch(`https://chat.stream-io-api.com/channels/${encodeURIComponent(channel.type)}/${encodeURIComponent(channel.id)}/file?api_key=${encodeURIComponent(streamClient.key)}`,{
+      method:"POST",headers:{Authorization:token,"stream-auth-type":"jwt"},body:form
+    });
+    const uploaded=await response.json().catch(()=>({}));
+    if(!response.ok||!uploaded.file)throw Error(uploaded.message||`File upload failed (${response.status})`);
+    const image=/^image\/(jpeg|jpg|png|gif|webp|svg\+xml)$/i.test(file.type||"");
+    return {kind:image?"image":"file",name:file.name,url:uploaded.file};
+  }
   const safe=file.name.replace(/[^a-zA-Z0-9._-]+/g,"-");
   const path=`${viewerId()}/${crypto.randomUUID()}-${safe}`;
   const encoded=path.split("/").map(encodeURIComponent).join("/");
@@ -621,8 +761,8 @@ $("#composer").addEventListener("submit",async e=>{
   sending=true;
   const sendButton=$(".send-button");sendButton.disabled=true;
   try{
-    const saved=await persistMessage(active,text,attachments);
-    messageInput.value="";pendingAttachments=[];renderPending();autosizeComposer();
+    const saved=await persistMessage(active,text,attachments,replyTarget?{parent_id:replyTarget.id}:{});
+    messageInput.value="";messageInput.placeholder="Type a new message";replyTarget=null;pendingAttachments=[];renderPending();autosizeComposer();
     if(saved&&!active.messages.some(m=>m.id===saved.id)){active.messages.push(saved);active.messagesLoaded=true}
     renderList();renderMessages();scrollMessagesToEnd();
   }catch(error){toast(error.message)}
@@ -778,6 +918,34 @@ $("#employee-list").addEventListener("click",async e=>{
   catch(error){toast(error.message)}
 });
 
+let selectedGroupMembers=[];
+function renderGroupMembers(){
+  const list=$("#group-member-list");
+  list.innerHTML=directory.filter(p=>String(p.id)!==String(viewerId())).map(p=>'<button type="button" class="employee-option '+(selectedGroupMembers.includes(String(p.id))?'selected':'')+'" data-group-person-id="'+esc(p.id)+'"><span class="person-avatar blue">'+esc(initialsFor(p.full_name))+'</span><span class="employee-copy"><strong>'+esc(p.full_name)+'</strong></span><span class="invite-check">'+(selectedGroupMembers.includes(String(p.id))?'✓':'')+'</span></button>').join("");
+}
+$("#new-group").addEventListener("click",async()=>{
+  selectedGroupMembers=[];$("#group-chat-name").value="";$("#group-chat-dialog").showModal();
+  await ensureDirectory();renderGroupMembers();
+});
+$("#group-member-list").addEventListener("click",e=>{
+  const button=e.target.closest("[data-group-person-id]");if(!button)return;
+  const id=String(button.dataset.groupPersonId);selectedGroupMembers=selectedGroupMembers.includes(id)?selectedGroupMembers.filter(x=>x!==id):[...selectedGroupMembers,id];renderGroupMembers();
+});
+$("#group-chat-form").addEventListener("submit",async e=>{
+  if(e.submitter?.value==="cancel")return;
+  e.preventDefault();
+  if(!streamClient){toast("Stream is not connected");return}
+  if(selectedGroupMembers.length<1){toast("Select at least one other member");return}
+  const name=$("#group-chat-name").value.trim(),members=[String(viewerId()),...selectedGroupMembers];
+  try{
+    await ensureStreamUsers();
+    const id="group-"+crypto.randomUUID(),channel=streamClient.channel("messaging",id,{name,members});
+    await channel.create();await channel.watch();streamChannels.set(channel.cid,channel);
+    const chat={cid:channel.cid,id,name,participantId:selectedGroupMembers[0],participantIds:members,kind:"group",initials:initialsFor(name),color:"purple",team:"Group chat",preview:"",updatedAt:new Date().toISOString(),unread:0,messages:[],messagesLoaded:true,messageOffset:0,hasMore:false,streamChannel:channel};
+    conversations.unshift(chat);active=chat;writeCache();$("#group-chat-dialog").close();renderList();renderMessages();toast("Group chat created");
+  }catch(error){toast(error.message)}
+});
+
 /* ---------- details panel wiring ---------- */
 $("#close-details").addEventListener("click",closeDetails);
 /* Clicking anywhere in the conversation header opens details. The mobile
@@ -795,6 +963,105 @@ $("#conversation-name").addEventListener("keydown",e=>{
 document.addEventListener("keydown",e=>{
   if(e.key==="Escape"&&document.body.classList.contains("details-open"))closeDetails();
 });
+
+/* ---------- Stream Video calling ---------- */
+function startRingTone(){
+  stopRingTone();
+  try{
+    const AudioContextClass=window.AudioContext||window.webkitAudioContext;if(!AudioContextClass)throw Error("Audio is unavailable in this browser");
+    ringAudioContext=ringAudioContext||new AudioContextClass();ringAudioContext.resume();
+    const play=()=>{if(!ringAudioContext)return;const now=ringAudioContext.currentTime,gain=ringAudioContext.createGain();gain.gain.setValueAtTime(.001,now);gain.gain.exponentialRampToValueAtTime(.22,now+.12);gain.gain.exponentialRampToValueAtTime(.001,now+1.5);gain.connect(ringAudioContext.destination);[523.25,659.25,783.99].forEach((frequency,index)=>{const oscillator=ringAudioContext.createOscillator();oscillator.type="sine";oscillator.frequency.value=frequency;oscillator.connect(gain);oscillator.start(now+index*.12);oscillator.stop(now+1.6)});};
+    play();ringTimer=setInterval(play,2200);
+  }catch{}
+}
+function stopRingTone(){if(ringTimer){clearInterval(ringTimer);ringTimer=null}if(ringAudioContext?.state!=="closed")try{ringAudioContext?.suspend()}catch{} }
+document.addEventListener("pointerdown",()=>{if(ringTimer)try{ringAudioContext?.resume()}catch{}},{passive:true});
+function showCallSurface(call,title,mode){
+  activeCall=call;$("#call-title").textContent=title;$("#incoming-call-actions").hidden=true;$("#call-dialog").showModal();
+  const holder=$("#call-participants");holder.innerHTML="";call.setViewport(holder);
+  call.state.participants$.subscribe(participants=>{holder.innerHTML="";participants.forEach(participant=>{const video=document.createElement("video");video.autoplay=true;video.playsInline=true;video.muted=participant.isLocalParticipant;video.dataset.sessionId=participant.sessionId;holder.append(video);try{call.bindVideoElement(video,participant.sessionId,"videoTrack")}catch{}})});
+  $("#toggle-call-mic").classList.toggle("off",call.microphone.state.status!=="enabled");$("#toggle-call-camera").classList.toggle("off",mode!=="video");
+}
+function setupVideoClient(body){
+  if(videoClient)return;
+  try{
+    videoClient=new StreamVideoClient({apiKey:body.apiKey,user:body.user,token:body.token});
+    videoClient.state.calls$.subscribe(calls=>{const call=calls.find(item=>!item.isCreatedByMe&&item.state.callingState===CallingState.RINGING);if(call&&incomingCall?.cid!==call.cid)showIncomingCall(call)});
+  }catch(error){console.warn("Stream Video unavailable",error)}
+}
+function showIncomingCall(call){
+  incomingCall=call;const isVideo=call.state.custom?.mode!=="audio";$("#call-title").textContent=(isVideo?"Incoming video":"Incoming audio")+" call";$("#incoming-call-actions").hidden=false;$("#call-participants").innerHTML='<div class="incoming-call-card"><strong>Incoming call</strong><span>Answer when you are ready</span></div>';$("#call-dialog").showModal();startRingTone();
+}
+$("#accept-call").addEventListener("click",async()=>{if(!incomingCall)return;try{stopRingTone();const call=incomingCall,mode=call.state.custom?.mode||"video";await call.join();await call.microphone.enable();if(mode==="video")await call.camera.enable();incomingCall=null;showCallSurface(call,"Call · "+(active?.name||"Medha"),mode)}catch(error){toast(error.message)}});
+$("#decline-call").addEventListener("click",async()=>{if(incomingCall){try{await incomingCall.leave({reject:true,reason:"decline"})}catch{}incomingCall=null}stopRingTone();$("#call-dialog").close()});
+async function startStreamCall(mode){
+  if(!active||!streamClient){toast("Open a Stream conversation first");return}
+  try{
+    if(!videoClient)videoClient=new StreamVideoClient({apiKey:streamClient.key,user:streamClient.user,token:streamSessionToken});
+    const members=[...(active.participantIds||[viewerId(),active.participantId]).filter(Boolean).map(id=>({user_id:String(id)}))];
+    const callId="medha-"+crypto.randomUUID(),call=videoClient.call("default",callId);
+    await call.getOrCreate({ring:true,video:mode==="video",data:{members,custom:{channelCid:active.cid,mode}}});
+    await call.join({create:true});await call.microphone.enable();if(mode==="video")await call.camera.enable();
+    activeCall=call;$("#call-title").textContent=(mode==="video"?"Video":"Audio")+" call · "+active.name;$("#toggle-call-mic").classList.remove("off");$("#toggle-call-camera").classList.toggle("off",mode!=="video");$("#call-dialog").showModal();
+    const holder=$("#call-participants");holder.innerHTML="";call.setViewport(holder);
+    call.state.participants$.subscribe(participants=>{holder.innerHTML="";participants.forEach(participant=>{const video=document.createElement("video");video.autoplay=true;video.playsInline=true;video.muted=participant.isLocalParticipant;video.dataset.sessionId=participant.sessionId;holder.append(video);try{call.bindVideoElement(video,participant.sessionId,"videoTrack")}catch{}})});
+    await streamChannelFor(active).sendMessage({text:(mode==="video"?"🎥 Video":"☎ Audio")+" call started",call_id:callId,call_type:"default"});
+  }catch(error){toast(error.message)}
+}
+$("#audio-call").addEventListener("click",()=>startStreamCall("audio"));
+$("#video-call").addEventListener("click",()=>startStreamCall("video"));
+$("#message-area").addEventListener("click",async e=>{
+  const row=e.target.closest(".message");if(!row||!active)return;
+  const message=active.messages.find(item=>String(item.id)===String(row.dataset.messageId));
+  if(message?.pollId){try{const poll=await streamClient.getPoll(message.pollId),options=poll.poll?.options||poll.options||[];const choice=prompt("Vote: "+options.map((item,index)=>(index+1)+". "+item.text).join(" | "));if(choice&&options[Number(choice)-1]){await streamClient.castPollVote(message.id,message.pollId,{option_id:options[Number(choice)-1].id},viewerId());toast("Vote recorded")}}catch(error){toast(error.message)}return}
+  if(!message?.callId||!videoClient)return;
+  try{activeCall=videoClient.call("default",message.callId);await activeCall.join();await activeCall.microphone.enable();if(message.text.includes("🎥"))await activeCall.camera.enable();$("#call-title").textContent="Join call · "+active.name;$("#call-dialog").showModal();toast("Connected to call")}catch(error){toast(error.message)}
+});
+$("#toggle-call-mic").addEventListener("click",async()=>{if(activeCall){await activeCall.microphone.toggle();const off=activeCall.microphone.state.status!=="enabled";$("#toggle-call-mic").classList.toggle("off",off);$("#toggle-call-mic").title=off?"Turn microphone on":"Mute microphone"}});
+$("#toggle-call-camera").addEventListener("click",async()=>{if(activeCall){await activeCall.camera.toggle();const off=activeCall.camera.state.status!=="enabled";$("#toggle-call-camera").classList.toggle("off",off);$("#toggle-call-camera").title=off?"Turn camera on":"Turn camera off"}});
+async function leaveStreamCall(){stopRingTone();if(activeCall){try{await activeCall.leave()}catch{}activeCall=null}incomingCall=null;$("#call-dialog").close();$("#call-participants").innerHTML=""}
+$("#leave-call").addEventListener("click",leaveStreamCall);$("#close-call").addEventListener("click",leaveStreamCall);
+
+/* ---------- rich Stream message actions ---------- */
+let replyTarget=null,actionMessageId=null;
+function canEditMessage(message){
+  if(!message||!isMine(message.senderId)||!active)return false;
+  const own=active.messages.filter(item=>isMine(item.senderId));
+  if(String(own.at(-1)?.id)!==String(message.id))return false;
+  const reads=streamChannelFor(active)?.state?.read||{};
+  return !Object.entries(reads).some(([id,state])=>String(id)!==String(viewerId())&&new Date(state.last_read||0)>=new Date(message.createdAt||0));
+}
+function openMessageActions(row,event){
+  actionMessageId=row.dataset.messageId;const menu=$("#message-actions"),message=active?.messages?.find(item=>String(item.id)===String(actionMessageId));
+  menu.hidden=false;menu.querySelector('[data-message-action="edit"]').hidden=!canEditMessage(message);
+  menu.querySelector('[data-message-action="pin"]').textContent=message?.pinned?"📌 Unpin message":"📌 Pin message";
+  const rect=menu.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(event.clientX,window.innerWidth-rect.width-8))+"px";menu.style.top=Math.max(8,Math.min(event.clientY,window.innerHeight-rect.height-8))+"px";
+}
+$("#message-area").addEventListener("contextmenu",e=>{const row=e.target.closest(".message");if(row){e.preventDefault();openMessageActions(row,e)}});
+document.addEventListener("click",e=>{if(!e.target.closest("#message-actions"))$("#message-actions").hidden=true});
+$("#message-actions").addEventListener("click",async e=>{
+  const button=e.target.closest("[data-message-action]");if(!button||!active)return;$("#message-actions").hidden=true;
+  const message=active.messages.find(item=>String(item.id)===String(actionMessageId)),channel=streamChannelFor(active);if(!message||!channel)return;
+  try{
+    if(button.dataset.messageAction==="reply"){replyTarget=message;messageInput.placeholder="Reply to "+message.senderName;messageInput.focus()}
+    else if(button.dataset.messageAction==="edit"){
+      if(!canEditMessage(message)){toast("Only your latest unread message can be edited");return}
+      const text=prompt("Edit message",message.text||"");if(text===null||!text.trim())return;
+      const updated=await streamClient.updateMessage({id:message.id,text:text.trim()});message.text=updated.text;renderMessages()
+    }else if(button.dataset.messageAction==="delete"){await streamClient.deleteMessage(message.id);active.messages=active.messages.filter(item=>item.id!==message.id);renderMessages()}
+    else if(button.dataset.messageAction==="pin"){message.pinned=!message.pinned;await (message.pinned?streamClient.pinMessage(message.id):streamClient.unpinMessage(message.id));renderMessages()}
+    else if(button.dataset.messageAction==="forward"){
+      const choices=conversations.filter(item=>item.id!==active.id);if(!choices.length){toast("No other conversation available");return}
+      const choice=prompt("Forward to: "+choices.map((item,index)=>(index+1)+". "+item.name).join(" | ")),target=choices[Number(choice)-1];if(!target)return;
+      const targetChannel=await watchStreamChannel(target);await targetChannel.sendMessage({text:message.text||"Forwarded attachment",forwarded_message_id:message.id,forwarded_from:active.name});toast("Forwarded to "+target.name)
+    }
+  }catch(error){toast(error.message)}
+});
+const pollButton=document.createElement("button");pollButton.type="button";pollButton.id="poll-button";pollButton.className="tool-btn";pollButton.title="Create poll";pollButton.textContent="◉";$(".composer-tools")?.append(pollButton);
+pollButton.addEventListener("click",()=>{if(active?.kind!=="group"){toast("Polls are available in group chats");return}$("#poll-dialog").showModal()});
+$("#poll-form").addEventListener("submit",async e=>{
+  if(e.submitter?.value==="cancel")return;e.preventDefault();
+  try{const question=$("#poll-question").value.trim(),options=$("#poll-options").value.split("\n").map(item=>item.trim()).filter(Boolean).map(text=>({text}));if(options.length<2){toast("Add at least two options");return}const poll=await streamClient.createPoll({name:question,options,allow_answers:false,allow_user_suggested_options:false},viewerId());await streamChannelFor(active).sendMessage({text:question,poll_id:poll.poll?.id||poll.id});$("#poll-dialog").close();e.target.reset();toast("Poll posted")}catch(error){toast(error.message)}});
 
 /* ---------- reactions ---------- */
 const reactionMenu=document.createElement("div");
@@ -825,7 +1092,11 @@ reactionMenu.addEventListener("click",async e=>{
   const next=users.includes(me)?users.filter(u=>u!==me):[...users,me];
   const reactions=next.length?{[emoji]:next}:{};
   try{
-    await db(`medha_communications_messages?id=eq.${encodeURIComponent(reactionTargetId)}`,{method:"PATCH",headers:{Prefer:"return=minimal"},body:JSON.stringify({reactions})});
+    if(!streamClient)throw Error("Stream is not connected; reactions are unavailable");
+    const channel=streamChannelFor(active);
+    const streamMessage=channel?.state?.messages?.find(item=>String(item.id)===String(reactionTargetId));
+    if(!channel||!streamMessage)throw Error("Message is not loaded in Stream");
+    await channel.sendReaction(reactionTargetId,emoji,{enforce_unique:true});
     message.reactions=reactions;renderMessages();
   }catch(error){toast(error.message)}
 });
@@ -839,78 +1110,18 @@ let allEmojis=Object.entries(emojiGroups).flatMap(([group,value])=>value.split("
 /* ---------- calendar ---------- */
 
 let meetings=[];let calendarCursor=new Date();
-function renderCalendar(){
-  const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth();
-  $("#calendar-month").textContent=calendarCursor.toLocaleDateString([],{month:"long",year:"numeric"});
-  const first=(new Date(y,m,1).getDay()+6)%7,last=new Date(y,m+1,0).getDate(),cells=[];
-  const dayKey=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-  const todayKey=dayKey(new Date());
-  /* A meeting covers every day from its start to its end, so a 8-11 Sept
-     event appears on the 8th, 9th, 10th and 11th rather than only the 8th. */
-  const coversDay=(meeting,key)=>{
-    if(!meeting.start)return false;
-    const s=new Date(meeting.start),e=new Date(meeting.end||meeting.start);
-    if(Number.isNaN(s.getTime()))return false;
-    const startKey=dayKey(s),endKey=Number.isNaN(e.getTime())?startKey:dayKey(e);
-    return key>=startKey&&key<=endKey;
-  };
-  for(let i=0;i<first;i++)cells.push('<div class="muted"></div>');
-  for(let d=1;d<=last;d++){
-    const key=dayKey(new Date(y,m,d));
-    const items=meetings.filter(x=>coversDay(x,key));
-    cells.push(`<div class="${key===todayKey?"today":""}" data-day="${key}">${d}${items.map(x=>{
-      const s=new Date(x.start),e=new Date(x.end||x.start);
-      const multi=dayKey(s)!==dayKey(e);
-      const isStart=dayKey(s)===key,isEnd=dayKey(e)===key;
-      const span=multi?` span${isStart?" span-start":""}${isEnd?" span-end":""}${!isStart&&!isEnd?" span-mid":""}`:"";
-      const range=multi?` (${s.toLocaleDateString([],{month:"short",day:"numeric"})} – ${e.toLocaleDateString([],{month:"short",day:"numeric"})})`:"";
-      return `<i class="${span.trim()}" title="${esc(x.title)}${esc(range)}" data-meeting-id="${esc(x.id||"")}">${esc(x.title)}</i>`;
-    }).join("")}</div>`);
-  }
-  $("#calendar-grid").innerHTML=cells.join("")||'<div class="empty-state">No scheduled meetings.</div>';
-  const now=new Date();
-  const future=meetings.filter(x=>new Date(x.end||x.start)>=now).sort((a,b)=>new Date(a.start)-new Date(b.start));
-  $("#agenda-list").innerHTML=future.length?future.map(x=>{
-    const s=new Date(x.start),e=new Date(x.end||x.start);
-    const multi=s.toDateString()!==e.toDateString();
-    const when=multi
-      ?`${s.toLocaleDateString([],{month:"short",day:"numeric"})} – ${e.toLocaleDateString([],{month:"short",day:"numeric"})}`
-      :s.toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
-    return `<div class="agenda-item"><b>${s.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</b><div><strong>${esc(x.title)}</strong><span>${esc(when)}</span></div></div>`;
-  }).join(""):'<div class="empty-state">No upcoming meetings.</div>';
-}
-
+function renderCalendar(){const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth();$("#calendar-month").textContent=calendarCursor.toLocaleDateString([], {month:"long",year:"numeric"});const first=(new Date(y,m,1).getDay()+6)%7,last=new Date(y,m+1,0).getDate(),cells=[];for(let i=0;i<first;i++)cells.push('<div class="muted"></div>');for(let d=1;d<=last;d++){const date=new Date(y,m,d),key=date.toISOString().slice(0,10),items=meetings.filter(x=>x.start.slice(0,10)===key);cells.push(`<div class="${key===new Date().toISOString().slice(0,10)?"today":""}">${d}${items.map(x=>`<i title="${esc(x.title)}">${esc(x.title)}</i>`).join("")}</div>`)}$("#calendar-grid").innerHTML=cells.join("")||'<div class="empty-state">No scheduled meetings.</div>';const future=meetings.filter(x=>new Date(x.start)>=new Date()).sort((a,b)=>new Date(a.start)-new Date(b.start));$("#agenda-list").innerHTML=future.length?future.map(x=>`<div class="agenda-item"><b>${new Date(x.start).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</b><div><strong>${esc(x.title)}</strong><span>${new Date(x.start).toLocaleDateString([], {weekday:"short",month:"short",day:"numeric"})}</span></div></div>`).join(""):"<div class=\"empty-state\">No upcoming meetings.</div>"}
 async function loadMeetings(){try{meetings=await db(`medha_communications_meetings?select=id,title,start_at,end_at,invitee_ids,created_by&order=start_at.asc`)||[];meetings=meetings.map(x=>({...x,start:String(x.start_at||""),end:String(x.end_at||x.start_at||"")}));renderCalendar();if(typeof refreshContactPresence==="function")refreshContactPresence()}catch{meetings=[];renderCalendar()}}
 $("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);renderCalendar()};$("#calendar-next").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);renderCalendar()};$("#calendar-today").onclick=()=>{calendarCursor=new Date();renderCalendar()};$("#new-event").onclick=()=>$("#event-dialog").showModal();$("#event-form").addEventListener("submit",async e=>{if(e.submitter?.value==="cancel"){e.target.closest("dialog").close();return}e.preventDefault();if(!currentUserId){toast("Sign in to create meetings");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db("medha_communications_meetings",{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean),created_by:currentUserId})});$("#event-dialog").close();e.target.reset();await loadMeetings();toast("Meeting created")}catch(err){toast(err.message)}});
 function openEventForCalendarDate(day){const date=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),day,9,0);const end=new Date(date);end.setHours(10);const localValue=value=>{const pad=n=>String(n).padStart(2,"0");return `${value.getFullYear()}-${pad(value.getMonth()+1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`};$("#event-form").reset();$("#event-start").value=localValue(date);$("#event-end").value=localValue(end);$("#event-dialog").showModal()}
 $("#calendar-grid").addEventListener("dblclick",event=>{const cell=event.target.closest("#calendar-grid>div");if(!cell||cell.classList.contains("muted"))return;const first=(new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1).getDay()+6)%7;const day=[...$("#calendar-grid").children].indexOf(cell)-first+1;if(day>0)openEventForCalendarDate(day)});
 document.querySelectorAll("#event-start,#event-end").forEach(input=>input.addEventListener("click",()=>input.showPicker?.()));document.querySelectorAll("dialog .close-dialog").forEach(button=>button.addEventListener("click",()=>button.closest("dialog").close()));
-const locationInput=document.createElement("input");locationInput.id="event-location";locationInput.maxLength=240;locationInput.placeholder="Optional meeting location";const locationLabel=document.createElement("label");locationLabel.textContent="Meeting location";locationLabel.append(locationInput);const locationTags=document.createElement("div");locationTags.className="location-tags";locationTags.innerHTML='<button type="button" data-location-tag="Online">Online</button><button type="button" data-location-tag="Office">Office</button>';locationLabel.append(locationTags);$("#event-invitees").closest("label").before(locationLabel);locationTags.addEventListener("click",e=>{const tag=e.target.closest("[data-location-tag]");if(tag)locationInput.value=tag.dataset.locationTag});
+const locationInput=document.createElement("input");locationInput.id="event-location";locationInput.maxLength=240;locationInput.placeholder="Optional meeting location";const locationLabel=document.createElement("label");locationLabel.textContent="Meeting location";locationLabel.append(locationInput);const locationTags=document.createElement("div");locationTags.className="location-tags";locationTags.innerHTML='<button type="button" data-location-tag="Online">Online</button><button type="button" data-location-tag="Office">Office</button>';locationLabel.append(locationTags);$("#event-invitees").closest("label").before(locationLabel);locationTags.addEventListener("click",e=>{const tag=e.target.closest("[data-location-tag]");if(tag)locationInput.value=tag.dataset.locationTag});window.addEventListener("communications:add-suggestion-event",event=>{const d=event.detail||{},dateText=String(d.start||""),dateMatch=dateText.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/)||dateText.match(/([A-Za-z]{3,9})\s+(\d{1,2})(?:.*?(\d{4}))?/),date=dateMatch?(dateMatch[3]?new Date(+dateMatch[3],+dateMatch[1]-1,+dateMatch[2]):new Date(`${dateMatch[1]} ${dateMatch[2]}, ${dateMatch[3]||new Date().getFullYear()}`)):new Date(),timeMatch=String(d.time||"").match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i),hour=timeMatch?(+timeMatch[1]%12)+(timeMatch[3].toUpperCase()==="PM"?12:0):9,minute=timeMatch?+(timeMatch[2]||0):0,pad=n=>String(n).padStart(2,"0"),value=`${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(hour)}:${pad(minute)}`;$("#event-form").reset();$("#event-title").value=d.title||"";$("#event-start").value=value;const end=new Date(date);end.setHours(hour+1,minute,0,0);$("#event-end").value=`${end.getFullYear()}-${pad(end.getMonth()+1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;locationInput.value=d.location&&d.location!=="Not published"?d.location:"";$("#event-dialog").showModal()});
 $("#event-title").closest("label").childNodes[0].textContent="Event Title";$("#event-title").placeholder="Event title";
 const communicationsDb=db;db=async(path,options={})=>{if(path==="medha_communications_meetings"&&options.method==="POST"&&options.body){const payload=JSON.parse(options.body);payload.location=$("#event-location")?.value.trim()||null;options={...options,body:JSON.stringify(payload)}}return communicationsDb(path,options)};
-let editingMeeting=null;const eventDialogTitle=$("#event-dialog h2"),eventDialogSubmit=$("#event-form button[value=default]");function dateTimeValue(value){if(!value)return"";const d=new Date(value),pad=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`}function openMeetingEditor(meeting){editingMeeting=meeting;eventDialogTitle.textContent="Edit event";eventDialogSubmit.textContent="Save changes";$("#event-title").value=meeting.title||"";$("#event-start").value=dateTimeValue(meeting.start);$("#event-end").value=dateTimeValue(meeting.end);$("#event-invitees").value=(meeting.invitee_ids||[]).join(",");$("#event-location").value=meeting.location||"";$("#event-dialog").showModal()}$("#calendar-grid").addEventListener("click",async event=>{
-  const marker=event.target.closest("#calendar-grid i");
-  if(!marker)return;
-  /* Markers carry their meeting id, so clicking any day of a multi-day
-     event opens the right one. Matching on title plus date used to fail
-     on every day except the first. */
-  const id=marker.dataset.meetingId;
-  const meeting=meetings.find(item=>String(item.id)===String(id));
-  if(!meeting)return;
-  try{
-    const rows=await db(`medha_communications_meetings?id=eq.${encodeURIComponent(meeting.id)}&select=id,title,start_at,end_at,invitee_ids,location`);
-    openMeetingEditor({...meeting,...(rows?.[0]||{}),start:rows?.[0]?.start_at||meeting.start,end:rows?.[0]?.end_at||meeting.end});
-  }catch{openMeetingEditor(meeting)}
-});$("#event-form").addEventListener("submit",async event=>{if(!editingMeeting)return;event.preventDefault();event.stopImmediatePropagation();if(!currentUserId){toast("Sign in to edit events");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db(`medha_communications_meetings?id=eq.${encodeURIComponent(editingMeeting.id)}`,{method:"PATCH",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),location:$("#event-location").value.trim()||null,invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean)})});$("#event-dialog").close();event.target.reset();editingMeeting=null;eventDialogTitle.textContent="New meeting";eventDialogSubmit.textContent="Create meeting";await loadMeetings();toast("Event updated")}catch(error){toast(error.message)}},true);
+let editingMeeting=null;const eventDialogTitle=$("#event-dialog h2"),eventDialogSubmit=$("#event-form button[value=default]");function dateTimeValue(value){if(!value)return"";const d=new Date(value),pad=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`}function openMeetingEditor(meeting){editingMeeting=meeting;eventDialogTitle.textContent="Edit event";eventDialogSubmit.textContent="Save changes";$("#event-title").value=meeting.title||"";$("#event-start").value=dateTimeValue(meeting.start);$("#event-end").value=dateTimeValue(meeting.end);$("#event-invitees").value=(meeting.invitee_ids||[]).join(",");$("#event-location").value=meeting.location||"";$("#event-dialog").showModal()}$("#calendar-grid").addEventListener("click",async event=>{const marker=event.target.closest("#calendar-grid i");if(!marker)return;const cell=marker.closest("#calendar-grid>div"),first=(new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1).getDay()+6)%7,day=[...$("#calendar-grid").children].indexOf(cell)-first+1,key=`${calendarCursor.getFullYear()}-${String(calendarCursor.getMonth()+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`,meeting=meetings.find(item=>item.title===marker.title&&item.start?.slice(0,10)===key);if(!meeting)return;try{const rows=await db(`medha_communications_meetings?id=eq.${encodeURIComponent(meeting.id)}&select=id,title,start_at,end_at,invitee_ids,location`);openMeetingEditor({...meeting,...(rows?.[0]||{}),start:rows?.[0]?.start_at||meeting.start,end:rows?.[0]?.end_at||meeting.end})}catch{openMeetingEditor(meeting)}});$("#event-form").addEventListener("submit",async event=>{if(!editingMeeting)return;event.preventDefault();event.stopImmediatePropagation();if(!currentUserId){toast("Sign in to edit events");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db(`medha_communications_meetings?id=eq.${encodeURIComponent(editingMeeting.id)}`,{method:"PATCH",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),location:$("#event-location").value.trim()||null,invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean)})});$("#event-dialog").close();event.target.reset();editingMeeting=null;eventDialogTitle.textContent="New meeting";eventDialogSubmit.textContent="Create meeting";await loadMeetings();toast("Event updated")}catch(error){toast(error.message)}},true);
 $("#new-event").addEventListener("click",()=>{editingMeeting=null;eventDialogTitle.textContent="New meeting";eventDialogSubmit.textContent="Create meeting"});
-const calendarRender=renderCalendar;renderCalendar=function(){calendarRender();const list=$("#calendar-sidebar-list"),future=meetings.filter(x=>x.start&&new Date(x.end||x.start)>=new Date()).sort((a,b)=>new Date(a.start)-new Date(b.start));if(list)list.innerHTML=future.length?future.map(x=>{
-  const s=new Date(x.start),e=new Date(x.end||x.start);
-  const multi=s.toDateString()!==e.toDateString();
-  const when=multi?`${s.toLocaleDateString([],{month:"short",day:"numeric"})} – ${e.toLocaleDateString([],{month:"short",day:"numeric"})}`
-                  :s.toLocaleDateString([],{month:"short",day:"numeric"});
-  const sub=multi?`${e.getDate()-s.getDate()+1} days`:s.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
-  return `<div class="calendar-side-event"><time>${esc(when)}</time><div><strong>${esc(x.title||"Meeting")}</strong><span>${esc(sub)}</span></div></div>`;
-}).join(""):"<div class=\"empty-state\">No upcoming meetings.</div>"};
+const calendarRender=renderCalendar;renderCalendar=function(){calendarRender();const list=$("#calendar-sidebar-list"),future=meetings.filter(x=>x.start&&new Date(x.start)>=new Date()).sort((a,b)=>new Date(a.start)-new Date(b.start));if(list)list.innerHTML=future.length?future.map(x=>`<div class="calendar-side-event"><time>${new Date(x.start).toLocaleDateString([], {month:"short",day:"numeric"})}</time><div><strong>${esc(x.title||"Meeting")}</strong><span>${new Date(x.start).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</span></div></div>`).join(""):"<div class=\"empty-state\">No upcoming meetings.</div>"};
 function externalStartDate(value){const text=String(value||""),numeric=text.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/),named=text.match(/([A-Za-z]{3,9})\s+(\d{1,2})(?:.*?(\d{4}))?/);if(numeric)return new Date(Number(numeric[3]),Number(numeric[1])-1,Number(numeric[2]));if(named){const year=Number(named[3]||new Date().getFullYear()),date=new Date(`${named[1]} ${named[2]}, ${year}`);if(!Number.isNaN(date.getTime()))return date}return null}
 async function loadSuggestions(){const list=$("#suggestions-list");try{const [eventsResponse,exhibitionsResponse]=await Promise.all([fetch("https://medha-newsevents.vercel.app/api/events"),fetch("https://medha-newsevents.vercel.app/api/exhibitions")]);if(!eventsResponse.ok||!exhibitionsResponse.ok)throw Error("Events & News unavailable");const [events,exhibitions]=await Promise.all([eventsResponse.json(),exhibitionsResponse.json()]),items=[...(events.sources||[]).flatMap(source=>(source.items||[]).map(item=>({...item,kind:"Event"}))),...(exhibitions.sources||[]).flatMap(source=>(source.items||[]).map(item=>({...item,kind:"Exhibition"})))].map(item=>({...item,start:externalStartDate(item.date)})).filter(item=>item.start&&item.start>=new Date()).sort((a,b)=>a.start-b.start).slice(0,20);list.innerHTML=items.length?items.map(item=>`<a class="suggestion-item" href="${esc(item.link||"https://medha-newsevents.vercel.app/")}" target="_blank" rel="noopener"><span>${item.kind}</span><strong>${esc(item.title)}</strong><time>${item.start.toLocaleDateString([], {month:"short",day:"numeric",year:"numeric"})}</time></a>`).join(""):"<div class=\"empty-state\">No upcoming events or exhibitions.</div>"}catch{list.innerHTML='<div class="empty-state">Events &amp; News is unavailable.</div>'}}
 
@@ -1093,6 +1304,7 @@ function showDesktopNotification(row){
   }
 }
 async function syncIncomingMessages(){
+  if(streamClient)return;
   if(!viewerId()||syncInProgress)return;
   syncInProgress=true;
   try{
@@ -1158,6 +1370,7 @@ async function initializeAuthorizedUser(user){
   try{firebaseIdToken=await user.getIdToken()}catch{firebaseIdToken=null}
   $("#current-user").textContent=user.displayName||user.email||"Authenticating…";
   await loadCurrentProfile(user);
+  try{await initializeStream(user)}catch(error){toast(error.message);finishSpaceLoading("Stream connection unavailable");return}
   /* Show the cached sidebar immediately; the fetch below replaces it. */
   hydrateFromCache();
   startPresenceHeartbeat();
@@ -1176,7 +1389,23 @@ async function initializeAuthorizedUser(user){
 }
 
 async function authorizeHubLaunch(){
-  if(!launchToken){launchGate.hidden=false;finishSpaceLoading("Waiting for a secure Hub launch");return}
+  if(!launchToken){
+    if(location.hostname==="localhost"){
+      try{
+        await ensureDirectory();
+        const cachedUser={id:"Ogwzr3nw5EeXtQLYA2ZMwEJEdIU2",name:"Saksham Nirula"};
+        currentUserId=cachedUser.id;currentAppUser={id:cachedUser.id,full_name:cachedUser.name,email:""};
+        hydrateFromCache();
+        const localUser=await initializeStream(null);
+        launchAuthorized=true;currentUserId=localUser.id;currentAppUser={id:localUser.id,full_name:localUser.name,email:""};
+        $("#current-user").textContent=localUser.name;$("#current-user-initials").textContent=initialsFor(localUser.name);
+        startPresenceHeartbeat();await Promise.all([hydrateConversations(),loadMeetings()]);
+        const openId=active?.id||conversations[0]?.id;if(openId)await switchChat(openId);
+        finishSpaceLoading("Local Stream workspace ready");launchGate.hidden=true;return;
+      }catch(error){finishSpaceLoading(error.message||"Stream connection unavailable")}
+    }
+    launchGate.hidden=false;finishSpaceLoading("Waiting for a secure Hub launch");return
+  }
   try{
     let customToken;
     if(location.hostname==="localhost"&&launchToken.startsWith("custom:")){customToken=launchToken.slice(7)}

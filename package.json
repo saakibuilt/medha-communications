@@ -4,7 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "node server.js",
-    "check": "node --check app.js && node --check server.js",
+    "check": "node --check app.js && node --check server.js && node --check api/stream-token.js && node --check api/stream-users.js",
     "test": "node test/conversation-integrity.mjs"
+  },
+  "dependencies": {
+    "@stream-io/video-client": "latest",
+    "stream-chat": "^9.52.0"
   }
 }
