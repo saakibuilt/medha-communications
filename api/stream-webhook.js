@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { gunzipSync } from "node:zlib";
 
 const PUSH_ENDPOINT="https://medha-activities.vercel.app/api/space-push";
 const HUB_URL="https://medha-hub.web.app/";
@@ -8,13 +9,18 @@ function readRawBody(request){
      invokes its JSON parser and can throw before we can verify the signature.
      Consume the raw IncomingMessage stream instead. */
   if(request&&typeof request.on==="function")return new Promise((resolve,reject)=>{
-    let raw="";
-    request.on("data",chunk=>{raw+=chunk});
-    request.on("end",()=>resolve(raw));
+    const chunks=[];
+    request.on("data",chunk=>{chunks.push(Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk))});
+    request.on("end",()=>{
+      const raw=Buffer.concat(chunks);
+      /* Stream signs the uncompressed JSON body even when the delivery is
+         gzip-compressed. Decompress before signature verification. */
+      resolve(raw.length>=2&&raw[0]===0x1f&&raw[1]===0x8b?gunzipSync(raw):raw);
+    });
     request.on("error",reject);
   });
-  if(typeof request.body==="string")return Promise.resolve(request.body);
-  return Promise.resolve(JSON.stringify(request.body||{}));
+  if(typeof request.body==="string")return Promise.resolve(Buffer.from(request.body));
+  return Promise.resolve(Buffer.from(JSON.stringify(request.body||{})));
 }
 
 function validSignature(raw,provided,secret){
@@ -63,7 +69,7 @@ export default async function handler(request,response){
     const raw=await readRawBody(request),secret=process.env.STREAM_API_SECRET;
     const signature=request.headers["x-signature"]||request.headers["X-Signature"];
     if(!validSignature(raw,signature,secret))return response.status(401).json({error:"Invalid Stream webhook signature"});
-    const event=JSON.parse(raw||"{}");
+    const event=JSON.parse(raw.toString("utf8")||"{}");
     const type=String(event.type||"");
     if(type==="message.new"){
       const message=event.message||{};
