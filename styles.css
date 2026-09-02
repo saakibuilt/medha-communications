@@ -521,3 +521,29 @@ svg{fill:none;stroke:currentColor;stroke-width:1.8;
   z-index:2;
   margin:0;
 }
+
+/* Calls: audio stays a compact, non-blocking popup; video gets a contained
+   stage so participant tiles never overlap the controls or viewport edges. */
+dialog:has(.call-shell).audio-call{width:min(390px,calc(100vw - 24px));height:auto;max-height:calc(100dvh - 24px);margin:12px auto;border:0;border-radius:20px;overflow:hidden}
+.audio-call .call-shell{width:100%;height:auto;min-height:0;padding:20px;background:linear-gradient(145deg,#101827,#26364d)}
+.audio-call .call-participants{flex:none;min-height:112px;grid-template-columns:1fr;align-content:center;padding:14px;background:rgba(8,15,27,.72)}
+.audio-call .call-participant video{display:none}
+.audio-call .call-icon-button:nth-child(2){display:none}
+.audio-call .call-controls{margin-top:20px;justify-content:space-between}
+.audio-call .call-icon-button b{top:70px}
+dialog:has(.call-shell).video-call{width:min(1180px,calc(100vw - 24px));height:min(900px,calc(100dvh - 24px));margin:12px auto;border:0;border-radius:22px;overflow:hidden}
+.video-call .call-shell{width:100%;height:100%;min-height:0;padding:20px 24px 24px}
+.video-call .call-participants{width:100%;min-height:0;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));grid-auto-rows:minmax(180px,1fr);align-content:stretch;gap:14px;padding:14px}
+.call-participant{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.call-participant strong{display:block;flex:0 0 auto;color:#e5edf8;font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.call-participant video{display:block;width:100%;height:auto;min-height:0;flex:1;object-fit:contain;border-radius:12px;background:#111a29}
+.call-participant audio{display:none}
+.video-call .call-controls{flex:0 0 82px;margin-top:14px;padding-top:4px}
+.video-call .call-controls .primary-button{margin-left:12px}
+.incoming-call .call-participants{min-height:160px}
+.incoming-call.audio-call .call-participants{min-height:112px}
+@media (max-width:640px){
+  dialog:has(.call-shell).video-call{width:calc(100vw - 12px);height:calc(100dvh - 12px);margin:6px auto;border-radius:16px}
+  .video-call .call-shell{padding:14px}
+  .video-call .call-participants{grid-template-columns:1fr;grid-auto-rows:minmax(150px,1fr);padding:10px}
+}
