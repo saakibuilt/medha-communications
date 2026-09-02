@@ -74,7 +74,9 @@ export default async function handler(request,response){
     if(type==="message.new"){
       const message=event.message||{};
       const sender=message.user?.name||event.user?.name||"New message";
-      const result=await forwardPush(messageRecipients(event),{title:sender,body:message.text||"Sent an attachment",url:HUB_URL,tag:`stream-message-${message.id||Date.now()}`});
+      const recipients=messageRecipients(event);
+      const result=await forwardPush(recipients,{title:sender,body:message.text||"Sent an attachment",url:HUB_URL,tag:`stream-message-${message.id||Date.now()}`});
+      console.info("Stream message push result",{recipients:recipients.length,delivered:result.delivered||0,skipped:result.skipped||null});
       return response.status(200).json({ok:true,type,result});
     }
     if(type==="call.ring"){
@@ -83,6 +85,7 @@ export default async function handler(request,response){
       const video=call.video===true||custom.mode==="video";
       const caller=event.user?.name||call.created_by?.name||"Medha user";
       const result=await forwardPush(members,{title:`Incoming ${video?"video":"audio"} call`,body:`${caller} is calling you`,url:HUB_URL,tag:`stream-call-${event.call_cid||call.cid||Date.now()}`});
+      console.info("Stream call push result",{recipients:members.length,delivered:result.delivered||0,skipped:result.skipped||null});
       return response.status(200).json({ok:true,type,result});
     }
     return response.status(200).json({ok:true,ignored:type});
