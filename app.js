@@ -1193,11 +1193,19 @@ $("#message-area").addEventListener("click",async e=>{
   const card=option.closest(".poll-card");
   card?.classList.add("poll-busy");
   try{
+    const message=active?.messages?.find(m=>String(m.id)===String(messageId));
+    const ownVotes=message?.poll?.own_votes||[];
     if(option.classList.contains("chosen")){
-      const message=active?.messages?.find(m=>String(m.id)===String(messageId));
-      const own=(message?.poll?.own_votes||[]).find(v=>String(v.option_id)===String(optionId));
+      /* Clicking your current choice withdraws it. */
+      const own=ownVotes.find(v=>String(v.option_id)===String(optionId));
       if(own?.id)await streamClient.removePollVote(messageId,pollId,own.id,viewerId());
     }else{
+      /* One vote per person: drop any existing choice before casting the
+         new one, so switching options replaces rather than adds. Polls
+         created before max_votes_allowed was set rely on this too. */
+      for(const own of ownVotes){
+        if(own?.id)await streamClient.removePollVote(messageId,pollId,own.id,viewerId()).catch(()=>{});
+      }
       await streamClient.castPollVote(messageId,pollId,{option_id:optionId},viewerId());
     }
     await refreshPoll(messageId,pollId);
@@ -1269,7 +1277,7 @@ const pollButton=document.createElement("button");pollButton.type="button";pollB
 pollButton.addEventListener("click",()=>{if(active?.kind!=="group"){toast("Polls are available in group chats");return}$("#poll-dialog").showModal()});
 $("#poll-form").addEventListener("submit",async e=>{
   if(e.submitter?.value==="cancel")return;e.preventDefault();
-  try{const question=$("#poll-question").value.trim(),options=$("#poll-options").value.split("\n").map(item=>item.trim()).filter(Boolean).map(text=>({text}));if(options.length<2){toast("Add at least two options");return}const poll=await streamClient.createPoll({name:question,options,allow_answers:false,allow_user_suggested_options:false},viewerId());await streamChannelFor(active).sendMessage({text:question,poll_id:poll.poll?.id||poll.id});$("#poll-dialog").close();e.target.reset();toast("Poll posted")}catch(error){toast(error.message)}});
+  try{const question=$("#poll-question").value.trim(),options=$("#poll-options").value.split("\n").map(item=>item.trim()).filter(Boolean).map(text=>({text}));if(options.length<2){toast("Add at least two options");return}const poll=await streamClient.createPoll({name:question,options,allow_answers:false,allow_user_suggested_options:false,enforce_unique_vote:true,max_votes_allowed:1},viewerId());await streamChannelFor(active).sendMessage({text:question,poll_id:poll.poll?.id||poll.id});$("#poll-dialog").close();e.target.reset();toast("Poll posted")}catch(error){toast(error.message)}});
 
 /* ---------- reactions ---------- */
 const reactionMenu=document.createElement("div");
