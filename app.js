@@ -68,9 +68,9 @@ async function initializeStream(user){
      service worker/native push provider is still required when the page is
      completely closed. */
   streamClient.on("notification.message_new",event=>{
+    applyIncomingStreamMessage(event);
     const message=event.message;
-    if(!message||String(message.user?.id)===String(viewerId()))return;
-    if(document.visibilityState!=="hidden")return;
+    if(document.visibilityState!=="hidden"||!message)return;
     const row={cid:event.channel?.cid||event.cid,body:message.text||"New message",id:message.id};
     showDesktopNotification(row,event.channel?.name||message.user?.name||"New message");
   });
@@ -89,6 +89,26 @@ function streamMessageToApp(message){
     reactions:(message.latest_reactions||[]).reduce((all,r)=>{(all[r.type]??=[]).push(r.user_id);return all},{}),createdAt:message.created_at,time:new Date(message.created_at||Date.now()).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
 }
 function streamChannelFor(chat){return streamChannels.get(String(chat.cid||chat.id))||null}
+function applyIncomingStreamMessage(event){
+  const message=event?.message;
+  if(!message||String(message.user?.id)===String(viewerId()))return;
+  const cid=event.channel?.cid||event.cid||message.cid;
+  const chat=conversations.find(item=>String(item.cid)===String(cid));
+  if(!chat){hydrateConversations();return}
+  const incoming=streamMessageToApp(message);
+  chat.preview=message.text||"Attachment";
+  chat.updatedAt=message.created_at||new Date().toISOString();
+  chat.time=new Date(chat.updatedAt).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+  if(active?.cid===chat.cid){
+    chat.messages=[...(chat.messages||[]).filter(item=>String(item.id)!==String(incoming.id)),incoming];
+    chat.messagesLoaded=true;
+    renderMessages();
+    scrollMessagesToEnd();
+    streamChannelFor(chat)?.markRead().catch(()=>{});
+  }else chat.unread=(chat.unread||0)+1;
+  renderList();
+  writeCache();
+}
 async function ensureStreamUsers(){
   if(!streamClient||!directory.length)return;
   const users=[{id:viewerId(),name:currentAppUser?.full_name||"Local Medha User"},...directory.map(person=>({id:String(person.id),name:person.full_name,image:person.avatar_url}))];
@@ -101,9 +121,7 @@ async function watchStreamChannel(chat){
   await channel.watch();
   channel.on("message.new",event=>{
     if(event.message?.user?.id===viewerId())return;
-    const incoming=streamMessageToApp(event.message);
-    if(active?.cid===chat.cid){chat.messages=[...(chat.messages||[]).filter(m=>m.id!==incoming.id),incoming];chat.messagesLoaded=true;renderMessages();scrollMessagesToEnd();channel.markRead()}
-    else{chat.unread=(chat.unread||0)+1;renderList()}
+    applyIncomingStreamMessage({...event,cid:chat.cid,channel:{cid:chat.cid}});
   });
   return channel;
 }
