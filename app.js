@@ -83,7 +83,7 @@ function streamMessageToApp(message){
      the current local user so legacy messages remain attributed correctly. */
   const senderId=(location.hostname==="localhost"&&(rawSenderId==="medha-local-user"||message.user?.name==="Local Medha User"))?viewerId():rawSenderId;
   const profile=directory.find(person=>String(person.id)===senderId);
-  return {id:String(message.id),senderId,who:isMine(senderId)?"me":"them",parentId:message.parent_id||null,pinned:!!message.pinned,callId:message.call_id||null,pollId:message.poll_id||null,
+  return {id:String(message.id),senderId,who:isMine(senderId)?"me":"them",parentId:message.parent_id||null,pinned:!!message.pinned,callId:message.call_id||null,pollId:message.poll_id||null,poll:message.poll||null,
     senderName:isMine(senderId)?(currentAppUser?.full_name||currentAppUser?.name||"You"):(profile?.full_name||message.user?.name||active?.name||"Unknown user"),text:message.text||"",
     attachments:(message.attachments||[]).map(a=>({kind:a.type==="image"?"image":"file",name:a.title||a.asset_url?.split("/").pop()||"File",url:a.image_url||a.asset_url||a.file_url||a.og_scrape_url})).filter(a=>a.url),
     reactions:(message.latest_reactions||[]).reduce((all,r)=>{(all[r.type]??=[]).push(r.user_id);return all},{}),createdAt:message.created_at,time:new Date(message.created_at||Date.now()).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
@@ -123,6 +123,17 @@ async function watchStreamChannel(chat){
     if(event.message?.user?.id===viewerId())return;
     applyIncomingStreamMessage({...event,cid:chat.cid,channel:{cid:chat.cid}});
   });
+  /* Repaint a poll card the moment anyone votes, so the bars are live for
+     everyone in the channel rather than only for whoever clicked. */
+  ["poll.vote_casted","poll.vote_changed","poll.vote_removed","poll.updated","poll.closed"]
+    .forEach(name=>channel.on(name,event=>{
+      const poll=event.poll;
+      if(!poll?.id)return;
+      const message=active?.messages?.find(m=>String(m.pollId)===String(poll.id));
+      if(message)message.poll=poll;
+      const card=$(`.poll-card[data-poll-card="${CSS.escape(String(poll.id))}"]`);
+      if(card)card.outerHTML=pollHtml(poll,message?.id||"");
+    }));
   return channel;
 }
 
@@ -265,10 +276,10 @@ function renderList(){
   });
   const people=q?directory.filter(person=>String(person.id)!==String(viewerId())&&`${person.full_name} ${person.email||""} ${person.department||""}`.toLowerCase().includes(q)&&!shown.some(chat=>String(chat.participantId)===String(person.id))):[];
   $("#chat-list").innerHTML=shown.length?shown.map(c=>{
-    const state=presenceFor(c.participantId);
+    const state=c.kind==="group"?"":presenceFor(c.participantId);
     const pinned=rank.has(String(c.id));
     return `<div class="chat-item ${active&&c.id===active.id?"selected":""}" data-id="${esc(c.id)}">
-      <div class="avatar-stack">${avatar(c)}<i class="presence-dot ${state}" title="${state}"></i></div>
+      <div class="avatar-stack">${avatar(c)}${c.kind==="group"?"":`<i class="presence-dot ${state}" title="${state}"></i>`}</div>
       <div class="chat-copy">
         <div class="chat-line">
           <strong>${pinned?'<span class="chat-pin" title="Pinned">\u{1F4CC}</span>':""}${favorites.includes(c.id)?'<span class="chat-fav">\u2605</span>':""}${esc(c.name)}</strong>
@@ -290,6 +301,41 @@ function renderList(){
   }
 }
 
+/* ---------- polls ----------
+   Renders a poll as a card with a "Poll" tag and one bar per option. Bars
+   fill to each option's share of the vote and update live as votes arrive,
+   so everyone sees the running result without reopening anything. */
+function pollHtml(poll,messageId){
+  if(!poll)return "";
+  const options=poll.options||[];
+  /* Stream reports tallies in vote_counts_by_option, keyed by option id. */
+  const counts=poll.vote_counts_by_option||{};
+  const total=Object.values(counts).reduce((sum,n)=>sum+(Number(n)||0),0);
+  const me=viewerId();
+  /* own_votes tells us what this viewer picked, so their choice is marked. */
+  const mine=new Set((poll.own_votes||[]).map(v=>String(v.option_id)));
+  const closed=!!poll.is_closed;
+  const rows=options.map(option=>{
+    const id=String(option.id);
+    const votes=Number(counts[id]||0);
+    const share=total?Math.round((votes/total)*100):0;
+    const chosen=mine.has(id);
+    return `<button type="button" class="poll-option${chosen?" chosen":""}" data-poll-id="${esc(poll.id||"")}" data-option-id="${esc(id)}" data-message-id="${esc(messageId||"")}"${closed?" disabled":""}>
+      <span class="poll-bar" style="width:${share}%"></span>
+      <span class="poll-row">
+        <span class="poll-text">${chosen?'<span class="poll-check">✓</span>':""}${esc(option.text||"")}</span>
+        <span class="poll-count">${share}%<small>${votes}</small></span>
+      </span>
+    </button>`;
+  }).join("");
+  return `<div class="poll-card" data-poll-card="${esc(poll.id||"")}">
+    <div class="poll-head"><span class="poll-tag">Poll</span>${closed?'<span class="poll-closed">Closed</span>':""}</div>
+    <strong class="poll-question">${esc(poll.name||poll.question||"Poll")}</strong>
+    <div class="poll-options">${rows}</div>
+    <div class="poll-total">${total} vote${total===1?"":"s"}${closed?" · final":""}</div>
+  </div>`;
+}
+
 function messageHtml(m){
   const mine=m.who==="me";
   const links=(m.attachments||[]).length?m.attachments:((m.text||"").match(/https?:\/\/[^\s]+/g)||[]).filter(u=>/\.gif(?:$|\?)/i.test(u)||/giphy\.com|tenor\.com/i.test(u)).map(url=>({kind:"gif",url,name:"GIF"}));
@@ -297,7 +343,8 @@ function messageHtml(m){
   if(!m._decorated){if(reply)m.text="↩ "+reply.senderName+": "+(reply.text||"Attachment")+"\n"+m.text;if(m.pinned&&!String(m.text||"").startsWith("📌"))m.text="📌 "+m.text;m._decorated=true}
   const who=mine?{initials:initialsFor(currentAppUser?.full_name||"You"),color:"blue"}:{initials:active?.initials,color:active?.color};
   const reactions=Object.entries(m.reactions||{}).filter(([,u])=>Array.isArray(u)&&u.length);
-  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${m.text?`<div class="bubble">${esc(m.text)}</div>`:""}${links.map(a=>a.kind==="gif"||a.kind==="image"?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy"></a>`:`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener" download>📎 ${esc(a.name||"Attached file")}</a>`).join("")}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span title="${users.length} reaction${users.length===1?"":"s"}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}</div></div>`;
+  const pollCard=m.poll?pollHtml(m.poll,m.id):"";
+  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${m.text&&!m.poll?`<div class="bubble">${esc(m.text)}</div>`:""}${links.map(a=>a.kind==="gif"||a.kind==="image"?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy"></a>`:`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener" download>📎 ${esc(a.name||"Attached file")}</a>`).join("")}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span title="${users.length} reaction${users.length===1?"":"s"}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}</div></div>`;
 }
 
 function dayLabel(date){
@@ -319,7 +366,7 @@ function renderDetailsPanel(){
   const media=(active.messages||[]).flatMap(m=>m.attachments||[]);
   const facts=[
     detailRow("Name",active.name),
-    detailRow("Status",isSelf?"This is you":status),
+    detailRow("Status",active.kind==="group"?"":isSelf?"This is you":status),
     detailRow("Email",person?.email)
   ].filter(Boolean).join("");
   const facts_el=$("#details-facts");
@@ -361,6 +408,7 @@ function renderMessages(){
   }
   $("#conversation-name").textContent=active.name;
   $("#details-name").textContent=active.name;
+  setPresenceLabel();
   renderDetailsPanel();
   const headerAvatar=$(".conversation-header .person-avatar"); if(headerAvatar)headerAvatar.outerHTML=avatar(active);
   const detailAvatar=$(".details-person .person-avatar"); if(detailAvatar)detailAvatar.outerHTML=avatar(active,false);
@@ -1116,10 +1164,47 @@ $("#video-call").addEventListener("click",()=>startStreamCall("video"));
 $("#message-area").addEventListener("click",async e=>{
   const row=e.target.closest(".message");if(!row||!active)return;
   const message=active.messages.find(item=>String(item.id)===String(row.dataset.messageId));
-  if(message?.pollId){try{const poll=await streamClient.getPoll(message.pollId),options=poll.poll?.options||poll.options||[];const choice=prompt("Vote: "+options.map((item,index)=>(index+1)+". "+item.text).join(" | "));if(choice&&options[Number(choice)-1]){await streamClient.castPollVote(message.id,message.pollId,{option_id:options[Number(choice)-1].id},viewerId());toast("Vote recorded")}}catch(error){toast(error.message)}return}
+  if(message?.pollId)return;   /* handled by the poll card below */
   if(!message?.callId||!videoClient)return;
   try{const mode=message.text.includes("🎥")?"video":"audio";activeCall=videoClient.call("default",message.callId);await activeCall.join();showCallSurface(activeCall,"Join call · "+active.name,mode);toast("Connected to call")}catch(error){toast(error.message)}
 });
+/* Voting happens on the bars themselves. Clicking your current choice
+   removes it, so a vote can be changed or withdrawn. */
+$("#message-area").addEventListener("click",async e=>{
+  const option=e.target.closest(".poll-option");
+  if(!option||option.disabled)return;
+  e.preventDefault();e.stopPropagation();
+  const messageId=option.dataset.messageId,pollId=option.dataset.pollId,optionId=option.dataset.optionId;
+  if(!messageId||!pollId||!optionId||!streamClient)return;
+  const card=option.closest(".poll-card");
+  card?.classList.add("poll-busy");
+  try{
+    if(option.classList.contains("chosen")){
+      const message=active?.messages?.find(m=>String(m.id)===String(messageId));
+      const own=(message?.poll?.own_votes||[]).find(v=>String(v.option_id)===String(optionId));
+      if(own?.id)await streamClient.removePollVote(messageId,pollId,own.id,viewerId());
+    }else{
+      await streamClient.castPollVote(messageId,pollId,{option_id:optionId},viewerId());
+    }
+    await refreshPoll(messageId,pollId);
+  }catch(error){toast(error.message||"Could not record your vote")}
+  finally{card?.classList.remove("poll-busy")}
+});
+
+/* Pulls the latest tallies for one poll and repaints just that card. */
+async function refreshPoll(messageId,pollId){
+  if(!streamClient)return;
+  try{
+    const result=await streamClient.getPoll(pollId,viewerId());
+    const poll=result?.poll||result;
+    if(!poll)return;
+    const message=active?.messages?.find(m=>String(m.id)===String(messageId));
+    if(message)message.poll=poll;
+    const card=$(`.poll-card[data-poll-card="${CSS.escape(String(pollId))}"]`);
+    if(card)card.outerHTML=pollHtml(poll,messageId);
+  }catch{}
+}
+
 $("#toggle-call-mic").addEventListener("click",async()=>{if(!activeCall)return;if(activeCall.state.callingState!==CallingState.JOINED){toast("Microphone starts when the call is connected");return}await activeCall.microphone.toggle();const off=activeCall.microphone.state.status!=="enabled";$("#toggle-call-mic").classList.toggle("off",off);$("#toggle-call-mic").title=off?"Turn microphone on":"Mute microphone"});
 $("#toggle-call-camera").addEventListener("click",async()=>{if(!activeCall)return;if(activeCall.state.callingState!==CallingState.JOINED){toast("Camera starts when the call is connected");return}await activeCall.camera.toggle();const off=activeCall.camera.state.status!=="enabled";$("#toggle-call-camera").classList.toggle("off",off);$("#toggle-call-camera").title=off?"Turn camera on":"Turn camera off"});
 async function leaveStreamCall(){const call=activeCall||incomingCall;if(call){try{await call.camera.disable()}catch{}try{await call.microphone.disable()}catch{}try{if(call.state.callingState===CallingState.RINGING)await call.leave({reject:true,reason:"cancel"});else if(call.state.callingState!==CallingState.LEFT)await call.endCall()}catch{try{await call.leave()}catch{}}}await finalizeCallActivity(!!callActivityStartedAt);dismissCallSurface()}
@@ -1378,15 +1463,25 @@ function meetingStatusFor(userId){
     &&new Date(meeting.start).getTime()<=now&&new Date(meeting.end||meeting.start).getTime()>=now);
 }
 function setPresenceLabel(){
+  const statusRow=$("#conversation-status")?.parentElement;
+  const detail=$(".details-person .presence");
+  const dot=$(".conversation-header .online-dot");
+  if(active?.kind==="group"){
+    if(statusRow)statusRow.hidden=true;
+    if(detail){detail.textContent="";detail.hidden=true}
+    if(dot)dot.hidden=true;
+    return;
+  }
+  if(statusRow)statusRow.hidden=false;
+  if(detail)detail.hidden=false;
+  if(dot)dot.hidden=false;
   const userId=active?.participantId;
   const statusEl=$("#conversation-status");
   if(!userId){statusEl.textContent="";return}
   const state=presenceFor(userId);
   const label=state.charAt(0).toUpperCase()+state.slice(1);
   statusEl.textContent=label;statusEl.className=state;
-  const detail=$(".details-person .presence");
   if(detail){detail.textContent=label;detail.className=`presence ${state}`}
-  const dot=$(".conversation-header .online-dot");
   if(dot){dot.className=`online-dot ${state}`}
 }
 
