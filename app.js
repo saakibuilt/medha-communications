@@ -282,7 +282,7 @@ function renderList(){
     </div>`}).join("")
     :`<p class="empty">${chatFilter==="unread"?"No unread conversations."
        :chatFilter==="pinned"?"No pinned conversations. Long-press or right-click a chat to pin it."
-       :q&&!people.length?"No conversations or people match that search."
+       :q?(people.length?"":"No conversations or people match that search.")
        :"No conversations yet. Select + to start a chat."}</p>`;
   if(people.length){
     const heading=document.createElement("p");heading.className="search-result-heading";heading.textContent="People";$("#chat-list").prepend(heading);
