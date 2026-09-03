@@ -2369,21 +2369,28 @@ const eventInvitees=new Set(),eventInviteeSearch=$("#event-invitees"),eventInvit
 /* ---------- workspace views ---------- */
 
 function setWorkspaceView(viewName){
+  const conversationView=viewName==="chat"||viewName==="favorites";
+  const baseView=conversationView?"chat":viewName;
   if(viewName==="chat"){
     chatFilter="all";
     document.querySelectorAll(".sidebar-tabs .tab").forEach((tab,index)=>tab.classList.toggle("active",index===0));
+    /* Chat is a separate navigation destination. Paint the cached full
+       conversation list immediately when returning from Favorites; Stream
+       synchronization can replace it afterward without a blank state. */
+    hydrateFromCache();
+    renderList();
   }
-  document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.classList.toggle("active",item.dataset.view===viewName));
+  document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.classList.toggle("active",item.dataset.view===baseView));
   document.querySelectorAll(".rail-item[data-rail-filter]").forEach(item=>item.classList.remove("active"));
   document.querySelectorAll(".view").forEach(view=>{
-    const activeView=view.id===`${viewName}-view`;
+    const activeView=view.id===`${baseView}-view`;
     view.classList.toggle("active-view",activeView);
     view.hidden=!activeView;
     view.style.display=activeView?"flex":"none";
   });
   const shell=document.querySelector(".app-shell");
   shell.classList.toggle("calendar-mode",viewName==="calendar");
-  $("#chat-sidebar").style.display=viewName==="chat"?"flex":"none";
+  $("#chat-sidebar").style.display=conversationView?"flex":"none";
   const calendarSidebar=$("#calendar-sidebar");calendarSidebar.hidden=viewName!=="calendar";calendarSidebar.style.display=viewName==="calendar"?"flex":"none";if(viewName==="calendar")shell.style.gridTemplateColumns="80px 280px minmax(500px,1fr) 0";else shell.style.removeProperty("grid-template-columns");
   $("#details-panel").classList.remove("open");
   $("#details-panel").classList.add("closed");
@@ -2414,7 +2421,7 @@ $("#setting-presence")?.addEventListener("change",async event=>{
 });
 document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.onclick=()=>setWorkspaceView(item.dataset.view));
 document.querySelectorAll(".rail-item[data-rail-filter]").forEach(item=>item.onclick=()=>{
-  setWorkspaceView("chat");
+  setWorkspaceView("favorites");
   document.querySelectorAll(".sidebar-tabs .tab").forEach(tab=>tab.classList.remove("active"));
   chatFilter=item.dataset.railFilter;
   item.classList.add("active");
