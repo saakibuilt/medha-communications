@@ -1221,7 +1221,22 @@ button.attach-thumb:hover{transform:scale(1.05)}
   #gif-dialog{position:fixed;left:0;right:0;bottom:0;top:auto;margin:0;width:100vw}
   #gif-dialog[open]{animation:sheet-up .3s cubic-bezier(.2,.9,.3,1.08)}
   .gif-picker{width:100%;border-radius:20px 20px 0 0;max-height:82dvh}
-  .gif-results{columns:2 100px;padding-bottom:max(16px,env(safe-area-inset-bottom))}
+  /* CSS columns flow sideways once they overflow, and the sheet only scrolls
+     vertically - so everything past the second column was unreachable. A grid
+     keeps every GIF in the vertical scroll instead. */
+  /* A grid with a fixed tile height, not a masonry column layout. The column
+     version scrolled vertically too, but each tile kept its own aspect ratio,
+     so a couple of tall GIFs filled the sheet and only two or three were in
+     view. Uniform tiles keep 6-8 on screen at any phone size. */
+  .gif-results{columns:auto;column-gap:0;display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-content:start;
+    padding:0 12px max(16px,env(safe-area-inset-bottom))}
+  .gif-results .directory-empty,.gif-results .directory-loading{grid-column:1/-1}
+  /* break-inside/margin belong to the column layout this replaces. A fixed
+     tile height is what keeps the count per screen predictable; cover crops
+     rather than letterboxing, so the GIF still fills its tile. */
+  .gif-results .gif-tile{margin:0;height:clamp(110px,17dvh,150px)}
+  .gif-results .gif-tile img{width:100%;height:100%;object-fit:cover}
 }
 @media (prefers-reduced-motion:reduce){#gif-dialog[open]{animation:none}}
 
@@ -1292,6 +1307,12 @@ body.keyboard-open .thread-composer{padding-bottom:10px}
 .favorites-sidebar .search-wrap,
 .favorites-sidebar .sidebar-tabs,
 .favorites-sidebar .sidebar-footer{display:none}
+/* On a phone the rail is a drawer, so hiding the tabs here left Favorites
+   with no way back to All/Unread/Pinned/Archived. Keep them on small
+   screens; on the desktop rail the Favorites button already does this. */
+@media(max-width:1024px){
+  .favorites-sidebar .sidebar-tabs{display:flex}
+}
 .favorites-sidebar .chat-list{display:grid;grid-template-columns:repeat(2,minmax(130px,220px));align-content:start;justify-content:center;gap:24px 28px;padding:18px 34px 40px}
 .favorites-sidebar .favorite-card{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px;min-height:145px;padding:10px 8px;border:1px solid #f0e2e6;border-radius:18px;background:linear-gradient(145deg,#fff,#fff8fa);cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .favorites-sidebar .favorite-card:hover,.favorites-sidebar .favorite-card:focus-visible{transform:translateY(-3px);border-color:#e5bcc8;box-shadow:0 12px 28px #88133714;outline:0}

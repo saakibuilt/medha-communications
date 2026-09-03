@@ -127,6 +127,84 @@ r=await page.evaluate(()=>document.querySelector("#gif-results").textContent);
 ok("an unconfigured key shows a clear message",/not set up|admin|Giphy/i.test(r),r);
 await page.close();
 
+/* The GIF sheet showed only two or three enormous tiles at a time, because
+   masonry columns let each keep its own aspect ratio. And Favorites hid the
+   tabs entirely, which on a phone (where the rail is a drawer) left no way
+   back to All/Unread/Pinned/Archived. */
+for(const [w,h,label] of [[360,780,"small phone"],[390,844,"iPhone"],[430,932,"iPhone Max"]]){
+  const page=await browser.newPage({viewport:{width:w,height:h},hasTouch:true,isMobile:true});
+  await page.route("**/fake-gif/**",async r=>{
+    const m=/w(\d+)h(\d+)/.exec(r.request().url())||[0,200,150];
+    return r.fulfill({status:200,contentType:"image/svg+xml",
+      body:`<svg xmlns="http://www.w3.org/2000/svg" width="${m[1]}" height="${m[2]}"><rect width="100%" height="100%" fill="#ccc"/></svg>`});
+  });
+  await page.route("**/api/gif-search**",r=>r.fulfill({status:200,contentType:"application/json",
+    body:JSON.stringify({results:Array.from({length:30},(_,i)=>{const hh=[112,150,200,260][i%4];
+      return {id:"g"+i,description:"GIF "+i,preview:`/fake-gif/w200h${hh}.svg`,
+        url:`/fake-gif/w200h${hh}.svg`,width:200,height:hh};})})}));
+  await boot(page);
+  await page.evaluate(()=>document.querySelector('[data-composer-action="gif"],#gif-button,[data-action="gif"]')?.click());
+  await page.waitForTimeout(1400);
+  const g=await page.evaluate(()=>{
+    const box=document.querySelector("#gif-results");
+    const tiles=[...box.querySelectorAll(".gif-tile")];
+    const br=box.getBoundingClientRect();
+    const inView=tiles.filter(t=>{const q=t.getBoundingClientRect();
+      return q.top>=br.top-1&&q.bottom<=br.bottom+1}).length;
+    /* overflow-x is hidden!important, so scrollWidth can never exceed
+       clientWidth - asserting on that passed even while columns 3+ were
+       clipped and unreachable. What actually matters is whether every tile
+       can be reached by scrolling down: anything sitting outside the box
+       horizontally is lost, and anything below is fine. */
+    const clipped=tiles.filter(t=>{const q=t.getBoundingClientRect();
+      return q.right>br.right+1||q.left<br.left-1});
+    /* Scroll to the bottom and count what is still unreachable. */
+    box.scrollTop=box.scrollHeight;
+    const stillClipped=tiles.filter(t=>{const q=t.getBoundingClientRect();
+      return q.right>br.right+1||q.left<br.left-1}).length;
+    box.scrollTop=0;
+    return {inView,tileH:Math.round(tiles[0].getBoundingClientRect().height),
+      vertical:box.scrollHeight>box.clientHeight+2,
+      sideways:box.scrollWidth>box.clientWidth+2,
+      outside:clipped.length,stillClipped};
+  });
+  ok(`${label} GIF sheet scrolls vertically`,g.vertical,g);
+  ok(`${label} GIF sheet never scrolls sideways`,!g.sideways,g);
+  ok(`${label} every GIF stays inside the sheet`,g.outside===0,g);
+  ok(`${label} no GIF is clipped out of reach`,g.stillClipped===0,g);
+  /* The actual regression to guard: too few GIFs visible at once. */
+  ok(`${label} shows at least 6 GIFs at once`,g.inView>=6,g);
+  ok(`${label} shows at most 10 GIFs at once`,g.inView<=10,g);
+  ok(`${label} GIF tiles are not tiny`,g.tileH>=100,g);
+
+  /* Favorites must keep the tabs on a phone. */
+  await page.evaluate(()=>document.querySelector('[data-rail-filter="favorites"]').click());
+  await page.waitForTimeout(400);
+  const f=await page.evaluate(()=>{
+    const t=document.querySelector(".sidebar-tabs");
+    return {fav:document.querySelector("#chat-sidebar").classList.contains("favorites-sidebar"),
+      h:Math.round(t.getBoundingClientRect().height),
+      tabs:[...document.querySelectorAll(".sidebar-tabs .tab")].map(x=>x.textContent.trim())};
+  });
+  ok(`${label} is in the favorites view`,f.fav,f);
+  ok(`${label} favorites still shows the tabs`,f.h>0,f);
+  ok(`${label} favorites can reach every tab`,
+    ["All","Unread","Pinned","Archived"].every(n=>f.tabs.some(t=>t.startsWith(n))),f);
+  await page.close();
+}
+
+/* On the desktop rail the Favorites button already does this, so the tabs
+   stay hidden there - the fix must not leak onto wide screens. */
+{
+  const page=await browser.newPage({viewport:{width:1440,height:900}});
+  await boot(page);
+  await page.evaluate(()=>document.querySelector('[data-rail-filter="favorites"]').click());
+  await page.waitForTimeout(400);
+  const d=await page.evaluate(()=>Math.round(document.querySelector(".sidebar-tabs").getBoundingClientRect().height));
+  ok("desktop favorites still hides the tabs",d===0,d);
+  await page.close();
+}
+
 await browser.close();
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
