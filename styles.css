@@ -406,12 +406,13 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
 /* Keep the message composer directly above the on-screen keyboard. */
 @media(max-width:1024px){
   body.keyboard-open #chat-view.active-view .composer{
-    position:fixed;left:10px;right:10px;bottom:var(--keyboard-height,0px);
+    position:fixed;left:10px;right:10px;bottom:0;
     z-index:75;margin:6px 0 8px;max-width:none;background:#fff;
   }
   body.keyboard-open #chat-view.active-view .message-area{
-    padding-bottom:calc(var(--keyboard-height,0px) + 118px);
+    padding-bottom:118px;
   }
+  body.keyboard-open #chat-view.active-view{overflow:hidden}
 }
 :root{--space-ink:#f9edf1;--space-brand:#f27c9d;--space-soft:#341526;--space-line:#d65c82}
 .space-launch-loader{position:fixed;inset:0;z-index:100;display:grid;place-items:center;overflow:hidden;background:#180a15;color:var(--space-ink);opacity:1;visibility:visible;transition:opacity .7s ease,visibility .7s ease}
@@ -1145,3 +1146,27 @@ button.attach-thumb:hover{transform:scale(1.05)}
    is the (hidden) sidebar, so starting at track 2 stranded ~540px. Spanning
    the whole row is correct for every one of those layouts. */
 @media(max-width:1024px){.app-shell.full-page>.main-area{grid-column:1 / -1}}
+
+/* ---------- emoji picker ----------
+   The old grid was locked to repeat(9,1fr) with 40px minimum buttons, so it
+   needed ~400px of inner width. On a 390px phone the picker is ~360px wide,
+   so the ninth column overflowed and every row looked misaligned. auto-fit
+   lets the column count follow the width instead. */
+#emoji-dialog{width:auto;max-width:none;padding:0;border-radius:16px;background:transparent;box-shadow:none;overflow:visible}
+#emoji-dialog::backdrop{background:#17202b66}
+.emoji-picker{width:min(430px,calc(100vw - 24px));max-width:none;background:#fff;border-radius:16px;
+  box-shadow:0 25px 80px #17202b30;padding:0 clamp(12px,4vw,20px) clamp(12px,4vw,20px)}
+.emoji-grid{grid-template-columns:repeat(auto-fit,minmax(clamp(34px,9vw,42px),1fr));gap:clamp(2px,1vw,5px);
+  max-height:min(46dvh,320px);align-content:start;justify-items:stretch}
+.emoji-choice{min-width:0;min-height:0;aspect-ratio:1;display:grid;place-items:center;
+  font-size:clamp(19px,5.4vw,24px);padding:0;transition:background .12s ease,transform .12s ease}
+.emoji-choice:active{transform:scale(.9)}
+/* Phones and tablets: a bottom sheet, not a full-screen takeover. */
+@media (max-width:640px){
+  #emoji-dialog{position:fixed;left:0;right:0;bottom:0;top:auto;margin:0;width:100vw;max-height:82dvh}
+  #emoji-dialog[open]{animation:sheet-up .28s cubic-bezier(.2,.9,.3,1.08)}
+  .emoji-picker{width:100%;border-radius:20px 20px 0 0;max-height:82dvh;
+    padding-bottom:max(16px,env(safe-area-inset-bottom))}
+  .emoji-grid{max-height:none}
+}
+@media (prefers-reduced-motion:reduce){#emoji-dialog[open]{animation:none}}
