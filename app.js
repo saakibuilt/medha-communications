@@ -349,7 +349,7 @@ document.querySelectorAll(".sidebar-tabs .tab").forEach(tab=>{
 function renderList(){
   const q=$("#chat-search").value.trim().toLowerCase();
   const favorites=JSON.parse(sessionStorage.getItem(`medha-favorites-${viewerId()||"guest"}`)||"[]");
-  const pinned=JSON.parse(sessionStorage.getItem(`medha-pinned-${viewerId()||"guest"}`)||"[]").slice(0,3);
+  const pinned=pinnedIds();
   const rank=new Map(pinned.map((id,i)=>[String(id),i]));
   const now=new Date();
   conversations.forEach(c=>{
@@ -370,9 +370,9 @@ function renderList(){
     if(chatFilter==="archived")return !!c.archived;
     /* An archived chat stays out of every other tab until it is unarchived
        or someone sends into it again. */
-    if(c.archived)return false;
-    if(chatFilter==="unread")return !!c.unread;
     if(chatFilter==="pinned")return rank.has(String(c.id));
+    if(c.archived&&!rank.has(String(c.id)))return false;
+    if(chatFilter==="unread")return !!c.unread;
     if(chatFilter==="favorites")return favorites.includes(String(c.id));
     return true;
   });
@@ -469,7 +469,7 @@ function messageHtml(m){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4.2-1L3 20l1.2-4.6A8.4 8.4 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>
       ${replyCount} ${replyCount===1?"reply":"replies"}
     </button>`:"";
-  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(m.text||"")}</span></div>`:""}${m.text&&!m.poll&&!quoted?`<div class="bubble">${esc(m.text)}</div>`:""}${links.map(a=>a.kind==="gif"||a.kind==="image"?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy"></a>`:`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener" download>📎 ${esc(a.name||"Attached file")}</a>`).join("")}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}</div></div>`;
+  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(m.text||"")}</span></div>`:""}${m.text&&!m.poll&&!quoted?`<div class="bubble">${esc(m.text)}</div>`:""}${attachmentsHtml(links)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}</div></div>`;
 }
 
 /* ---------- thread view (replies only) ----------
@@ -506,9 +506,7 @@ function renderThread(){
   const row=m=>`<div class="thread-message ${m.who==="me"?"mine":""}" data-message-id="${esc(m.id||"")}">
       <div class="thread-meta"><strong>${esc(m.senderName||"Unknown user")}</strong><time>${esc(m.time||"")}</time></div>
       <div class="bubble">${esc(m.text||"Attachment")}</div>
-      ${(m.attachments||[]).map(a=>a.kind==="image"||a.kind==="gif"
-        ?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy"></a>`
-        :`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener" download>\u{1F4CE} ${esc(a.name||"Attached file")}</a>`).join("")}
+      ${attachmentsHtml(m.attachments)}
     </div>`;
   $("#thread-body").innerHTML=`<div class="thread-parent">${row(parent)}</div>
     <div class="thread-count">${replies.length} ${replies.length===1?"reply":"replies"}</div>
@@ -517,6 +515,7 @@ function renderThread(){
 }
 async function openThread(parentId){
   if(!active)return;
+  if(document.body.classList.contains("details-open"))closeDetails();
   threadParentId=String(parentId);
   threadPanel.hidden=false;
   document.body.classList.add("thread-open");
@@ -542,6 +541,12 @@ document.addEventListener("click",e=>{
   if(button){e.preventDefault();openThread(button.dataset.threadId)}
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&threadParentId)closeThread()});
+$("#thread-body").addEventListener("click",e=>{
+  const button=e.target.closest("[data-open-attachment]");
+  if(!button)return;
+  e.preventDefault();
+  openAttachmentPreview({url:button.dataset.openAttachment,name:button.dataset.attachmentName,kind:button.dataset.attachmentKind});
+});
 $("#thread-input").addEventListener("keydown",e=>{
   if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("#thread-composer").requestSubmit()}
 });
@@ -561,6 +566,34 @@ $("#thread-composer").addEventListener("submit",async e=>{
     renderList();renderMessages();renderThread();scrollMessagesToEnd();
   }catch(error){toast(error.message)}
   finally{threadSending=false;input.focus()}
+});
+
+/* Sent attachments. Images go in a grid that adapts to how many there are
+   (one large, two side by side, three or more in a tight grid), files get a
+   row with a glyph, name and size. Both open the same preview lightbox. */
+function attachmentsHtml(list){
+  const items=(list||[]).filter(a=>a?.url);
+  if(!items.length)return "";
+  const images=items.filter(a=>a.kind==="image"||a.kind==="gif");
+  const files=items.filter(a=>!(a.kind==="image"||a.kind==="gif"));
+  const grid=images.length?`<div class="message-media count-${Math.min(images.length,4)}">${images.map(a=>
+    `<button type="button" class="media-tile" data-open-attachment="${esc(a.url)}" data-attachment-name="${esc(a.name||"")}" data-attachment-kind="${esc(a.kind||"")}">
+      <img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy">
+      ${a.kind==="gif"?'<span class="media-badge">GIF</span>':""}
+    </button>`).join("")}</div>`:"";
+  const rows=files.map(a=>`<button type="button" class="message-file" data-open-attachment="${esc(a.url)}" data-attachment-name="${esc(a.name||"")}" data-attachment-kind="${esc(a.kind||"")}">
+      <span class="file-glyph">${fileGlyph(a.name,a.kind)}</span>
+      <span class="file-copy"><strong>${esc(a.name||"Attached file")}</strong><small>${esc(fileSizeLabel(a.size)||"Open")}</small></span>
+      <span class="file-download" aria-hidden="true">\u2193</span>
+    </button>`).join("");
+  return grid+rows;
+}
+/* Opening a sent attachment uses the same lightbox as a pending one. */
+$("#message-area").addEventListener("click",e=>{
+  const button=e.target.closest("[data-open-attachment]");
+  if(!button)return;
+  e.preventDefault();
+  openAttachmentPreview({url:button.dataset.openAttachment,name:button.dataset.attachmentName,kind:button.dataset.attachmentKind});
 });
 
 function dayLabel(date){
@@ -679,8 +712,8 @@ function renderMessages(){
   renderDetailsPanel();
   const headerAvatar=$(".conversation-header .person-avatar"); if(headerAvatar)headerAvatar.outerHTML=avatar(active);
   const detailAvatar=$(".details-person .person-avatar"); if(detailAvatar)detailAvatar.outerHTML=avatar(active,false);
-  const media=(active.messages||[]).flatMap(m=>m.attachments||[]);
-  $("#shared-media").innerHTML=media.length?media.map(a=>`<a href="${esc(a.url)}" target="_blank" rel="noopener">${a.kind==="gif"?"GIF":"📎"}</a>`).join(""):'<div class="directory-empty">No shared media</div>';
+  /* Shared media is painted by renderDetailsPanel() just above; writing it
+     again here overwrote that richer markup with plain links. */
 
   if(!active.messagesLoaded){area.innerHTML='<div class="directory-loading">Loading the latest messages…</div>';return}
   const msgs=active.messages||[];
@@ -1448,10 +1481,18 @@ $("#chat-list").addEventListener("click",e=>{
 $("#chat-search").addEventListener("input",async()=>{await ensureDirectory();renderList()});
 
 function closeChatActions(){$("#chat-actions").hidden=true}
+function pinnedIds(){
+  const key="medha-pinned-"+(viewerId()||"guest");
+  try{return [...new Set(JSON.parse(localStorage.getItem(key)||sessionStorage.getItem(key)||"[]").map(String))]}catch{return []}
+}
+function savePinnedIds(items){
+  const key="medha-pinned-"+(viewerId()||"guest"),value=JSON.stringify([...new Set(items.map(String))]);
+  localStorage.setItem(key,value);sessionStorage.setItem(key,value);
+}
 function openChatActions(row,event){
   const menu=$("#chat-actions");
   menu.hidden=false;menu.dataset.chatId=row.dataset.id;
-  const pinned=JSON.parse(sessionStorage.getItem(`medha-pinned-${viewerId()||"guest"}`)||"[]");
+  const pinned=pinnedIds();
   let pin=menu.querySelector('[data-chat-action="pin"]');
   if(!pin){pin=document.createElement("button");pin.type="button";pin.dataset.chatAction="pin";menu.prepend(pin)}
   pin.textContent=pinned.includes(row.dataset.id)?"📌 Unpin chat":"📌 Pin chat";
@@ -1489,13 +1530,12 @@ $("#chat-actions").addEventListener("click",async e=>{
   if(action==="favorite"){
     toggleFavorite(chat);
   }else if(action==="pin"){
-    const key=`medha-pinned-${viewerId()||"guest"}`;
-    const items=JSON.parse(sessionStorage.getItem(key)||"[]");
+    const items=pinnedIds();
     let next;
     if(items.includes(id))next=items.filter(x=>x!==id);
     else if(items.length>=3){toast("You can pin up to 3 chats");next=items}
     else next=[...items,id];
-    sessionStorage.setItem(key,JSON.stringify(next));renderList();
+    savePinnedIds(next);renderList();
   }else if(action==="unread"){
     chat.unread=1;renderList();toast("Conversation marked unread");
   }else if(action==="archive"){
@@ -2416,6 +2456,11 @@ window.__space={get presenceFor(){return presenceFor},get writeCache(){return wr
   get streamChannels(){return streamChannels},
   get watchStreamChannel(){return watchStreamChannel},
   get showBanner(){return showBanner},get dismissBanner(){return dismissBanner},
+  get renderPending(){return renderPending},get openAttachmentPreview(){return openAttachmentPreview},
+  get attachmentsHtml(){return attachmentsHtml},get fileSizeLabel(){return fileSizeLabel},
+  get fileGlyph(){return fileGlyph},get queueAttachment(){return queueAttachment},
+  get pendingAttachments(){return pendingAttachments},
+  set pendingAttachments(v){pendingAttachments=v},
   get renderGroupMembers(){return renderGroupMembers},
   get selectedGroupMembers(){return selectedGroupMembers},
   get ensureDevicePermission(){return ensureDevicePermission},
