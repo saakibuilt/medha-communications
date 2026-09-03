@@ -1201,6 +1201,26 @@ function syncResponsiveChrome(){
 mobileQuery.addEventListener("change",syncResponsiveChrome);
 syncResponsiveChrome();
 
+/* Mobile browsers can keep the layout viewport at full height while the
+   keyboard shrinks only the visual viewport. Track that inset so the composer
+   follows the keyboard instead of being panned to the top of the page. */
+function syncKeyboardViewport(){
+  const viewport=window.visualViewport;
+  const focused=document.activeElement;
+  const textField=focused instanceof HTMLElement&&(
+    focused.matches("textarea,input")||focused.isContentEditable);
+  const keyboard=textField&&viewport
+    ?Math.max(0,window.innerHeight-viewport.height-viewport.offsetTop)
+    :0;
+  document.documentElement.style.setProperty("--keyboard-height",`${Math.round(keyboard)}px`);
+  document.body.classList.toggle("keyboard-open",keyboard>80);
+}
+window.visualViewport?.addEventListener("resize",syncKeyboardViewport);
+window.visualViewport?.addEventListener("scroll",syncKeyboardViewport);
+document.addEventListener("focusin",()=>requestAnimationFrame(syncKeyboardViewport));
+document.addEventListener("focusout",()=>setTimeout(syncKeyboardViewport,120));
+syncKeyboardViewport();
+
 /* Back / menu button in the conversation header, only shown on small screens. */
 /* Small screens get a three-line menu button that opens the rail and the
    conversation list together, and a back arrow once a chat is open. */

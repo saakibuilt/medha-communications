@@ -397,6 +397,17 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
   .app-shell,.main-area,.view,.message-area,.chat-list,.details-panel{min-width:0;max-width:100%}
   .bubble,.message-body,.chat-copy,.detail-fact strong{overflow-wrap:anywhere}
 }
+
+/* Keep the message composer directly above the on-screen keyboard. */
+@media(max-width:1024px){
+  body.keyboard-open #chat-view.active-view .composer{
+    position:fixed;left:10px;right:10px;bottom:var(--keyboard-height,0px);
+    z-index:75;margin:6px 0 8px;max-width:none;background:#fff;
+  }
+  body.keyboard-open #chat-view.active-view .message-area{
+    padding-bottom:calc(var(--keyboard-height,0px) + 118px);
+  }
+}
 :root{--space-ink:#f9edf1;--space-brand:#f27c9d;--space-soft:#341526;--space-line:#d65c82}
 .space-launch-loader{position:fixed;inset:0;z-index:100;display:grid;place-items:center;overflow:hidden;background:#180a15;color:var(--space-ink);opacity:1;visibility:visible;transition:opacity .7s ease,visibility .7s ease}
 .space-booting .space-launch-loader{display:grid}.space-launch-loader[aria-hidden="true"]{opacity:0;visibility:hidden;pointer-events:none}
