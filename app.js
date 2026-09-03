@@ -1247,10 +1247,27 @@ function syncKeyboardViewport(){
 }
 window.visualViewport?.addEventListener("resize",syncKeyboardViewport);
 window.visualViewport?.addEventListener("scroll",syncKeyboardViewport);
+/* Do NOT add keyboard-open here. That class pins the shell with
+   position:fixed, but the height variable is only set once visualViewport
+   reports the keyboard - so between focus and that event the shell was
+   pinned at full height with the keyboard covering its bottom third,
+   which is what threw the type box to the top until the user scrolled.
+   syncKeyboardViewport sets the variables and the class together, so the
+   two can never disagree. */
 document.addEventListener("focusin",event=>{
-  if(event.target instanceof HTMLElement&&event.target.closest("#composer"))
-    document.body.classList.add("keyboard-open");
-  requestAnimationFrame(syncKeyboardViewport);
+  const target=event.target;
+  if(!(target instanceof HTMLElement))return;
+  if(!target.matches("textarea,input:not([type=checkbox]):not([type=radio])")&&!target.isContentEditable)return;
+  /* The keyboard animates in over ~250ms and iOS reports the new viewport
+     partway through, so resync across that window rather than once. */
+  syncKeyboardViewport();
+  [0,60,140,260,420].forEach(delay=>setTimeout(syncKeyboardViewport,delay));
+});
+document.addEventListener("focusout",()=>{
+  /* Let focus settle first: moving between two fields fires focusout before
+     the next focusin, and collapsing in between makes the layout jump. */
+  setTimeout(syncKeyboardViewport,0);
+  setTimeout(syncKeyboardViewport,300);
 });
 document.addEventListener("focusout",()=>setTimeout(syncKeyboardViewport,120));
 syncKeyboardViewport();

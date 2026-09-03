@@ -25,6 +25,25 @@ for(const vp of [{w:390,h:844,n:"iPhone"},{w:430,h:932,n:"iPhone Max"},{w:820,h:
       return {bottom:Math.round(c.bottom),h:window.innerHeight}});
     ok(`${label} composer starts at the bottom`,before.h-before.bottom<60,before);
 
+    /* The real sequence: focus fires FIRST, and the viewport only reports
+       the keyboard a moment later. The previous test did both at once and
+       so never caught the gap, where the shell was pinned at full height
+       and the composer sat under the keyboard until the user scrolled. */
+    await page.evaluate(()=>document.querySelector("#message-input").focus());
+    await page.waitForTimeout(120);
+    let gap=await page.evaluate(()=>{
+      const c=document.querySelector("#composer").getBoundingClientRect();
+      const shell=document.querySelector(".app-shell");
+      const cs=getComputedStyle(shell);
+      return {composerBottom:Math.round(c.bottom),composerTop:Math.round(c.top),
+        pinned:cs.position==="fixed",h:cs.height,inner:window.innerHeight,
+        open:document.body.classList.contains("keyboard-open")};
+    });
+    /* Before the viewport reports anything the layout must stay untouched:
+       pinning without a known height is what broke it. */
+    ok(`${label} focus alone does not pin the shell`,!gap.pinned||gap.open===false,gap);
+    ok(`${label} composer stays put on focus`,gap.composerBottom<=vp.h+2&&gap.composerTop>vp.h*0.35,gap);
+
     /* simulate the keyboard opening */
     await page.evaluate(({kb,mode})=>{
       const vv=window.visualViewport;

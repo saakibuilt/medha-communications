@@ -414,7 +414,7 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
    The composer stays in normal flex flow, eliminating the gap and preserving
    the message area's own scrolling. */
 @media(max-width:1024px){
-  body.keyboard-open .app-shell{height:var(--keyboard-viewport-height,100dvh)!important}
+  body.keyboard-open .app-shell{height:var(--keyboard-viewport-height)!important}
   body.keyboard-open #chat-view.active-view .composer{
     position:static;z-index:auto;margin:6px 10px 8px;max-width:none;background:#fff;
   }
@@ -1246,10 +1246,13 @@ body.keyboard-open{position:fixed;inset:0;width:100%;overflow:hidden}
 /* top:0, not the viewport offset: a position:fixed element is already
    placed against the visual viewport, so adding offsetTop again pushed the
    shell down by a whole keyboard height and hid the composer behind it. */
+/* No 100dvh fallback: keyboard-open is only ever set together with the
+   height variable, and falling back to the full viewport while pinned is
+   exactly the state that hid the composer behind the keyboard. */
 body.keyboard-open .app-shell{
   position:fixed;left:0;right:0;top:0;
-  height:var(--keyboard-viewport-height,100dvh)!important;
-  max-height:var(--keyboard-viewport-height,100dvh)}
+  height:var(--keyboard-viewport-height)!important;
+  max-height:var(--keyboard-viewport-height)}
 /* The safe-area inset belongs to the home indicator, which the keyboard
    covers - keeping it would float the composer above the keys. */
 body.keyboard-open .composer{margin-bottom:8px}
@@ -1257,8 +1260,8 @@ body.keyboard-open .message-area{overscroll-behavior:contain}
 /* The thread sheet gets the same treatment so its reply box stays reachable. */
 body.keyboard-open .thread-panel{
   top:0;
-  height:var(--keyboard-viewport-height,100dvh);
-  max-height:var(--keyboard-viewport-height,100dvh)}
+  height:var(--keyboard-viewport-height);
+  max-height:var(--keyboard-viewport-height)}
 body.keyboard-open .thread-composer{padding-bottom:10px}
 
 /* Favorites is a standalone destination: never carry the chat filters or an
