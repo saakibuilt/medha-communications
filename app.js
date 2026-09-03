@@ -379,6 +379,7 @@ function hydrateFromCache(){
 /* ---------- rendering ---------- */
 /* All / Unread / Pinned filter for the sidebar tabs. */
 let chatFilter="all";
+let workspaceView="chat";
 document.querySelectorAll(".sidebar-tabs .tab").forEach(tab=>{
   tab.addEventListener("click",()=>{
     document.querySelectorAll(".sidebar-tabs .tab").forEach(t=>t.classList.remove("active"));
@@ -419,6 +420,13 @@ function renderList(){
     return true;
   });
   const people=q?directory.filter(person=>String(person.id)!==String(viewerId())&&`${person.full_name} ${person.email||""} ${person.department||""}`.toLowerCase().includes(q)&&!shown.some(chat=>String(chat.participantId)===String(person.id))):[];
+  if(workspaceView==="favorites"){
+    const favoriteChats=ordered.filter(c=>favorites.includes(String(c.id)));
+    $("#chat-list").innerHTML=favoriteChats.length?favoriteChats.map(c=>`<div class="favorite-card" data-id="${esc(c.id)}" tabindex="0" role="button" aria-label="Open chat with ${esc(c.name)}">
+      <div class="favorite-avatar">${avatar(c)}</div><strong>${esc(c.name)}</strong>
+    </div>`).join(""):'<p class="empty">No favorites found</p>';
+    return;
+  }
   $("#chat-list").innerHTML=shown.length?shown.map(c=>{
     const state=c.kind==="group"?"":presenceFor(c.participantId);
     const pinned=rank.has(String(c.id));
@@ -426,7 +434,7 @@ function renderList(){
       <div class="avatar-stack">${avatar(c)}${c.kind==="group"||state==="hidden"?"":`<i class="presence-dot ${state}" title="${state}"></i>`}</div>
       <div class="chat-copy">
         <div class="chat-line">
-          <strong>${pinned?'<span class="chat-pin" title="Pinned">\u{1F4CC}</span>':""}${favorites.includes(c.id)?'<span class="chat-fav">\u2605</span>':""}${esc(c.name)}</strong>
+      <strong>${pinned?'<span class="chat-pin" title="Pinned">\u{1F4CC}</span>':""}${favorites.includes(String(c.id))?'<span class="chat-fav">\u2605</span>':""}${esc(c.name)}</strong>
           <time>${esc(c.time||"")}</time>
         </div>
         <div class="chat-line-2">
@@ -1578,9 +1586,21 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeComposerTools()
 /* ---------- chat list interaction ---------- */
 $("#chat-list").addEventListener("click",e=>{
   const row=e.target.closest("[data-id]");
-  if(row){closeChatActions();switchChat(row.dataset.id)}
+  if(row){
+    closeChatActions();
+    if(workspaceView==="favorites")setWorkspaceView("chat");
+    switchChat(row.dataset.id);
+  }
   const personRow=e.target.closest("[data-person-id]");
   if(personRow){const person=directory.find(item=>String(item.id)===String(personRow.dataset.personId));if(person)openDirectChat(person,"").catch(error=>toast(error.message))}
+});
+$("#chat-list").addEventListener("keydown",e=>{
+  if((e.key!=="Enter"&&e.key!==" ")||workspaceView!=="favorites")return;
+  const row=e.target.closest("[data-id]");
+  if(!row)return;
+  e.preventDefault();
+  setWorkspaceView("chat");
+  switchChat(row.dataset.id);
 });
 $("#chat-search").addEventListener("input",async()=>{await ensureDirectory();renderList()});
 
@@ -2121,7 +2141,53 @@ function openMessageActions(row,event){
   const rect=menu.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(event.clientX,window.innerWidth-rect.width-8))+"px";menu.style.top=Math.max(8,Math.min(event.clientY,window.innerHeight-rect.height-8))+"px";
 }
 $("#message-area").addEventListener("contextmenu",e=>{const row=e.target.closest(".message");if(row){e.preventDefault();openMessageActions(row,e)}});
-document.addEventListener("click",e=>{if(!e.target.closest("#message-actions"))$("#message-actions").hidden=true});
+let suppressMessageTapUntil=0;
+document.addEventListener("click",e=>{if(Date.now()<suppressMessageTapUntil)return;if(!e.target.closest("#message-actions"))$("#message-actions").hidden=true});
+
+/* Touch message gestures. A long press opens the same complete action menu as
+   desktop right-click. A deliberate horizontal swipe starts a reply, while
+   vertical movement is left to the browser so chat scrolling stays natural. */
+let messageTouch=null;
+const messageSwipeDistance=58;
+$("#message-area").addEventListener("touchstart",e=>{
+  const row=e.target.closest(".message");
+  if(!row||!row.dataset.messageId)return;
+  const touch=e.touches[0];
+  messageTouch={row,startX:touch.clientX,startY:touch.clientY,longPressed:false,moved:false};
+  messageTouch.timer=setTimeout(()=>{
+    if(!messageTouch||messageTouch.moved)return;
+    messageTouch.longPressed=true;
+    suppressMessageTapUntil=Date.now()+700;
+    openMessageActions(row,{clientX:touch.clientX,clientY:touch.clientY});
+    if(navigator.vibrate)navigator.vibrate(18);
+  },500);
+},{passive:true});
+$("#message-area").addEventListener("touchmove",e=>{
+  if(!messageTouch)return;
+  const touch=e.touches[0],dx=touch.clientX-messageTouch.startX,dy=touch.clientY-messageTouch.startY;
+  if(Math.abs(dx)>10||Math.abs(dy)>10){
+    messageTouch.moved=true;
+    clearTimeout(messageTouch.timer);
+  }
+  if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>12)e.preventDefault();
+},{passive:false});
+$("#message-area").addEventListener("touchend",e=>{
+  if(!messageTouch)return;
+  const state=messageTouch;clearTimeout(state.timer);
+  const touch=e.changedTouches[0],dx=touch.clientX-state.startX,dy=touch.clientY-state.startY;
+  if(!state.longPressed&&Math.abs(dx)>=messageSwipeDistance&&Math.abs(dx)>Math.abs(dy)*1.25){
+    const message=active?.messages?.find(item=>String(item.id)===String(state.row.dataset.messageId));
+    if(message){
+      suppressMessageTapUntil=Date.now()+500;
+      setReplyTarget(message);
+      state.row.classList.remove("message-swipe-reply");
+      void state.row.offsetWidth;
+      state.row.classList.add("message-swipe-reply");
+    }
+  }
+  messageTouch=null;
+},{passive:true});
+$("#message-area").addEventListener("touchcancel",()=>{if(messageTouch){clearTimeout(messageTouch.timer);messageTouch=null}},{passive:true});
 /* ---------- edit & forward dialogs ----------
    These replaced window.prompt(), which is a blocking OS-chrome box: it
    cannot be styled, is suppressed in some embedded/PWA contexts, and gave
@@ -2359,7 +2425,7 @@ async function loadGifs(query=""){
     if(token!==gifRequestId)return;
     if(!response.ok){
       host.innerHTML=`<div class="directory-empty">${esc(response.status===503
-        ?"GIF search is not set up yet. Ask an admin to add a Tenor API key."
+        ?"GIF search is not set up yet. Ask an admin to add a Giphy API key."
         :body.error||"GIF search is unavailable right now.")}</div>`;
       return;
     }
@@ -2559,10 +2625,11 @@ const eventInvitees=new Set(),eventInviteeSearch=$("#event-invitees"),eventInvit
 /* ---------- workspace views ---------- */
 
 function setWorkspaceView(viewName){
+  workspaceView=viewName;
   /* Selecting a destination completes the mobile navigation action. */
   closeMobileSidebar();
   const conversationView=viewName==="chat"||viewName==="favorites";
-  const baseView=conversationView?"chat":viewName;
+  const baseView=viewName==="favorites"?"__favorites__":(conversationView?"chat":viewName);
   /* Details and threads belong to the currently visible chat only. Never
      carry either surface into Favorites, Calendar, or Settings. */
   closeThread();
@@ -2592,6 +2659,10 @@ function setWorkspaceView(viewName){
       })();
     }
   }
+  if(viewName==="favorites"){
+    chatFilter="favorites";
+    renderList();
+  }
   document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.classList.toggle("active",item.dataset.view===baseView));
   document.querySelectorAll(".rail-item[data-rail-filter]").forEach(item=>item.classList.remove("active"));
   document.querySelectorAll(".view").forEach(view=>{
@@ -2602,11 +2673,14 @@ function setWorkspaceView(viewName){
   });
   const shell=document.querySelector(".app-shell");
   shell.classList.toggle("calendar-mode",viewName==="calendar");
+  shell.classList.toggle("favorites-mode",viewName==="favorites");
   /* Settings hides the chat sidebar but its 300px grid column stayed, so the
      page rendered inside that narrow slot - a 220px card on a 1440px screen.
      full-page collapses the unused columns so the view gets the real width. */
   shell.classList.toggle("full-page",viewName==="settings");
   $("#chat-sidebar").style.display=conversationView?"flex":"none";
+  $("#chat-sidebar").classList.toggle("favorites-sidebar",viewName==="favorites");
+  $("#chat-view").style.display=viewName==="chat"?"flex":"none";
   const calendarSidebar=$("#calendar-sidebar");calendarSidebar.hidden=viewName!=="calendar";calendarSidebar.style.display=viewName==="calendar"?"flex":"none";if(viewName==="calendar")shell.style.gridTemplateColumns="80px 280px minmax(500px,1fr) 0";else shell.style.removeProperty("grid-template-columns");
   if(viewName==="calendar") renderCalendar();
   if(viewName==="settings") renderSettings();
@@ -2637,7 +2711,7 @@ document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.onclick=()
 document.querySelectorAll(".rail-item[data-rail-filter]").forEach(item=>item.onclick=()=>{
   setWorkspaceView("favorites");
   document.querySelectorAll(".sidebar-tabs .tab").forEach(tab=>tab.classList.remove("active"));
-  chatFilter=item.dataset.railFilter;
+  chatFilter="favorites";
   item.classList.add("active");
   renderList();
 });

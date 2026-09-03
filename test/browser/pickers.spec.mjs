@@ -34,6 +34,7 @@ for(const vp of [{w:1440,h:900,n:"laptop"},{w:1024,h:1366,n:"ipad pro"},{w:820,h
       /* not full-screen on phones/tablets: a sheet leaves headroom above */
       coversAll:Math.round(pb.height)>=window.innerHeight,
       overflow:document.documentElement.scrollWidth>window.innerWidth,
+      cardL:Math.round(pb.left),cardR:Math.round(window.innerWidth-pb.right),
       tiles:tiles.length,
       /* every tile inside the grid box == columns actually fit */
       tilesInside:tiles.every(t=>{const b=t.getBoundingClientRect();return b.left>=gb.left-1&&b.right<=gb.right+1}),
@@ -47,6 +48,9 @@ for(const vp of [{w:1440,h:900,n:"laptop"},{w:1024,h:1366,n:"ipad pro"},{w:820,h
   ok(`${vp.n} emoji tiles all fit their columns`,r.tilesInside,{tiles:r.tiles});
   ok(`${vp.n} emoji rows are aligned`,r.aligned);
   ok(`${vp.n} emoji grid never scrolls sideways`,!r.gridScrollsX);
+  /* A transparent full-width dialog hosts the visible card, so the CARD is
+     what must be centred - the dialog element is always full width. */
+  if(vp.w>640) ok(`${vp.n} emoji card is centred`,Math.abs(r.cardL-r.cardR)<=2,{l:r.cardL,r:r.cardR});
   if(vp.w<=640) ok(`${vp.n} emoji picker is a sheet, not full screen`,!r.coversAll,{h:r.innerH});
   await page.evaluate(()=>document.querySelector("#emoji-dialog").close());
   await page.waitForTimeout(200);
@@ -60,6 +64,7 @@ for(const vp of [{w:1440,h:900,n:"laptop"},{w:1024,h:1366,n:"ipad pro"},{w:820,h
     const tiles=[...document.querySelectorAll(".gif-tile")];
     const res=document.querySelector("#gif-results").getBoundingClientRect();
     return {open:d.open,urlField:!!document.querySelector("#gif-url"),
+      cardL:Math.round(pb.left),cardR:Math.round(window.innerWidth-pb.right),
       hasSearch:!!document.querySelector("#gif-search"),
       tiles:tiles.length,imgs:tiles.filter(t=>t.querySelector("img")).length,
       fitsW:pb.left>=-1&&pb.right<=window.innerWidth+1,
@@ -75,6 +80,7 @@ for(const vp of [{w:1440,h:900,n:"laptop"},{w:1024,h:1366,n:"ipad pro"},{w:820,h
   ok(`${vp.n} gif picker fits the width`,r.fitsW&&!r.overflow,r);
   ok(`${vp.n} gif picker fits the height`,r.fitsH,r);
   ok(`${vp.n} gif tiles stay inside the grid`,r.tilesInside);
+  if(vp.w>640) ok(`${vp.n} gif card is centred`,Math.abs(r.cardL-r.cardR)<=2,{l:r.cardL,r:r.cardR});
   if(vp.w<=640) ok(`${vp.n} gif picker is a sheet, not full screen`,!r.coversAll);
   await page.evaluate(()=>document.querySelector("#gif-dialog").close());
   await page.close();
@@ -115,7 +121,7 @@ await page.route("**/api/gif-search**",r=>r.fulfill({status:503,contentType:"app
 await page.evaluate(()=>document.querySelector("#gif-button").click());
 await page.waitForTimeout(700);
 r=await page.evaluate(()=>document.querySelector("#gif-results").textContent);
-ok("an unconfigured key shows a clear message",/not set up|admin|Tenor/i.test(r),r);
+ok("an unconfigured key shows a clear message",/not set up|admin|Giphy/i.test(r),r);
 await page.close();
 
 await browser.close();

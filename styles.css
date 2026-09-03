@@ -604,6 +604,9 @@ dialog:not([open]){display:none!important}
 
 /* Stream rich-message and call surfaces */
 .message-actions{width:220px}.message-actions button[hidden]{display:none}.group-member-list{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px}.reply-preview{border-left:3px solid var(--brand);padding:5px 8px;margin-bottom:5px;color:#7c8797;font-size:11px;background:#fff7f8;border-radius:4px}.call-shell{padding:0 22px 22px;width:min(720px,calc(100vw - 30px))}.call-participants{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;min-height:180px;background:#17202b;border-radius:10px;padding:12px}.call-participants video{width:100%;height:180px;object-fit:cover;border-radius:8px;background:#293544}.call-controls{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.message-swipe-reply{animation:message-swipe-reply .34s ease-out}
+@keyframes message-swipe-reply{0%{transform:translateX(0)}45%{transform:translateX(-12px)}100%{transform:translateX(0)}}
+@media(pointer:coarse){.message{touch-action:pan-y}.message-swipe-reply{will-change:transform}}
 .call-shell{width:100vw;height:100dvh;max-width:none;padding:28px 34px 34px;background:linear-gradient(145deg,#101827,#1c293c);color:#fff;display:flex;flex-direction:column}dialog:has(.call-shell){width:100vw;height:100dvh;max-width:none;margin:0;padding:0;border-radius:0}.call-shell .dialog-head{flex:0 0 auto}.call-shell .dialog-head h2,.call-shell .close-dialog{color:#fff}.call-participants{flex:1;min-height:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));align-content:center;background:#0b111c;padding:18px;border-radius:18px}.call-participants video{height:min(70vh,calc(100dvh - 240px));min-height:220px}.call-controls{justify-content:center;align-items:center;gap:16px}.call-icon-button{position:relative;width:66px;height:66px;border:0;border-radius:50%;background:#334155;color:#fff;cursor:pointer;display:grid;place-items:center}.call-icon-button .call-icon{font-size:24px;line-height:1}.call-icon-button b{position:absolute;top:72px;font-size:10px;font-weight:600;white-space:nowrap}.call-icon-button i{display:none;position:absolute;width:4px;height:48px;background:#ef4444;transform:rotate(45deg);border-radius:4px}.call-icon-button.off{background:#4b1d28}.call-icon-button.off i{display:block}.incoming-call-actions{display:flex;justify-content:center;gap:12px;padding:16px}.incoming-call-card{grid-column:1/-1;display:grid;place-items:center;align-content:center;gap:10px;color:#fff;font-size:18px}.incoming-call-card span{font-size:12px;color:#b9c4d3}
 .call-minimized{position:fixed;z-index:100;right:18px;top:18px;display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff;border:1px solid #f0bdc8;border-radius:12px;box-shadow:0 14px 35px #17202b33;color:var(--ink);font-size:12px}.call-minimized[hidden]{display:none}.call-minimized span{font-weight:800;color:var(--brand)}.call-minimized button{border:0;border-radius:7px;padding:6px 9px;background:var(--brand);color:#fff;cursor:pointer;font:inherit;font-size:11px}.call-minimized button:last-child{background:#fff1f2;color:#b4233d;font-size:16px;padding:3px 8px}
 .search-result-heading{padding:12px 12px 4px;margin:0;color:#9aa6b5;text-transform:uppercase;letter-spacing:.1em;font-size:10px;font-weight:800}.search-person .chat-line-2 p{color:#9aa6b5}
@@ -1161,7 +1164,7 @@ button.attach-thumb:hover{transform:scale(1.05)}
    needed ~400px of inner width. On a 390px phone the picker is ~360px wide,
    so the ninth column overflowed and every row looked misaligned. auto-fit
    lets the column count follow the width instead. */
-#emoji-dialog{width:auto;max-width:none;padding:0;border-radius:16px;background:transparent;box-shadow:none;overflow:visible}
+#emoji-dialog{width:auto;max-width:none;margin:auto;padding:0;border-radius:16px;background:transparent;box-shadow:none;overflow:visible;display:grid;justify-items:center;align-content:center}
 #emoji-dialog::backdrop{background:#17202b66}
 .emoji-picker{width:min(430px,calc(100vw - 24px));max-width:none;background:#fff;border-radius:16px;
   box-shadow:0 25px 80px #17202b30;padding:0 clamp(12px,4vw,20px) clamp(12px,4vw,20px)}
@@ -1186,27 +1189,37 @@ button.attach-thumb:hover{transform:scale(1.05)}
 @media (prefers-reduced-motion:reduce){#emoji-dialog[open]{animation:none}}
 
 /* ---------- GIF picker ---------- */
-#gif-dialog{width:auto;max-width:none;padding:0;border-radius:16px;background:transparent;box-shadow:none;overflow:visible}
+/* width:auto on a <dialog> drops the UA's auto margins, which left the
+   picker pinned to the left edge on desktop. margin:auto restores centering;
+   the phone rule below overrides it back to a bottom sheet. */
+/* The dialog itself is a transparent full-width box; the visible card sits
+   inside it, so the card is what has to be centred. Without this both
+   pickers hugged the left edge on desktop and tablet. */
+#gif-dialog{width:auto;max-width:none;margin:auto;padding:0;border-radius:16px;background:transparent;box-shadow:none;overflow:visible;display:grid;justify-items:center;align-content:center}
 #gif-dialog::backdrop{background:#17202b66}
 #gif-dialog[open]{animation:sheet-in .28s cubic-bezier(.2,.9,.3,1.12)}
 .gif-picker{width:min(520px,calc(100vw - 24px));background:#fff;border-radius:16px;box-shadow:0 25px 80px #17202b30;
   display:flex;flex-direction:column;max-height:min(80dvh,640px);overflow:hidden}
 .gif-picker .dialog-head{padding:18px 20px 12px;flex:none}
 .gif-picker .dialog-search{margin:0 20px 12px;flex:none}
+/* GIFs are natively wide and every one has a different ratio. A masonry
+   column layout keeps each at its own height instead of cropping them all
+   to squares, which is what left the rows looking ragged. */
 .gif-results{flex:1;min-height:0;overflow-y:auto;padding:0 20px 20px;
-  display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;align-content:start}
-.gif-results .directory-empty,.gif-results .directory-loading{grid-column:1/-1}
-.gif-tile{border:0;padding:0;background:#f1f4f8;border-radius:10px;overflow:hidden;cursor:pointer;
-  aspect-ratio:1;transition:transform .14s ease,box-shadow .14s ease}
+  columns:3 120px;column-gap:8px}
+/* column-span, not grid-column: the results are a multi-column layout now. */
+.gif-results .directory-empty,.gif-results .directory-loading{column-span:all;text-align:center}
+.gif-tile{display:block;width:100%;border:0;padding:0;background:#f1f4f8;border-radius:10px;
+  overflow:hidden;cursor:pointer;margin:0 0 8px;break-inside:avoid;
+  transition:transform .14s ease,box-shadow .14s ease}
 .gif-tile:hover{transform:translateY(-2px);box-shadow:0 8px 20px #17202b1f}
 .gif-tile:active{transform:scale(.96)}
-.gif-tile img{width:100%;height:100%;object-fit:cover;display:block}
+.gif-tile img{width:100%;height:auto;display:block}
 @media (max-width:640px){
   #gif-dialog{position:fixed;left:0;right:0;bottom:0;top:auto;margin:0;width:100vw}
   #gif-dialog[open]{animation:sheet-up .3s cubic-bezier(.2,.9,.3,1.08)}
   .gif-picker{width:100%;border-radius:20px 20px 0 0;max-height:82dvh}
-  .gif-results{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));
-    padding-bottom:max(16px,env(safe-area-inset-bottom))}
+  .gif-results{columns:2 100px;padding-bottom:max(16px,env(safe-area-inset-bottom))}
 }
 @media (prefers-reduced-motion:reduce){#gif-dialog[open]{animation:none}}
 
@@ -1247,3 +1260,25 @@ body.keyboard-open .thread-panel{
   height:var(--keyboard-viewport-height,100dvh);
   max-height:var(--keyboard-viewport-height,100dvh)}
 body.keyboard-open .thread-composer{padding-bottom:10px}
+
+/* Favorites is a standalone destination: never carry the chat filters or an
+   open conversation into it. Favorite contacts are compact, centered cards. */
+.app-shell.favorites-mode{grid-template-columns:80px minmax(0,1fr)}
+.app-shell.favorites-mode .main-area,.app-shell.favorites-mode .details-panel{display:none}
+.favorites-sidebar{grid-column:2;border-right:0;max-width:none}
+.favorites-sidebar .sidebar-top{padding:34px 34px 20px}
+.favorites-sidebar .sidebar-top h1::after{content:"Favorites";font-size:inherit}
+.favorites-sidebar .sidebar-top h1{font-size:0}
+.favorites-sidebar .sidebar-top h1::after{font-size:24px}
+.favorites-sidebar .sidebar-top .header-actions,
+.favorites-sidebar .search-wrap,
+.favorites-sidebar .sidebar-tabs,
+.favorites-sidebar .sidebar-footer{display:none}
+.favorites-sidebar .chat-list{display:grid;grid-template-columns:repeat(2,minmax(130px,220px));align-content:start;justify-content:center;gap:24px 28px;padding:18px 34px 40px}
+.favorites-sidebar .favorite-card{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px;min-height:145px;padding:10px 8px;border:1px solid #f0e2e6;border-radius:18px;background:linear-gradient(145deg,#fff,#fff8fa);cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.favorites-sidebar .favorite-card:hover,.favorites-sidebar .favorite-card:focus-visible{transform:translateY(-3px);border-color:#e5bcc8;box-shadow:0 12px 28px #88133714;outline:0}
+.favorites-sidebar .favorite-avatar{display:grid;place-items:center;width:78px;height:78px;border-radius:50%;background:#fff;box-shadow:0 0 0 6px #fff1f4,0 8px 18px #88133712;overflow:hidden}
+.favorites-sidebar .favorite-avatar .person-avatar{width:78px;height:78px;font-size:21px}
+.favorites-sidebar .favorite-card strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;font-size:13px;color:var(--ink)}
+.favorites-sidebar .chat-list>.empty{grid-column:1 / -1;min-height:220px}
+@media(max-width:720px){.app-shell.favorites-mode{grid-template-columns:60px minmax(0,1fr)}.favorites-sidebar{grid-column:2}.favorites-sidebar .sidebar-top{padding:25px 20px 15px}.favorites-sidebar .chat-list{grid-template-columns:repeat(2,minmax(115px,1fr));gap:16px;padding:14px 18px 28px}.favorites-sidebar .favorite-card{min-height:130px}.favorites-sidebar .favorite-avatar,.favorites-sidebar .favorite-avatar .person-avatar{width:68px;height:68px}}

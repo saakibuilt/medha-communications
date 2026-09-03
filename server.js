@@ -52,26 +52,35 @@ async function streamUsers(req,res){
 /* Mirrors api/gif-search.js so the picker works against `npm run dev`
    too. The key is read from the environment and never reaches the client. */
 async function gifSearch(req,res){
-  const key=process.env.TENOR_API_KEY;
-  if(!key)return json(res,503,{error:"GIF search is not configured"});
+  /* Mirrors api/gif-search.js so the picker works against `npm run dev`.
+     Keys stay server-side and are tried in order, falling through on a
+     quota or auth failure. */
+  const keys=String(process.env.GIPHY_API_KEYS||process.env.GIPHY_API_KEY||"")
+    .split(/[\s,]+/).map(k=>k.trim()).filter(Boolean);
+  if(!keys.length)return json(res,503,{error:"GIF search is not configured"});
   const url=new URL(req.url,"http://localhost");
   const query=String(url.searchParams.get("q")||"").trim().slice(0,100);
   const limit=Math.min(Number(url.searchParams.get("limit"))||24,50);
-  const params=new URLSearchParams({key,limit:String(limit),contentfilter:"medium",
-    media_filter:"tinygif,gif",client_key:"medha_space"});
-  if(query)params.set("q",query);
-  try{
-    const response=await fetch(`https://tenor.googleapis.com/v2/${query?"search":"featured"}?${params}`);
-    if(!response.ok)throw Error(`Tenor responded ${response.status}`);
-    const body=await response.json();
-    const results=(body.results||[]).map(item=>({
-      id:String(item.id||""),description:String(item.content_description||"GIF").slice(0,120),
-      preview:item.media_formats?.tinygif?.url||item.media_formats?.gif?.url||"",
-      url:item.media_formats?.gif?.url||item.media_formats?.tinygif?.url||"",
-      width:item.media_formats?.gif?.dims?.[0]||null,height:item.media_formats?.gif?.dims?.[1]||null,
-    })).filter(item=>item.preview&&item.url);
-    return json(res,200,{results});
-  }catch(error){return json(res,502,{error:error.message||"GIF search failed"})}
+  let lastError="GIF search failed";
+  for(const key of keys){
+    const params=new URLSearchParams({api_key:key,limit:String(limit),rating:"pg-13",bundle:"messaging_non_clips"});
+    if(query)params.set("q",query);
+    try{
+      const response=await fetch(`https://api.giphy.com/v1/gifs/${query?"search":"trending"}?${params}`);
+      if([429,401,403].includes(response.status)){lastError=`Giphy responded ${response.status}`;continue}
+      if(!response.ok){lastError=`Giphy responded ${response.status}`;break}
+      const body=await response.json();
+      const results=(body.data||[]).map(item=>{
+        const images=item.images||{};
+        return {id:String(item.id||""),description:String(item.title||"GIF").slice(0,120),
+          preview:images.fixed_width_downsampled?.url||images.fixed_width_small?.url||images.fixed_width?.url||"",
+          url:images.fixed_width?.url||images.original?.url||"",
+          width:Number(images.fixed_width?.width)||null,height:Number(images.fixed_width?.height)||null};
+      }).filter(item=>item.preview&&item.url);
+      return json(res,200,{results});
+    }catch(error){lastError=error.message||"GIF search failed"}
+  }
+  return json(res,502,{error:lastError});
 }
 http.createServer(async(req,res)=>{try{
   const path=normalize(new URL(req.url,"http://localhost").pathname);

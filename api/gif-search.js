@@ -1,50 +1,83 @@
-/* GIF search proxy.
+/* GIF search proxy (Giphy).
 
-   The API key stays on the server: sending it to the browser would publish
-   it to every visitor. Tenor is used because its content is moderated by
-   default (contentfilter=medium) and it returns small preview URLs that a
-   grid can load without pulling multi-megabyte originals.
+   The API key stays on the server: putting it in the page would publish it
+   to every visitor, and anyone could then spend the quota.
 
-   Set TENOR_API_KEY in the project environment. Without it the endpoint
-   reports 503 and the picker tells the user GIF search is unavailable
-   rather than failing silently. */
-const ENDPOINT = "https://tenor.googleapis.com/v2";
+   Keys are read from the environment, newline/comma separated in priority
+   order, and tried in turn. A key that is rate limited (429) or rejected
+   (401/403) falls through to the next one, so one exhausted key does not
+   take GIF search down. Everything else is returned as-is - retrying a
+   genuine bad request against three keys would just be three failures. */
+const ENDPOINT = "https://api.giphy.com/v1/gifs";
+
+function apiKeys() {
+  return String(process.env.GIPHY_API_KEYS || process.env.GIPHY_API_KEY || "")
+    .split(/[\s,]+/)
+    .map((key) => key.trim())
+    .filter(Boolean);
+}
+
+/* rating=pg-13 and the messaging bundle keep results appropriate for a
+   workplace chat and sized for a picker rather than full-resolution files. */
+function buildUrl(key, query, limit) {
+  const params = new URLSearchParams({
+    api_key: key,
+    limit: String(limit),
+    rating: "pg-13",
+    bundle: "messaging_non_clips",
+  });
+  if (query) params.set("q", query);
+  return `${ENDPOINT}/${query ? "search" : "trending"}?${params}`;
+}
+
+function normalise(body) {
+  return (body.data || [])
+    .map((item) => {
+      const images = item.images || {};
+      return {
+        id: String(item.id || ""),
+        description: String(item.title || "GIF").slice(0, 120),
+        /* A downsampled still for the grid; the full GIF only when sent. */
+        preview:
+          images.fixed_width_downsampled?.url ||
+          images.fixed_width_small?.url ||
+          images.fixed_width?.url ||
+          "",
+        url: images.fixed_width?.url || images.original?.url || "",
+        width: Number(images.fixed_width?.width) || null,
+        height: Number(images.fixed_width?.height) || null,
+      };
+    })
+    .filter((item) => item.preview && item.url);
+}
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "GET required" });
-  const key = process.env.TENOR_API_KEY;
-  if (!key) return res.status(503).json({ error: "GIF search is not configured" });
+  const keys = apiKeys();
+  if (!keys.length) return res.status(503).json({ error: "GIF search is not configured" });
 
   const query = String(req.query?.q || "").trim().slice(0, 100);
   const limit = Math.min(Number(req.query?.limit) || 24, 50);
-  /* An empty query shows what is trending, so the picker is never a blank
-     box waiting for input. */
-  const path = query ? "search" : "featured";
-  const params = new URLSearchParams({
-    key,
-    limit: String(limit),
-    contentfilter: "medium",
-    media_filter: "tinygif,gif",
-    client_key: "medha_space",
-  });
-  if (query) params.set("q", query);
 
-  try {
-    const response = await fetch(`${ENDPOINT}/${path}?${params}`);
-    if (!response.ok) throw Error(`Tenor responded ${response.status}`);
-    const body = await response.json();
-    const results = (body.results || []).map((item) => ({
-      id: String(item.id || ""),
-      description: String(item.content_description || "GIF").slice(0, 120),
-      /* preview is what the grid renders; url is what gets sent. */
-      preview: item.media_formats?.tinygif?.url || item.media_formats?.gif?.url || "",
-      url: item.media_formats?.gif?.url || item.media_formats?.tinygif?.url || "",
-      width: item.media_formats?.gif?.dims?.[0] || null,
-      height: item.media_formats?.gif?.dims?.[1] || null,
-    })).filter((item) => item.preview && item.url);
-    res.setHeader("Cache-Control", "public, max-age=300");
-    return res.status(200).json({ results });
-  } catch (error) {
-    return res.status(502).json({ error: error.message || "GIF search failed" });
+  let lastError = "GIF search failed";
+  for (const key of keys) {
+    try {
+      const response = await fetch(buildUrl(key, query, limit));
+      /* Only a quota or auth problem is worth another key. */
+      if (response.status === 429 || response.status === 401 || response.status === 403) {
+        lastError = `Giphy responded ${response.status}`;
+        continue;
+      }
+      if (!response.ok) {
+        lastError = `Giphy responded ${response.status}`;
+        break;
+      }
+      const body = await response.json();
+      res.setHeader("Cache-Control", "public, max-age=300");
+      return res.status(200).json({ results: normalise(body) });
+    } catch (error) {
+      lastError = error.message || "GIF search failed";
+    }
   }
+  return res.status(502).json({ error: lastError });
 }
