@@ -1235,6 +1235,9 @@ syncResponsiveChrome();
 /* Mobile browsers can keep the layout viewport at full height while the
    keyboard shrinks only the visual viewport. Track that inset so the composer
    follows the keyboard instead of being panned to the top of the page. */
+/* Tallest viewport seen with no keyboard up. Reset on rotation so a portrait
+   height is never carried into landscape. */
+let fullViewportHeight=0;
 function syncKeyboardViewport(){
   const viewport=window.visualViewport;
   const focused=document.activeElement;
@@ -1246,24 +1249,34 @@ function syncKeyboardViewport(){
      keyboard height - subtracting it cancelled the whole inset on iOS and
      the keyboard was never detected. The keyboard is simply the difference
      between the layout and visual viewport heights. */
-  const keyboard=typing&&viewport
-    ?Math.max(0,window.innerHeight-viewport.height)
-    :0;
+  /* Measuring innerHeight-visualHeight only works on legacy iOS. With
+     interactive-widget=resizes-content BOTH shrink together, so that
+     difference is 0 and the keyboard was never detected. Compare against the
+     unobscured height instead: documentElement.clientHeight also shrinks with
+     the layout viewport, so fall back to the tallest height seen while this
+     orientation has been active. */
+  const full=Math.max(fullViewportHeight,window.innerHeight,viewport?.height||0);
+  fullViewportHeight=full;
+  const visible=viewport?Math.min(viewport.height,window.innerHeight):window.innerHeight;
+  const keyboard=typing?Math.max(0,full-visible):0;
   const open=keyboard>80;
-  if(open&&viewport){
-    document.documentElement.style.setProperty("--keyboard-viewport-height",`${Math.round(viewport.height)}px`);
-    /* iOS does not shrink the layout viewport - it scrolls it under the
-       keyboard. Height alone therefore leaves the shell anchored to the
-       document top and pushes the composer off screen, which is why the
-       type box appeared at the top. Offsetting by the visual viewport's
-       own top pins the shell to what the user can actually see. */
-    document.documentElement.style.setProperty("--keyboard-offset",`${Math.round(viewport.offsetTop)}px`);
-  }else{
-    document.documentElement.style.removeProperty("--keyboard-viewport-height");
-    document.documentElement.style.removeProperty("--keyboard-offset");
-  }
+  /* One source of truth for the shell height. With
+     interactive-widget=resizes-content the browser has already shrunk the
+     layout viewport, so innerHeight is right and this is a no-op; on older
+     iOS the visual viewport is the only thing that shrinks, so use it. The
+     shell stays in normal flow either way - no position:fixed to correct. */
+  /* Always the visible height - not just while a keyboard is up - so the
+     composer stays bottom-aligned even when detection misses (hardware or
+     floating keyboards never change the viewport height at all). */
+  const shell=visible;
+  document.documentElement.style.setProperty("--app-height",`${Math.round(shell)}px`);
   document.documentElement.style.setProperty("--keyboard-height",`${Math.round(keyboard)}px`);
   document.body.classList.toggle("keyboard-open",open);
+  /* The shell is sized to the visible height, so the document is never taller
+     than the screen and iOS has nothing to scroll. If it scrolled anyway while
+     the keyboard was animating, undo it - otherwise that leftover scroll is
+     what strands the composer at the top. */
+  if(open&&window.scrollY)window.scrollTo(0,0);
   /* Keep the newest message visible above the keyboard, the way iMessage
      keeps the conversation pinned to the composer. */
   if(open&&stickToBottom)scrollMessagesToEnd();
@@ -1335,13 +1348,13 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMobileSidebar()
 
 /* Keep the layout correct when the viewport or on-screen keyboard changes. */
 function applyViewportHeight(){
-  const h=window.visualViewport?window.visualViewport.height:window.innerHeight;
-  document.documentElement.style.setProperty("--app-height",`${h}px`);
-  /* Same source of truth as syncKeyboardViewport, so the two cannot fight
-     over the shell height on the same resize event. */
+  /* syncKeyboardViewport owns --app-height. Two writers meant that whichever
+     resize listener ran last won, and they disagreed while the keyboard was
+     animating. */
   syncKeyboardViewport();
 }
 applyViewportHeight();
+window.addEventListener("orientationchange",()=>{fullViewportHeight=0;setTimeout(applyViewportHeight,300);});
 window.addEventListener("resize",applyViewportHeight);
 window.visualViewport?.addEventListener("resize",applyViewportHeight);
 window.visualViewport?.addEventListener("scroll",applyViewportHeight);

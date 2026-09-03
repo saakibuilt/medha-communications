@@ -60,11 +60,10 @@ for(const vp of [{w:390,h:844,n:"iPhone"},{w:430,h:932,n:"iPhone Max"},{w:820,h:
       const shell=document.querySelector(".app-shell").getBoundingClientRect();
       const c=document.querySelector("#composer").getBoundingClientRect();
       const area=document.querySelector("#message-area").getBoundingClientRect();
-      /* Corrected: position:fixed resolves against the LAYOUT viewport, and
-         on iOS that stays full height and is scrolled under the keyboard.
-         The visible band therefore starts at visualViewport.offsetTop, and
-         the keyboard's top edge is the bottom of that band. */
-      const keyboardTop=window.visualViewport.offsetTop+window.visualViewport.height;
+      /* The shell is sized to the visible height and is never offset or
+         pinned with position:fixed, so the visible band starts at the
+         document top and its bottom edge is where the keyboard starts. */
+      const keyboardTop=window.visualViewport.height;
       return {open:document.body.classList.contains("keyboard-open"),
         composerTop:Math.round(c.top),composerBottom:Math.round(c.bottom),
         shellTop:Math.round(shell.top),shellBottom:Math.round(shell.bottom),
@@ -72,7 +71,7 @@ for(const vp of [{w:390,h:844,n:"iPhone"},{w:430,h:932,n:"iPhone Max"},{w:820,h:
         areaBottom:Math.round(area.bottom),
         overlapsKeyboard:c.bottom>keyboardTop+2,
         aboveKeyboard:c.bottom<=keyboardTop+2&&c.bottom>keyboardTop-90,
-        atTopOfScreen:c.top<(window.visualViewport.offsetTop+window.visualViewport.height*0.35),
+        atTopOfScreen:c.top<window.visualViewport.height*0.35,
         overflow:document.documentElement.scrollWidth>window.innerWidth};
     },{kb:KB,mode});
 
@@ -88,13 +87,17 @@ for(const vp of [{w:390,h:844,n:"iPhone"},{w:430,h:932,n:"iPhone Max"},{w:820,h:
     /* Client rects alone missed a real bug: the shell was pushed down by a
        whole keyboard height, leaving blank canvas on top and the composer
        behind the keys. Assert the painted position too. */
+    /* iOS and Android are now identical: the shell is sized to the visible
+       height and left at the document top. The old expectation of an
+       iOS-only offset belonged to the position:fixed approach, which is
+       what stranded the composer at the top of the screen. */
     ok(`${label} shell starts at the top of the visible area`,
-      Math.abs(r.shellTop-(mode==="ios"?KB:0))<=2,{shellTop:r.shellTop});
+      Math.abs(r.shellTop)<=2,{shellTop:r.shellTop});
     ok(`${label} shell ends where the keyboard starts`,
-      Math.abs(r.shellBottom-(mode==="ios"?vp.h:vp.h-KB))<=2,
-      {shellBottom:r.shellBottom,expected:mode==="ios"?vp.h:vp.h-KB});
+      Math.abs(r.shellBottom-(vp.h-KB))<=2,
+      {shellBottom:r.shellBottom,expected:vp.h-KB});
     ok(`${label} no blank gap above the header`,
-      Math.abs(r.shellTop-(mode==="ios"?KB:0))<=2,{shellTop:r.shellTop});
+      Math.abs(r.shellTop)<=2,{shellTop:r.shellTop});
 
     /* closing the keyboard restores the layout */
     await page.evaluate(()=>{
