@@ -373,6 +373,7 @@ function renderList(){
     if(c.archived)return false;
     if(chatFilter==="unread")return !!c.unread;
     if(chatFilter==="pinned")return rank.has(String(c.id));
+    if(chatFilter==="favorites")return favorites.includes(String(c.id));
     return true;
   });
   const people=q?directory.filter(person=>String(person.id)!==String(viewerId())&&`${person.full_name} ${person.email||""} ${person.department||""}`.toLowerCase().includes(q)&&!shown.some(chat=>String(chat.participantId)===String(person.id))):[];
@@ -573,6 +574,18 @@ function dayLabel(date){
 function detailRow(label,value){
   return value?`<div class="detail-fact"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`:"";
 }
+function favoriteIds(){
+  try{return JSON.parse(sessionStorage.getItem("medha-favorites-"+(viewerId()||"guest"))||"[]").map(String)}catch{return []}
+}
+function toggleFavorite(chat){
+  if(!chat)return;
+  const id=String(chat.id),key="medha-favorites-"+(viewerId()||"guest"),items=favoriteIds();
+  const next=items.includes(id)?items.filter(item=>item!==id):[...items,id];
+  sessionStorage.setItem(key,JSON.stringify(next));
+  renderList();
+  if(active?.id===chat.id)renderDetailsPanel();
+  toast(next.includes(id)?"Added to favorites":"Removed from favorites");
+}
 function renderDetailsPanel(){
   if(!active)return;
   const person=directory.find(p=>String(p.id)===String(active.participantId));
@@ -610,6 +623,28 @@ function renderDetailsPanel(){
       ?`<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.name||"GIF")}"><img src="${esc(a.url)}" alt="Shared GIF" loading="lazy"></a>`
       :`<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.name||"File")}">📎 ${esc(a.name||"File")}</a>`).join("")
     :'<div class="directory-empty">No shared media</div>';
+  const favoriteButton=$("#details-favorite"),favoriteLabel=$("#details-favorite-label");
+  if(favoriteButton&&favoriteLabel){
+    const favorite=favoriteIds().includes(String(active.id));
+    favoriteLabel.textContent=favorite?"★ Remove from favorites":"☆ Add to favorites";
+    favoriteButton.setAttribute("aria-pressed",String(favorite));
+  }
+}
+function renderConversationSearch(query=""){
+  const host=$("#conversation-search-results");
+  if(!host)return;
+  const term=query.trim().toLowerCase();
+  if(!term){host.innerHTML='<div class="directory-empty">Type to search this conversation.</div>';return}
+  const matches=(active?.messages||[]).filter(message=>{
+    const attachments=(message.attachments||[]).map(file=>file.name||"").join(" ");
+    return (String(message.text||"")+" "+String(message.senderName||"")+" "+attachments).toLowerCase().includes(term);
+  }).slice().reverse();
+  host.innerHTML=matches.length?matches.map(message=>'<button type="button" class="conversation-search-result" data-search-message-id="'+esc(message.id||"")+'"><span><strong>'+esc(message.senderName||"Unknown user")+'</strong><time>'+esc(message.time||"")+'</time></span><span>'+esc(message.text||((message.attachments||[])[0]?.name||"Attachment"))+'</span></button>').join(""):'<div class="directory-empty">No matching messages.</div>';
+}
+function openConversationSearch(){
+  if(!active){toast("Select a conversation first");return}
+  const dialog=$("#conversation-search-dialog"),input=$("#conversation-search-input");
+  input.value="";renderConversationSearch();dialog.showModal();requestAnimationFrame(()=>input.focus());
 }
 function openDetails(){
   if(!active){toast("Select a conversation first");return}
@@ -1128,15 +1163,108 @@ window.visualViewport?.addEventListener("scroll",applyViewportHeight);
 
 /* ---------- composer ---------- */
 let pendingAttachments=[];
+/* Bytes -> "1.4 MB". Shown on every card so an oversized file is obvious
+   before it is sent rather than after. */
+function fileSizeLabel(bytes){
+  const n=Number(bytes)||0;
+  if(!n)return "";
+  if(n<1024)return `${n} B`;
+  if(n<1024*1024)return `${Math.round(n/1024)} KB`;
+  return `${(n/(1024*1024)).toFixed(1)} MB`;
+}
+/* A small glyph per file family, so a PDF does not look like a spreadsheet. */
+function fileGlyph(name,kind){
+  if(kind==="image")return "\u{1F5BC}";
+  if(kind==="gif")return "GIF";
+  const ext=String(name||"").split(".").pop().toLowerCase();
+  if(["pdf"].includes(ext))return "\u{1F4C4}";
+  if(["doc","docx","rtf","txt","md","pages"].includes(ext))return "\u{1F4DD}";
+  if(["xls","xlsx","csv","numbers"].includes(ext))return "\u{1F4CA}";
+  if(["ppt","pptx","key"].includes(ext))return "\u{1F4CB}";
+  if(["zip","rar","7z","tar","gz"].includes(ext))return "\u{1F5DC}";
+  if(["mp4","mov","avi","mkv","webm"].includes(ext))return "\u{1F3AC}";
+  if(["mp3","wav","m4a","aac","flac"].includes(ext))return "\u{1F3B5}";
+  return "\u{1F4CE}";
+}
 function renderPending(){
-  $("#pending-attachments").innerHTML=pendingAttachments.map((a,i)=>`<span class="attachment-chip">${a.kind==="gif"?"GIF":"📎"} ${esc(a.name||"GIF")} <button type="button" data-remove-attachment="${i}" aria-label="Remove attachment">×</button></span>`).join("");
+  const host=$("#pending-attachments");
+  host.classList.toggle("has-items",pendingAttachments.length>0);
+  host.innerHTML=pendingAttachments.map((a,i)=>{
+    /* While uploading the card shows a spinner and no remove button - there
+       is nothing to preview yet and cancelling mid-flight would leave the
+       request running. */
+    if(a.uploading)return `<div class="attach-card uploading" data-attachment-index="${i}">
+      <span class="attach-thumb"><span class="attach-spinner" aria-hidden="true"></span></span>
+      <span class="attach-copy"><strong>${esc(a.name||"File")}</strong><small>Uploading\u2026</small></span>
+    </div>`;
+    if(a.failed)return `<div class="attach-card failed" data-attachment-index="${i}">
+      <span class="attach-thumb attach-failed" aria-hidden="true">!</span>
+      <span class="attach-copy"><strong>${esc(a.name||"File")}</strong><small>${esc(a.error||"Upload failed")}</small></span>
+      <button type="button" class="attach-remove" data-remove-attachment="${i}" aria-label="Remove ${esc(a.name||"attachment")}">\u00d7</button>
+    </div>`;
+    const isImage=a.kind==="image"||a.kind==="gif";
+    const thumb=isImage
+      ?`<img src="${esc(a.url)}" alt="" loading="lazy">`
+      :`<span class="attach-glyph">${fileGlyph(a.name,a.kind)}</span>`;
+    return `<div class="attach-card ready" data-attachment-index="${i}">
+      <button type="button" class="attach-thumb attach-open" data-preview-attachment="${i}" aria-label="Preview ${esc(a.name||"attachment")}">${thumb}</button>
+      <span class="attach-copy"><strong>${esc(a.name||"File")}</strong><small>${esc(fileSizeLabel(a.size)||(a.kind==="gif"?"GIF":"Ready"))}</small></span>
+      <button type="button" class="attach-remove" data-remove-attachment="${i}" aria-label="Remove ${esc(a.name||"attachment")}">\u00d7</button>
+    </div>`;
+  }).join("");
 }
 $("#pending-attachments").addEventListener("click",e=>{
-  const button=e.target.closest("[data-remove-attachment]");
-  if(!button)return;
-  pendingAttachments.splice(Number(button.dataset.removeAttachment),1);
-  renderPending();
+  const remove=e.target.closest("[data-remove-attachment]");
+  if(remove){
+    pendingAttachments.splice(Number(remove.dataset.removeAttachment),1);
+    renderPending();autosizeComposer();
+    return;
+  }
+  const preview=e.target.closest("[data-preview-attachment]");
+  if(preview)openAttachmentPreview(pendingAttachments[Number(preview.dataset.previewAttachment)]);
 });
+
+/* ---------- attachment preview ----------
+   One lightbox for pending and sent attachments alike. Images and video get
+   an inline preview; anything else offers to open in a new tab, because the
+   browser renders a PDF or a document better than an iframe here would. */
+const attachmentPreview=document.createElement("dialog");
+attachmentPreview.className="attachment-preview";
+attachmentPreview.id="attachment-preview";
+attachmentPreview.innerHTML=`<div class="preview-head">
+    <span class="preview-name" id="preview-name"></span>
+    <div class="preview-tools">
+      <a class="preview-download" id="preview-download" target="_blank" rel="noopener" download>Download</a>
+      <button type="button" class="close-dialog" id="preview-close" aria-label="Close preview">&times;</button>
+    </div>
+  </div>
+  <div class="preview-body" id="preview-body"></div>`;
+document.body.append(attachmentPreview);
+attachmentPreview.querySelector("#preview-close").addEventListener("click",()=>attachmentPreview.close());
+/* Clicking the backdrop closes, matching how every other lightbox behaves. */
+attachmentPreview.addEventListener("click",e=>{if(e.target===attachmentPreview)attachmentPreview.close()});
+function openAttachmentPreview(attachment){
+  if(!attachment?.url){toast("This attachment is still uploading");return}
+  const name=attachment.name||"Attachment";
+  $("#preview-name").textContent=name;
+  const link=$("#preview-download");
+  link.href=attachment.url;link.setAttribute("download",name);
+  const ext=String(name).split(".").pop().toLowerCase();
+  const isImage=attachment.kind==="image"||attachment.kind==="gif"
+    ||["png","jpg","jpeg","gif","webp","svg","avif","heic"].includes(ext);
+  const isVideo=["mp4","webm","mov","m4v"].includes(ext);
+  const isAudio=["mp3","wav","m4a","aac","ogg","flac"].includes(ext);
+  $("#preview-body").innerHTML=isImage
+    ?`<img src="${esc(attachment.url)}" alt="${esc(name)}">`
+    :isVideo?`<video src="${esc(attachment.url)}" controls playsinline></video>`
+    :isAudio?`<audio src="${esc(attachment.url)}" controls></audio>`
+    :`<div class="preview-fallback"><span class="preview-glyph">${fileGlyph(name,attachment.kind)}</span>
+        <strong>${esc(name)}</strong>
+        <p>${esc(fileSizeLabel(attachment.size)||"This file type cannot be shown here.")}</p>
+        <a class="primary-button" href="${esc(attachment.url)}" target="_blank" rel="noopener">Open file</a>
+      </div>`;
+  attachmentPreview.showModal();
+}
 
 const messageInput=$("#message-input");
 function autosizeComposer(){
@@ -1229,13 +1357,33 @@ async function uploadFile(file){
 }
 
 $("#attach-file").addEventListener("click",()=>$("#file-input").click());
+/* Uploads run in parallel and each card is placed before its upload starts,
+   so the tray fills instantly with spinners instead of appearing one file at
+   a time after each round trip. The placeholder object is mutated in place,
+   which keeps every card's index stable while other uploads finish. */
+async function queueAttachment(file){
+  if(file.size>25*1024*1024){toast(`${file.name} is larger than 25 MB`);return}
+  const slot={kind:file.type?.startsWith("image/")?"image":"file",name:file.name,size:file.size,uploading:true,url:""};
+  pendingAttachments.push(slot);
+  renderPending();
+  /* A local preview means an image thumbnail is visible while it uploads,
+     rather than a grey box that only fills in at the end. */
+  let localUrl="";
+  if(slot.kind==="image"){try{localUrl=URL.createObjectURL(file);slot.url=localUrl}catch{}}
+  try{
+    const uploaded=await uploadFile(file);
+    Object.assign(slot,uploaded,{uploading:false,failed:false,size:file.size});
+  }catch(error){
+    Object.assign(slot,{uploading:false,failed:true,error:error.message||"Upload failed"});
+    toast(error.message||`Could not upload ${file.name}`);
+  }finally{
+    if(localUrl)URL.revokeObjectURL(localUrl);
+    renderPending();
+  }
+}
 $("#file-input").addEventListener("change",async e=>{
   const files=[...e.target.files];e.target.value="";
-  for(const file of files){
-    if(file.size>25*1024*1024){toast(`${file.name} is larger than 25 MB`);continue}
-    try{pendingAttachments.push(await uploadFile(file));renderPending()}
-    catch(error){toast(error.message)}
-  }
+  await Promise.all(files.map(queueAttachment));
 });
 
 let sending=false;
@@ -1244,8 +1392,11 @@ $("#composer").addEventListener("submit",async e=>{
   if(sending)return;
   if(!active){toast("Select a conversation first");return}
   const text=messageInput.value.trim();
-  if(!text&&!pendingAttachments.length)return;
-  const attachments=[...pendingAttachments];
+  /* A half-uploaded file has no url yet, and a failed one never will, so
+     neither can be sent. Waiting is better than silently dropping it. */
+  if(pendingAttachments.some(a=>a.uploading)){toast("Wait for attachments to finish uploading");return}
+  const attachments=pendingAttachments.filter(a=>!a.failed&&a.url);
+  if(!text&&!attachments.length)return;
   sending=true;
   const sendButton=$(".send-button");sendButton.disabled=true;
   try{
@@ -1336,11 +1487,7 @@ $("#chat-actions").addEventListener("click",async e=>{
   if(!chat)return;
   const action=button.dataset.chatAction;
   if(action==="favorite"){
-    const key=`medha-favorites-${viewerId()||"guest"}`;
-    const items=JSON.parse(sessionStorage.getItem(key)||"[]");
-    const next=items.includes(id)?items.filter(x=>x!==id):[...items,id];
-    sessionStorage.setItem(key,JSON.stringify(next));renderList();
-    toast(next.includes(id)?"Added to favorites":"Removed from favorites");
+    toggleFavorite(chat);
   }else if(action==="pin"){
     const key=`medha-pinned-${viewerId()||"guest"}`;
     const items=JSON.parse(sessionStorage.getItem(key)||"[]");
@@ -1492,6 +1639,16 @@ $("#group-chat-form").addEventListener("submit",async e=>{
 
 /* ---------- details panel wiring ---------- */
 $("#close-details").addEventListener("click",closeDetails);
+$("#details-favorite")?.addEventListener("click",()=>toggleFavorite(active));
+$("#details-search")?.addEventListener("click",openConversationSearch);
+$("#conversation-search-input")?.addEventListener("input",e=>renderConversationSearch(e.target.value));
+$("#conversation-search-results")?.addEventListener("click",e=>{
+  const result=e.target.closest("[data-search-message-id]");
+  if(!result)return;
+  $("#conversation-search-dialog").close();
+  const message=$(".message[data-message-id=\""+CSS.escape(result.dataset.searchMessageId)+"\"]");
+  if(message){message.scrollIntoView({behavior:"smooth",block:"center"});message.classList.add("search-hit");setTimeout(()=>message.classList.remove("search-hit"),1800)}
+});
 /* Clicking anywhere in the conversation header opens details. The mobile
    navigation controls are the only exceptions. */
 $(".conversation-header").addEventListener("click",e=>{
