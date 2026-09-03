@@ -2329,19 +2329,28 @@ function renderCalendar(){
     cells.push(`<div class="${key===todayKey?"today":""}" data-day="${key}">${d}${items.map(x=>{
       const s=new Date(x.start),e=new Date(x.end||x.start);
       const multi=dayKey(s)!==dayKey(e);
-      const isStart=dayKey(s)===key,isEnd=dayKey(e)===key;
+      const monthStart=new Date(y,m,1),monthEnd=new Date(y,m+1,0);
+      /* Clamp the visible segment so events that began before this month or
+         end after it still get a bar starting/ending inside this grid. */
+      const segmentStart=multi&&s<monthStart?monthStart:s;
+      const segmentEnd=multi&&e>monthEnd?monthEnd:e;
+      const segmentStartKey=dayKey(segmentStart),segmentEndKey=dayKey(segmentEnd);
+      const isStart=segmentStartKey===key,isEnd=segmentEndKey===key;
       const weekday=(new Date(key+"T00:00:00").getDay()+6)%7;   /* Mon = 0 */
       /* The bar restarts on each calendar row, so a span crossing a week
          boundary gets a fresh rounded edge and its own label. */
       const rowStart=isStart||weekday===0;
       const rowEnd=isEnd||weekday===6;
+      /* Only the first cell of each weekly segment owns the visible tag.
+         Continuation dates are deliberately empty, not blank tag elements. */
+      if(multi&&!rowStart)return "";
       const span=multi?` span${rowStart?" span-start":""}${rowEnd?" span-end":""}${!rowStart&&!rowEnd?" span-mid":""}`:"";
       const range=multi?` (${s.toLocaleDateString([],{month:"short",day:"numeric"})} – ${e.toLocaleDateString([],{month:"short",day:"numeric"})})`:"";
       /* How many days this run covers in this week row, so the label can be
          centred over the whole strip instead of just its first day. */
       let daysInRow=1;
       if(multi&&rowStart){
-        const endKey=dayKey(e);
+        const endKey=segmentEndKey;
         const probe=new Date(key+"T00:00:00");
         daysInRow=0;
         while(dayKey(probe)<=endKey){
@@ -2423,6 +2432,10 @@ const eventInvitees=new Set(),eventInviteeSearch=$("#event-invitees"),eventInvit
 function setWorkspaceView(viewName){
   const conversationView=viewName==="chat"||viewName==="favorites";
   const baseView=conversationView?"chat":viewName;
+  /* Details and threads belong to the currently visible chat only. Never
+     carry either surface into Favorites, Calendar, or Settings. */
+  closeThread();
+  closeDetails();
   if(viewName==="chat"){
     chatFilter="all";
     document.querySelectorAll(".sidebar-tabs .tab").forEach((tab,index)=>tab.classList.toggle("active",index===0));
@@ -2464,8 +2477,6 @@ function setWorkspaceView(viewName){
   shell.classList.toggle("full-page",viewName==="settings");
   $("#chat-sidebar").style.display=conversationView?"flex":"none";
   const calendarSidebar=$("#calendar-sidebar");calendarSidebar.hidden=viewName!=="calendar";calendarSidebar.style.display=viewName==="calendar"?"flex":"none";if(viewName==="calendar")shell.style.gridTemplateColumns="80px 280px minmax(500px,1fr) 0";else shell.style.removeProperty("grid-template-columns");
-  $("#details-panel").classList.remove("open");
-  $("#details-panel").classList.add("closed");
   if(viewName==="calendar") renderCalendar();
   if(viewName==="settings") renderSettings();
 }
