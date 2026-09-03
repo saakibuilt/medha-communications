@@ -522,7 +522,7 @@ function messageHtml(m){
    show_in_channel and are therefore missing locally. */
 let threadParentId=null;
 const threadPanel=document.createElement("aside");
-threadPanel.className="thread-panel";threadPanel.hidden=true;
+threadPanel.className="thread-panel";threadPanel.hidden=true;threadPanel.setAttribute("aria-hidden","true");
 threadPanel.innerHTML=`<div class="thread-head"><h3>Thread</h3><button type="button" class="thread-close" aria-label="Close thread">&times;</button></div>
   <div class="thread-body" id="thread-body"></div>
   <form class="thread-composer" id="thread-composer"><textarea id="thread-input" rows="1" placeholder="Reply in thread" aria-label="Reply in thread"></textarea><button type="submit" class="send-button">Send</button></form>`;
@@ -530,7 +530,7 @@ document.body.append(threadPanel);
 threadPanel.querySelector(".thread-close").addEventListener("click",()=>closeThread());
 
 function closeThread(){
-  threadParentId=null;threadPanel.hidden=true;
+  threadParentId=null;threadPanel.hidden=true;threadPanel.setAttribute("aria-hidden","true");
   document.body.classList.remove("thread-open");
 }
 function threadMessages(){
@@ -560,7 +560,7 @@ async function openThread(parentId){
   if(!active)return;
   if(document.body.classList.contains("details-open"))closeDetails();
   threadParentId=String(parentId);
-  threadPanel.hidden=false;
+  threadPanel.hidden=false;threadPanel.setAttribute("aria-hidden","false");
   document.body.classList.add("thread-open");
   renderThread();
   /* Replies written before show_in_channel existed live only inside the
