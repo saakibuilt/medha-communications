@@ -26,6 +26,8 @@ let ringAudioContext=null;
 let streamSessionToken=null;
 let ringVibrationTimer=null;
 let incomingCallTimeout=null;
+let outgoingCallTimeout=null;
+let outgoingRingSubscription=null;
 let activeCallMode="video";
 let activeMediaUnbinders=[];
 let activeParticipantSubscription=null;
@@ -1707,17 +1709,20 @@ document.addEventListener("keydown",e=>{
 });
 
 /* ---------- Stream Video calling ---------- */
-function startRingTone(){
+function startRingTone(vibrate=true){
   stopRingTone();
+  /* Vibration is independent of Web Audio. Some mobile browsers delay or
+     reject AudioContext startup, but the native call-like vibration should
+     still begin immediately. */
+  if(vibrate&&"vibrate" in navigator){try{navigator.vibrate([260,120,260,500]);ringVibrationTimer=setInterval(()=>navigator.vibrate([260,120,260,500]),2200)}catch{}}
   try{
     const AudioContextClass=window.AudioContext||window.webkitAudioContext;if(!AudioContextClass)throw Error("Audio is unavailable in this browser");
     ringAudioContext=ringAudioContext||new AudioContextClass();ringAudioContext.resume();
     const play=()=>{if(!ringAudioContext)return;const now=ringAudioContext.currentTime,gain=ringAudioContext.createGain();gain.gain.setValueAtTime(.001,now);gain.gain.exponentialRampToValueAtTime(.22,now+.12);gain.gain.exponentialRampToValueAtTime(.001,now+1.5);gain.connect(ringAudioContext.destination);[523.25,659.25,783.99].forEach((frequency,index)=>{const oscillator=ringAudioContext.createOscillator();oscillator.type="sine";oscillator.frequency.value=frequency;oscillator.connect(gain);oscillator.start(now+index*.12);oscillator.stop(now+1.6)});};
     play();ringTimer=setInterval(play,2200);
-    if("vibrate" in navigator){navigator.vibrate([260,120,260,500]);ringVibrationTimer=setInterval(()=>navigator.vibrate([260,120,260,500]),2200)}
   }catch{}
 }
-function stopRingTone(){if(ringTimer){clearInterval(ringTimer);ringTimer=null}if(ringVibrationTimer){clearInterval(ringVibrationTimer);ringVibrationTimer=null}try{navigator.vibrate?.(0)}catch{}if(incomingCallTimeout){clearTimeout(incomingCallTimeout);incomingCallTimeout=null}if(ringAudioContext?.state!=="closed")try{ringAudioContext?.suspend()}catch{} }
+function stopRingTone(){if(ringTimer){clearInterval(ringTimer);ringTimer=null}if(ringVibrationTimer){clearInterval(ringVibrationTimer);ringVibrationTimer=null}try{navigator.vibrate?.(0)}catch{}if(incomingCallTimeout){clearTimeout(incomingCallTimeout);incomingCallTimeout=null}if(outgoingCallTimeout){clearTimeout(outgoingCallTimeout);outgoingCallTimeout=null}if(ringAudioContext?.state!=="closed")try{ringAudioContext?.suspend()}catch{} }
 document.addEventListener("pointerdown",()=>{if(ringTimer)try{ringAudioContext?.resume()}catch{}},{passive:true});
 function callDurationText(milliseconds){
   const total=Math.max(0,Math.floor(milliseconds/1000));
@@ -1840,11 +1845,21 @@ function setupVideoClient(body){
     videoClient.queryCalls({filter_conditions:{members:{$in:[String(body.user.id)]}},limit:25,watch:true}).then(result=>handleCalls(result.calls||[])).catch(error=>console.warn("Could not restore incoming calls",error));
   }catch(error){console.warn("Stream Video unavailable",error)}
 }
-function dismissCallSurface(){stopRingTone();activeCallingSubscription?.unsubscribe?.();activeCallingSubscription=null;activeCallParticipantEndSubscription?.unsubscribe?.();activeCallParticipantEndSubscription=null;activeParticipantSubscription?.unsubscribe?.();activeParticipantSubscription=null;activeParticipantSessionKey="";activeMediaUnbinders.forEach(unbind=>{try{unbind()}catch{}});activeMediaUnbinders=[];activeCall=null;incomingCall=null;activeCallMediaEnabled=false;activeCallMediaPromise=null;activeCallHadRemoteParticipant=false;$("#call-dialog")?.close();$("#call-minimized").hidden=true;$("#call-participants").innerHTML=""}
+async function refreshIncomingCalls(){
+  if(!videoClient||!currentUserId)return;
+  try{
+    const result=await videoClient.queryCalls({filter_conditions:{members:{$in:[String(currentUserId)]}},limit:25,watch:true});
+    const call=(result.calls||[]).find(item=>!item.isCreatedByMe&&item.state.callingState===CallingState.RINGING);
+    if(call&&incomingCall?.cid!==call.cid)showIncomingCall(call);
+  }catch(error){console.warn("Could not refresh incoming calls",error)}
+}
+function dismissCallSurface(){stopRingTone();outgoingRingSubscription?.unsubscribe?.();outgoingRingSubscription=null;activeCallingSubscription?.unsubscribe?.();activeCallingSubscription=null;activeCallParticipantEndSubscription?.unsubscribe?.();activeCallParticipantEndSubscription=null;activeParticipantSubscription?.unsubscribe?.();activeParticipantSubscription=null;activeParticipantSessionKey="";activeMediaUnbinders.forEach(unbind=>{try{unbind()}catch{}});activeMediaUnbinders=[];activeCall=null;incomingCall=null;activeCallMediaEnabled=false;activeCallMediaPromise=null;activeCallHadRemoteParticipant=false;$("#call-dialog")?.close();$("#call-minimized").hidden=true;$("#call-participants").innerHTML=""}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshIncomingCalls()});
+window.addEventListener("focus",refreshIncomingCalls,{passive:true});
 function showIncomingCall(call){
   incomingCall=call;const isVideo=call.state.custom?.mode!=="audio",callerId=String(call.state.createdBy?.id||call.state.created_by?.id||call.state.created_by_id||""),callerProfile=directory.find(person=>String(person.id)===callerId),caller=call.state.createdBy?.name||call.state.created_by?.name||callerProfile?.full_name||callerId||"Medha user",dialog=$("#call-dialog");dialog.classList.toggle("audio-call",!isVideo);dialog.classList.toggle("video-call",isVideo);dialog.classList.add("incoming-call");$("#call-title").textContent=(isVideo?"Incoming video":"Incoming audio")+" call from "+caller;$("#incoming-call-actions").hidden=false;$("#call-participants").innerHTML='<div class="incoming-call-card"><strong>'+esc(caller)+'</strong><span>Incoming '+(isVideo?"video":"audio")+' call</span></div>';$("#call-dialog").showModal();startRingTone();/* Keep unanswered audio/video calls ringing for one minute. */incomingCallTimeout=setTimeout(()=>ignoreIncomingCall(),60000);
 }
-function minimizeIncomingCall(){if(!incomingCall)return;$("#call-dialog").close();$("#call-minimized").hidden=false}
+function minimizeIncomingCall(){if(!incomingCall)return;stopRingTone();$("#call-dialog").close();$("#call-minimized").hidden=false}
 function restoreIncomingCall(){if(!incomingCall)return;$("#call-minimized").hidden=true;$("#call-dialog").showModal()}
 async function ignoreIncomingCall(){if(incomingCall){try{await incomingCall.camera.disable();await incomingCall.microphone.disable();await incomingCall.leave({reject:true,reason:"timeout"})}catch{}incomingCall=null}stopRingTone();$("#call-minimized").hidden=true;$("#call-dialog").close()}
 $("#accept-call").addEventListener("click",async()=>{if(!incomingCall)return;try{stopRingTone();const call=incomingCall,mode=call.state.custom?.mode||"video";await call.join();incomingCall=null;showCallSurface(call,"Call · "+(active?.name||"Medha"),mode)}catch(error){toast(error.message)}});
@@ -1858,6 +1873,13 @@ async function startStreamCall(mode){
     const callId="medha-"+crypto.randomUUID(),call=videoClient.call("default",callId);
     await call.getOrCreate({ring:true,video:mode==="video",settings:{ring:{incoming_call_timeout_ms:60000,auto_cancel_timeout_ms:60000,missed_call_timeout_ms:60000}},data:{members,custom:{channelCid:active.cid,mode}}});
     showCallSurface(call,(mode==="video"?"Video":"Audio")+" call · "+active.name,mode);
+    if(call.state.callingState!==CallingState.JOINED){
+      startRingTone(false);
+      outgoingRingSubscription=call.state.callingState$.subscribe(state=>{
+        if(state===CallingState.JOINED||state===CallingState.LEFT){stopRingTone();outgoingRingSubscription?.unsubscribe?.();outgoingRingSubscription=null}
+      });
+      outgoingCallTimeout=setTimeout(()=>{if(activeCall===call&&call.state.callingState!==CallingState.JOINED)leaveStreamCall()},60000);
+    }
     callActivityChannel=streamChannelFor(active);
     const activity=await callActivityChannel.sendMessage({text:(mode==="video"?"🎥 Video":"☎ Audio")+" call started",call_id:callId,call_type:"default"});
     callActivityMessageId=activity.message?.id||null;
@@ -1997,6 +2019,110 @@ function openMessageActions(row,event){
 }
 $("#message-area").addEventListener("contextmenu",e=>{const row=e.target.closest(".message");if(row){e.preventDefault();openMessageActions(row,e)}});
 document.addEventListener("click",e=>{if(!e.target.closest("#message-actions"))$("#message-actions").hidden=true});
+/* ---------- edit & forward dialogs ----------
+   These replaced window.prompt(), which is a blocking OS-chrome box: it
+   cannot be styled, is suppressed in some embedded/PWA contexts, and gave
+   forwarding a "type the number of the chat" list. */
+const editDialog=document.createElement("dialog");
+editDialog.className="sheet-dialog compose-dialog";editDialog.id="edit-message-dialog";
+editDialog.innerHTML=`<form method="dialog" id="edit-message-form">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="dialog-head sheet-head"><div class="sheet-heading">
+      <span class="sheet-glyph amber"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5 17.5 10.5"/></svg></span>
+      <div><p class="eyebrow">Message</p><h2>Edit message</h2></div></div>
+      <button value="cancel" formnovalidate class="close-dialog" aria-label="Close">&times;</button></div>
+    <label class="field-label" for="edit-message-text">Message text
+      <textarea id="edit-message-text" rows="4" maxlength="4000" required></textarea></label>
+    <div class="dialog-actions"><button value="cancel" formnovalidate class="secondary-button">Cancel</button>
+      <button value="default" class="primary-button" id="edit-message-save">Save changes</button></div>
+  </form>`;
+document.body.append(editDialog);
+let editingMessageId=null;
+function openEditDialog(message){
+  editingMessageId=String(message.id);
+  const field=$("#edit-message-text");
+  field.value=message.text||"";
+  editDialog.showModal();
+  /* Caret at the end rather than selecting everything, so a small correction
+     does not require clicking first. */
+  field.focus();field.setSelectionRange(field.value.length,field.value.length);
+}
+$("#edit-message-text").addEventListener("keydown",e=>{
+  if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();$("#edit-message-form").requestSubmit()}
+});
+$("#edit-message-form").addEventListener("submit",async e=>{
+  if(e.submitter?.value==="cancel"){editingMessageId=null;return}
+  e.preventDefault();
+  const text=$("#edit-message-text").value.trim();
+  const message=active?.messages?.find(item=>String(item.id)===String(editingMessageId));
+  if(!text||!message){editDialog.close();return}
+  if(text===(message.text||"")){editDialog.close();editingMessageId=null;return}
+  const save=$("#edit-message-save");save.disabled=true;
+  try{
+    const updated=await streamClient.updateMessage({id:message.id,text});
+    message.text=updated.text??text;
+    /* _decorated caches the pin prefix; clearing it lets the new text render. */
+    message._decorated=false;
+    renderMessages();renderThread?.();
+    editDialog.close();editingMessageId=null;
+    toast("Message updated");
+  }catch(error){toast(error.message)}
+  finally{save.disabled=false}
+});
+
+const forwardDialog=document.createElement("dialog");
+forwardDialog.className="sheet-dialog";forwardDialog.id="forward-dialog";
+forwardDialog.innerHTML=`<form method="dialog" id="forward-form">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="dialog-head sheet-head"><div class="sheet-heading">
+      <span class="sheet-glyph green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5l7 7-7 7"/><path d="M20 12H5a1 1 0 0 0-1 1v4"/></svg></span>
+      <div><p class="eyebrow">Share</p><h2>Forward message</h2></div></div>
+      <button value="cancel" formnovalidate class="close-dialog" aria-label="Close">&times;</button></div>
+    <div class="forward-preview" id="forward-preview"></div>
+    <div class="dialog-search"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+      <input id="forward-search" placeholder="Search conversations" autocomplete="off"></div>
+    <div class="employee-list" id="forward-list"></div>
+    <div class="dialog-actions"><button value="cancel" formnovalidate class="secondary-button">Cancel</button></div>
+  </form>`;
+document.body.append(forwardDialog);
+let forwardingMessage=null;
+function renderForwardTargets(query=""){
+  const q=String(query||"").toLowerCase();
+  const choices=conversations.filter(item=>item.id!==active?.id&&item.name.toLowerCase().includes(q));
+  $("#forward-list").innerHTML=choices.length?choices.map(chat=>`
+    <button type="button" class="employee-option" data-forward-to="${esc(chat.id)}">
+      <span class="person-avatar ${esc(chat.color||"blue")}">${esc(chat.initials||"?")}</span>
+      <span class="employee-copy"><strong>${esc(chat.name)}</strong></span>
+      <span class="employee-state">${chat.kind==="group"?"Group":"Direct"}</span>
+    </button>`).join(""):'<div class="directory-empty">No other conversations to forward to.</div>';
+}
+function openForwardDialog(message){
+  forwardingMessage=message;
+  const body=String(message.text||"").replace(/\s+/g," ").slice(0,140);
+  $("#forward-preview").innerHTML=`<span class="forward-label">Forwarding</span>
+    <span class="forward-text">${esc(body||"Attachment")}</span>`;
+  $("#forward-search").value="";
+  renderForwardTargets();
+  forwardDialog.showModal();
+}
+$("#forward-search").addEventListener("input",e=>renderForwardTargets(e.target.value));
+$("#forward-list").addEventListener("click",async e=>{
+  const button=e.target.closest("[data-forward-to]");
+  if(!button||!forwardingMessage)return;
+  const target=conversations.find(item=>String(item.id)===String(button.dataset.forwardTo));
+  if(!target)return;
+  button.disabled=true;
+  try{
+    const targetChannel=await watchStreamChannel(target);
+    await targetChannel.sendMessage({text:forwardingMessage.text||"Forwarded attachment",
+      attachments:(forwardingMessage.attachments||[]).map(a=>({type:a.kind==="image"?"image":"file",title:a.name,asset_url:a.url})),
+      forwarded_message_id:forwardingMessage.id,forwarded_from:active?.name});
+    forwardDialog.close();forwardingMessage=null;
+    toast("Forwarded to "+target.name);
+  }catch(error){toast(error.message)}
+  finally{button.disabled=false}
+});
+
 $("#message-actions").addEventListener("click",async e=>{
   const button=e.target.closest("[data-message-action]");if(!button||!active)return;$("#message-actions").hidden=true;
   const message=active.messages.find(item=>String(item.id)===String(actionMessageId)),channel=streamChannelFor(active);if(!message||!channel)return;
@@ -2004,14 +2130,12 @@ $("#message-actions").addEventListener("click",async e=>{
     if(button.dataset.messageAction==="reply"){setReplyTarget(message)}
     else if(button.dataset.messageAction==="edit"){
       if(!canEditMessage(message)){toast("Only your latest unread message can be edited");return}
-      const text=prompt("Edit message",message.text||"");if(text===null||!text.trim())return;
-      const updated=await streamClient.updateMessage({id:message.id,text:text.trim()});message.text=updated.text;renderMessages()
+      openEditDialog(message);
     }else if(button.dataset.messageAction==="delete"){await streamClient.deleteMessage(message.id);active.messages=active.messages.filter(item=>item.id!==message.id);renderMessages()}
     else if(button.dataset.messageAction==="pin"){message.pinned=!message.pinned;await (message.pinned?streamClient.pinMessage(message.id):streamClient.unpinMessage(message.id));renderMessages()}
     else if(button.dataset.messageAction==="forward"){
-      const choices=conversations.filter(item=>item.id!==active.id);if(!choices.length){toast("No other conversation available");return}
-      const choice=prompt("Forward to: "+choices.map((item,index)=>(index+1)+". "+item.name).join(" | ")),target=choices[Number(choice)-1];if(!target)return;
-      const targetChannel=await watchStreamChannel(target);await targetChannel.sendMessage({text:message.text||"Forwarded attachment",forwarded_message_id:message.id,forwarded_from:active.name});toast("Forwarded to "+target.name)
+      if(!conversations.some(item=>item.id!==active.id)){toast("No other conversation available");return}
+      openForwardDialog(message)
     }
   }catch(error){toast(error.message)}
 });
@@ -2466,6 +2590,7 @@ window.__space={get presenceFor(){return presenceFor},get writeCache(){return wr
   get watchStreamChannel(){return watchStreamChannel},
   get showBanner(){return showBanner},get dismissBanner(){return dismissBanner},
   get renderPending(){return renderPending},get openAttachmentPreview(){return openAttachmentPreview},
+  get openEditDialog(){return openEditDialog},get openForwardDialog(){return openForwardDialog},
   get attachmentsHtml(){return attachmentsHtml},get fileSizeLabel(){return fileSizeLabel},
   get fileGlyph(){return fileGlyph},get queueAttachment(){return queueAttachment},
   get pendingAttachments(){return pendingAttachments},
