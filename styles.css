@@ -414,7 +414,10 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
    The composer stays in normal flex flow, eliminating the gap and preserving
    the message area's own scrolling. */
 @media(max-width:1024px){
-  body.keyboard-open .app-shell{height:var(--keyboard-viewport-height)!important}
+  /* Must carry the same offset as the rule further down, or this one wins
+     on source order for phones and re-introduces the blank strip. */
+  body.keyboard-open .app-shell{height:var(--keyboard-viewport-height)!important;
+    transform:translateY(var(--keyboard-offset,0px))}
   body.keyboard-open #chat-view.active-view .composer{
     position:static;z-index:auto;margin:6px 10px 8px;max-width:none;background:#fff;
   }
@@ -1246,11 +1249,18 @@ body.keyboard-open{position:fixed;inset:0;width:100%;overflow:hidden}
 /* top:0, not the viewport offset: a position:fixed element is already
    placed against the visual viewport, so adding offsetTop again pushed the
    shell down by a whole keyboard height and hid the composer behind it. */
-/* No 100dvh fallback: keyboard-open is only ever set together with the
-   height variable, and falling back to the full viewport while pinned is
-   exactly the state that hid the composer behind the keyboard. */
+/* position:fixed resolves against the LAYOUT viewport, which on iOS stays
+   the full window height and is scrolled under the keyboard - it does not
+   follow the visual viewport. So a shell at top:0 sized to the visual
+   height is drawn at the top of the scrolled document: keyboard, then a
+   blank strip, then the composer above the visible area.
+   translateY(--keyboard-offset) moves it down by exactly how far iOS
+   scrolled, putting it back over what the user can see. On Android the
+   offset is 0 and this is a no-op.
+   No 100dvh fallback: pinned-at-full-height is itself a broken state. */
 body.keyboard-open .app-shell{
   position:fixed;left:0;right:0;top:0;
+  transform:translateY(var(--keyboard-offset,0px));
   height:var(--keyboard-viewport-height)!important;
   max-height:var(--keyboard-viewport-height)}
 /* The safe-area inset belongs to the home indicator, which the keyboard
@@ -1260,6 +1270,7 @@ body.keyboard-open .message-area{overscroll-behavior:contain}
 /* The thread sheet gets the same treatment so its reply box stays reachable. */
 body.keyboard-open .thread-panel{
   top:0;
+  transform:translateY(var(--keyboard-offset,0px));
   height:var(--keyboard-viewport-height);
   max-height:var(--keyboard-viewport-height)}
 body.keyboard-open .thread-composer{padding-bottom:10px}

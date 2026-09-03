@@ -91,10 +91,12 @@ for(const vp of [{w:390,h:844,n:"iPhone"},{w:820,h:1180,n:"iPad"}]){
   const r=await page.evaluate(kb=>{
     const c=document.querySelector("#composer").getBoundingClientRect();
     const bar=document.querySelector(".reply-bar");
-    const keyboardTop=window.innerHeight-kb;
+    /* The visible band starts at offsetTop on iOS, so the keyboard's top
+       edge is the bottom of that band - not innerHeight minus the keyboard. */
+    const keyboardTop=window.visualViewport.offsetTop+window.visualViewport.height;
     return {bottom:Math.round(c.bottom),top:Math.round(c.top),keyboardTop:Math.round(keyboardTop),
       barVisible:!!bar&&!bar.hidden,
-      atTop:c.top<window.innerHeight*0.35,
+      atTop:c.top<(window.visualViewport.offsetTop+window.visualViewport.height*0.35),
       behindKeyboard:c.bottom>keyboardTop+2,
       overflow:document.documentElement.scrollWidth>window.innerWidth};
   },KB);
