@@ -412,6 +412,40 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
 @media(max-width:720px){.space-loader-layout{grid-template-columns:1fr;gap:4px;padding:20px 0}.space-loader-scene{justify-self:center;transform:scale(.78);margin:-24px 0 -22px}.space-loader-copy{gap:10px;text-align:center}.space-loader-kicker{justify-content:center}.space-loader-kicker em{margin-left:0}.space-loader-progress{width:min(280px,100%);margin:auto}.space-loader-signal{justify-content:center}.space-loader-signal small{margin-left:0}.space-loader-copy strong{font-size:clamp(28px,9vw,38px)}}
 @media(prefers-reduced-motion:reduce){.space-launch-loader,.space-launch-loader *{animation:none!important;transition-duration:.01ms!important}}
 
+/* Settings is intentionally fluid: it must remain readable without creating
+   a second horizontal scroll area at any viewport size. */
+#settings-view{width:100%;max-width:100%;min-width:0;overflow-x:hidden}
+#settings-view .page-head{width:100%;min-width:0}
+.settings-layout{width:min(100%,860px);max-width:100%;min-width:0;padding:0 clamp(16px,6vw,96px) clamp(24px,5vh,56px)}
+.settings-card{width:100%;min-width:0}
+.settings-profile{min-width:0}
+.settings-profile>div{min-width:0;flex:1}
+.settings-profile h3,.settings-profile p,.settings-option strong,.settings-option small{overflow-wrap:anywhere;word-break:break-word}
+.settings-option>span{min-width:0}
+.settings-option small{line-height:1.45}
+@media(max-width:600px){
+  #settings-view .page-head{padding:24px 16px 18px}
+  .settings-layout{padding-inline:16px;padding-bottom:24px}
+  .settings-profile{gap:12px;padding:18px}
+  .settings-profile .person-avatar.large{width:58px;height:58px;font-size:18px}
+  .settings-options{padding-inline:18px}
+  .settings-option{align-items:flex-start;gap:10px;padding:16px 0}
+  .settings-option i{margin-top:1px}
+  .settings-note{padding-inline:18px}
+}
+@media(max-width:360px){
+  #settings-view .page-head{padding-inline:12px}
+  .settings-layout{padding-inline:12px}
+  .settings-profile{padding:15px}
+  .settings-profile .person-avatar.large{width:48px;height:48px;font-size:15px}
+  .settings-options{padding-inline:14px}
+  .settings-option strong{font-size:12px}
+  .settings-option small{font-size:10px}
+  .settings-option i{width:38px;height:22px}
+  .settings-option i::after{width:16px;height:16px}
+  .settings-option input:checked+i::after{transform:translateX(16px)}
+}
+
 /* ============================================================
    New-chat picker — search, presence, tap to start.
    ============================================================ */
@@ -889,3 +923,76 @@ dialog:has(.call-shell).video-call{width:min(1180px,calc(100vw - 24px));height:m
 #new-chat .bubble-icon{width:20px;height:20px}
 .sheet-glyph.blue .bubble-icon{--bubble-dot:#dbeafe}
 .icon-button .bubble-icon{--bubble-dot:var(--brand)}
+
+/* ---------- composer attachment tray ---------- */
+.pending-attachments{display:none}
+.pending-attachments.has-items{display:flex;flex-wrap:wrap;gap:8px;padding:10px 14px 2px}
+.attach-card{display:flex;align-items:center;gap:9px;min-width:0;max-width:260px;border:1px solid var(--line);background:#fff;border-radius:12px;padding:7px 9px;box-shadow:0 3px 10px #17202b0a;animation:attach-in .22s cubic-bezier(.2,.9,.3,1.25)}
+@keyframes attach-in{from{opacity:0;transform:translateY(6px) scale(.96)}to{opacity:1;transform:none}}
+.attach-thumb{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:9px;background:#f1f4f8;border:0;padding:0;overflow:hidden;color:#6b7889;font-size:17px}
+button.attach-thumb{cursor:pointer;transition:transform .15s ease}
+button.attach-thumb:hover{transform:scale(1.05)}
+.attach-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.attach-glyph{font-size:17px;line-height:1}
+.attach-copy{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+.attach-copy strong{font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.attach-copy small{font-size:10px;color:#94a0af}
+.attach-remove{flex:none;width:22px;height:22px;border:0;border-radius:50%;background:#f1f4f8;color:#6b7889;font-size:15px;line-height:1;cursor:pointer;transition:background .15s ease,color .15s ease}
+.attach-remove:hover{background:#fde8ec;color:#b4233d}
+.attach-card.uploading{opacity:.85}
+.attach-card.failed{border-color:#f0c2cc;background:#fff7f8}
+.attach-failed{background:#fde8ec;color:#b4233d;font-weight:800}
+/* Indeterminate ring: the CDN upload gives no progress events, so a spinner
+   is honest where a percentage bar would not be. */
+.attach-spinner{width:19px;height:19px;border-radius:50%;border:2.5px solid #d9e0ea;border-top-color:var(--brand);animation:attach-spin .7s linear infinite}
+@keyframes attach-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.attach-spinner{animation-duration:2s}.attach-card{animation:none}}
+
+/* ---------- sent attachments ---------- */
+.message-media{display:grid;gap:4px;margin-top:7px;max-width:340px;border-radius:14px;overflow:hidden}
+.message-media.count-1{grid-template-columns:1fr}
+.message-media.count-2{grid-template-columns:1fr 1fr}
+.message-media.count-3,.message-media.count-4{grid-template-columns:1fr 1fr}
+.media-tile{position:relative;border:0;padding:0;background:#eef1f5;cursor:pointer;overflow:hidden;aspect-ratio:1;display:block}
+.message-media.count-1 .media-tile{aspect-ratio:auto;max-height:300px}
+.message-media.count-3 .media-tile:first-child{grid-row:span 2;aspect-ratio:auto}
+.media-tile img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .25s ease}
+.message-media.count-1 .media-tile img{max-height:300px;object-fit:contain;background:#f5f7fa}
+.media-tile:hover img{transform:scale(1.03)}
+.media-badge{position:absolute;left:6px;bottom:6px;background:#17202bcc;color:#fff;border-radius:5px;padding:1px 5px;font-size:9px;font-weight:800;letter-spacing:.04em}
+.message-file{display:flex;align-items:center;gap:10px;width:100%;max-width:320px;margin-top:7px;border:1px solid var(--line);background:#fff;border-radius:12px;padding:9px 11px;font:inherit;text-align:left;color:var(--ink);cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}
+.message-file:hover{border-color:#cfd6e0;box-shadow:0 4px 14px #17202b12;transform:translateY(-1px)}
+.file-glyph{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:#f1f4f8;font-size:16px}
+.file-copy{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+.file-copy strong{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-copy small{font-size:10px;color:#94a0af}
+.file-download{flex:none;color:#9aa6b5;font-size:14px;font-weight:800}
+/* My own bubbles are dark, so the file card keeps a light surface for
+   contrast rather than inheriting the brand background. */
+.mine .message-media,.mine .message-file{margin-left:auto}
+
+/* ---------- attachment preview lightbox ---------- */
+.attachment-preview{width:min(900px,calc(100vw - 32px));max-width:none;max-height:90dvh;padding:0;border-radius:16px;overflow:hidden;background:#fff}
+.attachment-preview::backdrop{background:#0d1420d9}
+.attachment-preview[open]{animation:preview-in .24s cubic-bezier(.2,.9,.3,1.1)}
+@keyframes preview-in{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+.preview-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line)}
+.preview-name{font-size:13px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.preview-tools{display:flex;align-items:center;gap:10px;flex:none}
+.preview-download{font-size:11.5px;font-weight:750;color:var(--brand);text-decoration:none;border:1px solid #e5b9c4;border-radius:8px;padding:6px 11px;background:var(--brand-soft)}
+.preview-download:hover{background:#ffe4e9}
+.preview-body{display:grid;place-items:center;padding:16px;background:#f5f7fa;max-height:calc(90dvh - 60px);overflow:auto}
+.preview-body img,.preview-body video{max-width:100%;max-height:calc(90dvh - 96px);border-radius:10px;display:block}
+.preview-body audio{width:min(460px,100%)}
+.preview-fallback{text-align:center;padding:36px 20px;display:flex;flex-direction:column;align-items:center;gap:9px}
+.preview-glyph{font-size:44px}
+.preview-fallback strong{font-size:14px;overflow-wrap:anywhere}
+.preview-fallback p{margin:0;color:#8a98a9;font-size:12px}
+.preview-fallback .primary-button{margin-top:6px;text-decoration:none}
+@media (max-width:640px){
+  .attachment-preview{width:100vw;max-width:100vw;max-height:100dvh;height:100dvh;border-radius:0;margin:0}
+  .preview-body{max-height:calc(100dvh - 60px)}
+  .preview-body img,.preview-body video{max-height:calc(100dvh - 96px)}
+  .message-media{max-width:100%}
+  .attach-card{max-width:100%;flex:1 1 190px}
+}
