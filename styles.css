@@ -771,6 +771,16 @@ dialog:has(.call-shell).video-call{width:min(1180px,calc(100vw - 24px));height:m
 @media(max-width:720px){.space-loader-layout{grid-template-columns:1fr;gap:0}.space-loader-scene{transform:scale(.82);margin:-20px 0 -16px}.space-loader-copy strong{font-size:clamp(29px,9vw,38px)}}
 @media(prefers-reduced-motion:reduce){.space-launch-loader::before,.loader-bubble,.loader-bubble-small,.loader-bubble-call,.loader-connection,.loader-orbit-dot,.loader-device{animation:none!important}}
 
+/* ---------- settings ---------- */
+.settings-layout{padding:0 6% 40px;max-width:760px}
+.settings-card{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.settings-profile{display:flex;align-items:center;gap:15px;padding:24px;border-bottom:1px solid var(--line)}
+.settings-profile h3{margin:0 0 4px;font-size:16px}.settings-profile p{margin:0;color:#8a98a9;font-size:12px}
+.settings-options{padding:8px 24px}.settings-option{display:flex;align-items:center;gap:15px;padding:18px 0;border-bottom:1px solid #f0f2f5;cursor:pointer}
+.settings-option:last-child{border-bottom:0}.settings-option span{display:flex;flex-direction:column;gap:4px;flex:1}.settings-option strong{font-size:13px}.settings-option small{color:#8a98a9;font-size:11px}
+.settings-option input{position:absolute;opacity:0;pointer-events:none}.settings-option i{position:relative;width:42px;height:24px;border-radius:99px;background:#d7dde6;flex:none;transition:background .18s ease}.settings-option i::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #17202b25;transition:transform .18s ease}.settings-option input:checked+i{background:#881337}.settings-option input:checked+i::after{transform:translateX(18px)}.settings-option input:focus-visible+i{outline:2px solid #881337;outline-offset:3px}.settings-note{min-height:18px;margin:0;padding:0 24px 18px;color:#15803d;font-size:11px}
+@media(max-width:720px){.settings-layout{padding:0 18px 24px}.settings-profile{padding:20px}.settings-options{padding:6px 20px}.settings-note{padding-left:20px;padding-right:20px}}
+
 /* ---------- new chat / new group dialogs ---------- */
 .icon-button svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round;display:block;margin:auto}
 .icon-button{display:grid;place-items:center;transition:transform .16s ease,background .16s ease}
@@ -839,7 +849,15 @@ dialog:has(.call-shell).video-call{width:min(1180px,calc(100vw - 24px));height:m
 @media (max-width:640px){
   /* The base dialog rule caps width at calc(100% - 30px); a bottom sheet
      must reach both edges, so width/max-width are pinned to the viewport. */
-  .sheet-dialog{width:100vw;max-width:100vw;margin:0;position:fixed;bottom:0;left:0;right:0;top:auto;border-radius:20px 20px 0 0;max-height:92dvh;display:flex;flex-direction:column}
+  /* Earlier `dialog` rules cap width (420px / calc(100% - 30px)) and
+     max-width (min(560px, calc(100vw - 24px))). A bottom sheet has to reach
+     both edges, so both are reset here; `auto` lets left:0/right:0 do the
+     sizing, which avoids 100vw's scrollbar overshoot. */
+  /* The ids are needed, not just .sheet-dialog: an earlier rule sets
+     #new-chat-dialog{width:min(440px,calc(100vw - 24px))}, and an id beats a
+     class however late the class rule appears. width:auto lets left:0/right:0
+     size the sheet, which avoids 100vw's scrollbar overshoot. */
+  .sheet-dialog,#new-chat-dialog.sheet-dialog,#group-chat-dialog.sheet-dialog{width:auto;max-width:none;margin:0;position:fixed;bottom:0;left:0;right:0;top:auto;border-radius:20px 20px 0 0;max-height:92dvh;display:flex;flex-direction:column}
   .sheet-dialog[open]{animation:sheet-up .32s cubic-bezier(.2,.9,.3,1.08)}
   @keyframes sheet-up{from{transform:translateY(100%)}to{transform:none}}
   .sheet-grip{display:block;flex:none;width:40px;height:4px;border-radius:99px;background:#dfe4ec;margin:9px auto 0}
@@ -853,3 +871,10 @@ dialog:has(.call-shell).video-call{width:min(1180px,calc(100vw - 24px));height:m
 @media (prefers-reduced-motion:reduce){
   .sheet-dialog[open],.sheet-dialog[open] .sheet-glyph,.member-chip,.employee-option.selected .invite-check{animation:none}
 }
+
+/* iOS-style message bubble: the three dots are knocked out of the filled
+   shape, so each context paints them with the colour behind the bubble. */
+.bubble-icon .bubble-dot{fill:var(--bubble-dot,#fff)}
+#new-chat .bubble-icon{width:20px;height:20px}
+.sheet-glyph.blue .bubble-icon{--bubble-dot:#dbeafe}
+.icon-button .bubble-icon{--bubble-dot:var(--brand)}

@@ -21,8 +21,11 @@ end $$;
 create table if not exists public.medha_communications_presence (
   user_id text primary key,
   is_open boolean not null default false,
+  presence_enabled boolean not null default true,
   last_seen timestamptz not null default now()
 );
+alter table public.medha_communications_presence
+  add column if not exists presence_enabled boolean not null default true;
 alter table public.medha_communications_presence enable row level security;
 
 
@@ -121,5 +124,4 @@ create unique index if not exists medha_communications_direct_pair_idx
 
 create index if not exists medha_communications_messages_conv_created_idx
   on public.medha_communications_messages(conversation_id, created_at, id);
-
 

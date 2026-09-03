@@ -42,6 +42,15 @@ let callActivityStartedAt=null;
 let callActivityFinalized=false;
 let pushSetupPromise=null;
 const streamChannels=new Map();
+function preferencesKey(){return "medha-communications-preferences-"+(currentUserId||"guest")}
+function readPreferences(){try{return {...JSON.parse(localStorage.getItem(preferencesKey())||"{}")}}catch{return {}}}
+function soundEnabled(){return readPreferences().sound!==false}
+function presenceEnabled(){return readPreferences().presence!==false}
+function savePreference(name,value){
+  const next={...readPreferences(),[name]:!!value};
+  try{localStorage.setItem(preferencesKey(),JSON.stringify(next))}catch{}
+  return next;
+}
 const streamChannelWatchPromises=new Map();
 const handledStreamMessageIds=new Set();
 let streamConversationsLoadPromise=null;
@@ -119,6 +128,7 @@ function applyIncomingStreamMessage(event){
     streamChannelFor(chat)?.markRead().catch(()=>{});
   }else{
     chat.unread=(chat.unread||0)+1;
+    if(soundEnabled())playIncomingPing();
     /* mentioned_users comes down with the message, so an @ is counted
        without asking Stream for anything. */
     if((message.mentioned_users||[]).some(user=>String(user.id)===String(viewerId())))
@@ -171,6 +181,7 @@ async function watchStreamChannel(chat){
             title:`${reactorName} reacted ${event.reaction?.type||""}`.trim(),
             body:String(found.message.text||"your message").replace(/\s+/g," ").slice(0,90),
             initials:initialsFor(reactorName),color:found.chat.color});
+          if(soundEnabled())playIncomingPing();
         }
       }));
       channel.on("message.updated",event=>{
@@ -369,7 +380,7 @@ function renderList(){
     const state=c.kind==="group"?"":presenceFor(c.participantId);
     const pinned=rank.has(String(c.id));
     return `<div class="chat-item ${active&&c.id===active.id?"selected":""}" data-id="${esc(c.id)}">
-      <div class="avatar-stack">${avatar(c)}${c.kind==="group"?"":`<i class="presence-dot ${state}" title="${state}"></i>`}</div>
+      <div class="avatar-stack">${avatar(c)}${c.kind==="group"||state==="hidden"?"":`<i class="presence-dot ${state}" title="${state}"></i>`}</div>
       <div class="chat-copy">
         <div class="chat-line">
           <strong>${pinned?'<span class="chat-pin" title="Pinned">\u{1F4CC}</span>':""}${favorites.includes(c.id)?'<span class="chat-fav">\u2605</span>':""}${esc(c.name)}</strong>
@@ -389,7 +400,7 @@ function renderList(){
        :"No conversations yet. Select + to start a chat."}</p>`;
   if(people.length){
     const heading=document.createElement("p");heading.className="search-result-heading";heading.textContent="People";$("#chat-list").prepend(heading);
-    $("#chat-list").insertAdjacentHTML("beforeend",people.map(person=>`<div class="chat-item search-person" data-person-id="${esc(person.id)}"><div class="avatar-stack"><span class="person-avatar blue">${esc(initialsFor(person.full_name))}</span><i class="presence-dot ${presenceFor(person.id)}"></i></div><div class="chat-copy"><div class="chat-line"><strong>${esc(person.full_name)}</strong><time>Start chat</time></div></div></div>`).join(""));
+    $("#chat-list").insertAdjacentHTML("beforeend",people.map(person=>{const state=presenceFor(person.id);return `<div class="chat-item search-person" data-person-id="${esc(person.id)}"><div class="avatar-stack"><span class="person-avatar blue">${esc(initialsFor(person.full_name))}</span>${state==="hidden"?"":`<i class="presence-dot ${state}"></i>`}</div><div class="chat-copy"><div class="chat-line"><strong>${esc(person.full_name)}</strong><time>Start chat</time></div></div></div>`}).join(""));
   }
 }
 
@@ -1376,9 +1387,9 @@ async function loadEmployeeDirectory(){
 async function refreshDirectoryPresence(){
   const ids=directory.map(p=>String(p.id)).filter(Boolean);
   if(!ids.length)return;
-  try{
-    const list=ids.map(id=>`"${id.replace(/"/g,'')}"`).join(",");
-    const rows=await db(`medha_communications_presence?user_id=in.(${list})&select=user_id,is_open,last_seen`);
+ try{
+   const list=ids.map(id=>`"${id.replace(/"/g,'')}"`).join(",");
+   const rows=await db(`medha_communications_presence?user_id=in.(${list})&select=user_id,is_open,last_seen,presence_enabled`);
     (rows||[]).forEach(r=>contactPresence.set(String(r.user_id),r));
     renderDirectory($("#new-chat-person").value||"");
   }catch{}
@@ -1417,17 +1428,52 @@ $("#employee-list").addEventListener("click",async e=>{
 });
 
 let selectedGroupMembers=[];
-function renderGroupMembers(){
-  const list=$("#group-member-list");
-  list.innerHTML=directory.filter(p=>String(p.id)!==String(viewerId())).map(p=>'<button type="button" class="employee-option '+(selectedGroupMembers.includes(String(p.id))?'selected':'')+'" data-group-person-id="'+esc(p.id)+'"><span class="person-avatar blue">'+esc(initialsFor(p.full_name))+'</span><span class="employee-copy"><strong>'+esc(p.full_name)+'</strong></span><span class="invite-check">'+(selectedGroupMembers.includes(String(p.id))?'✓':'')+'</span></button>').join("");
+function renderGroupMembers(query=""){
+  const list=$("#group-member-list"),q=String(query||"").toLowerCase();
+  const people=directory.filter(p=>String(p.id)!==String(viewerId()));
+  const matches=people.filter(p=>`${p.full_name} ${p.email||""} ${p.department||""}`.toLowerCase().includes(q));
+  list.innerHTML=matches.length?matches.map(p=>{
+    const chosen=selectedGroupMembers.includes(String(p.id));
+    return `<button type="button" class="employee-option ${chosen?"selected":""}" data-group-person-id="${esc(p.id)}" aria-pressed="${chosen}">
+      <span class="person-avatar blue">${esc(initialsFor(p.full_name))}</span>
+      <span class="employee-copy"><strong>${esc(p.full_name)}</strong></span>
+      <span class="invite-check">${chosen?"\u2713":""}</span>
+    </button>`}).join("")
+    :`<div class="directory-empty">${people.length?"No people match that search.":"Employee directory unavailable."}</div>`;
+  renderChosenMembers();
+}
+/* The chips give the selection its own place, so who is in the group is
+   readable without scrolling back through the list to hunt for ticks. */
+function renderChosenMembers(){
+  const wrap=$("#group-chosen"),count=$("#group-member-count"),button=$("#group-create-button");
+  const chosen=selectedGroupMembers.map(id=>directory.find(p=>String(p.id)===String(id))).filter(Boolean);
+  wrap.hidden=!chosen.length;
+  wrap.innerHTML=chosen.map(p=>`<button type="button" class="member-chip" data-remove-member="${esc(p.id)}" title="Remove ${esc(p.full_name)}">
+    <span class="person-avatar blue">${esc(initialsFor(p.full_name))}</span>${esc(p.full_name)}<i aria-hidden="true">\u00d7</i></button>`).join("");
+  count.textContent=chosen.length?`${chosen.length} selected`:"None selected";
+  count.classList.toggle("has-members",!!chosen.length);
+  if(button)button.disabled=!chosen.length||!$("#group-chat-name").value.trim();
 }
 $("#new-group").addEventListener("click",async()=>{
-  selectedGroupMembers=[];$("#group-chat-name").value="";$("#group-chat-dialog").showModal();
+  selectedGroupMembers=[];$("#group-chat-name").value="";$("#group-member-search").value="";
+  $("#group-chat-dialog").showModal();
   await ensureDirectory();renderGroupMembers();
 });
+$("#group-member-search").addEventListener("input",e=>renderGroupMembers(e.target.value));
+$("#group-chat-name").addEventListener("input",renderChosenMembers);
+function toggleGroupMember(id){
+  const key=String(id);
+  selectedGroupMembers=selectedGroupMembers.includes(key)
+    ?selectedGroupMembers.filter(x=>x!==key):[...selectedGroupMembers,key];
+  renderGroupMembers($("#group-member-search").value);
+}
 $("#group-member-list").addEventListener("click",e=>{
   const button=e.target.closest("[data-group-person-id]");if(!button)return;
-  const id=String(button.dataset.groupPersonId);selectedGroupMembers=selectedGroupMembers.includes(id)?selectedGroupMembers.filter(x=>x!==id):[...selectedGroupMembers,id];renderGroupMembers();
+  toggleGroupMember(button.dataset.groupPersonId);
+});
+$("#group-chosen").addEventListener("click",e=>{
+  const chip=e.target.closest("[data-remove-member]");if(!chip)return;
+  toggleGroupMember(chip.dataset.removeMember);
 });
 $("#group-chat-form").addEventListener("submit",async e=>{
   if(e.submitter?.value==="cancel")return;
@@ -1831,7 +1877,9 @@ async function toggleReaction(messageId,emoji){
     const channel=streamChannelFor(active);
     if(!channel)throw Error("Message is not loaded in Stream");
     if(removing)await channel.deleteReaction(messageId,emoji,me);
-    else await channel.sendReaction(messageId,emoji,{enforce_unique:true});
+    /* sendReaction takes a Reaction object; passing the bare emoji string
+       fails server-side with "expected object for field reaction". */
+    else await channel.sendReaction(messageId,{type:emoji},{enforce_unique:true});
     writeCache();
   }catch(error){message.reactions=before;renderMessages();toast(error.message)}
 }
@@ -2013,7 +2061,30 @@ function setWorkspaceView(viewName){
   $("#details-panel").classList.remove("open");
   $("#details-panel").classList.add("closed");
   if(viewName==="calendar") renderCalendar();
+  if(viewName==="settings") renderSettings();
 }
+function renderSettings(){
+  const name=currentAppUser?.full_name||currentAppUser?.name||streamClient?.user?.name||"Signed-in user";
+  const email=currentAppUser?.email||streamClient?.user?.email||"";
+  const avatar=$("#settings-avatar");
+  if(avatar){avatar.textContent=initialsFor(name);avatar.className="person-avatar blue large"}
+  if($("#settings-name"))$("#settings-name").textContent=name;
+  if($("#settings-email"))$("#settings-email").textContent=email||"No email available";
+  if($("#setting-sound"))$("#setting-sound").checked=soundEnabled();
+  if($("#setting-presence"))$("#setting-presence").checked=presenceEnabled();
+}
+$("#setting-sound")?.addEventListener("change",event=>{
+  savePreference("sound",event.target.checked);
+  if($("#settings-note"))$("#settings-note").textContent=event.target.checked?"Notification sounds enabled":"Notification sounds disabled";
+});
+$("#setting-presence")?.addEventListener("change",async event=>{
+  const enabled=event.target.checked;
+  savePreference("presence",enabled);
+  if(!enabled){contactPresence.set(String(viewerId()),{is_open:false,presence_enabled:false,last_seen:new Date().toISOString()});}
+  await publishPresence(enabled);
+  setPresenceLabel();renderList();
+  if($("#settings-note"))$("#settings-note").textContent=enabled?"Your status is visible to teammates":"Your status is hidden from teammates";
+});
 document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.onclick=()=>setWorkspaceView(item.dataset.view));
 setWorkspaceView("chat");
 renderCalendar();
@@ -2042,6 +2113,12 @@ function setPresenceLabel(){
   const statusEl=$("#conversation-status");
   if(!userId){statusEl.textContent="";return}
   const state=presenceFor(userId);
+  if(state==="hidden"){
+    statusEl.textContent="";statusEl.className="";
+    if(detail){detail.textContent="";detail.hidden=true}
+    if(dot)dot.hidden=true;
+    return;
+  }
   const label=state.charAt(0).toUpperCase()+state.slice(1);
   statusEl.textContent=label;statusEl.className=state;
   if(detail){detail.textContent=label;detail.className=`presence ${state}`}
@@ -2055,8 +2132,13 @@ async function refreshContactPresence(){
   if(!ids.length){setPresenceLabel();return}
   try{
     const list=ids.map(id=>`"${id.replace(/"/g,'')}"`).join(",");
-    const rows=await db(`medha_communications_presence?user_id=in.(${list})&select=user_id,is_open,last_seen`);
-    (rows||[]).forEach(r=>contactPresence.set(String(r.user_id),r));
+    try{
+      const rows=await db(`medha_communications_presence?user_id=in.(${list})&select=user_id,is_open,last_seen,presence_enabled`);
+      (rows||[]).forEach(r=>contactPresence.set(String(r.user_id),r));
+    }catch{
+      const rows=await db(`medha_communications_presence?user_id=in.(${list})&select=user_id,is_open,last_seen`);
+      (rows||[]).forEach(r=>contactPresence.set(String(r.user_id),r));
+    }
     setPresenceLabel();
     renderList();
   }catch{}
@@ -2065,9 +2147,10 @@ async function refreshContactPresence(){
 /* One place that decides Online / Busy / Offline for a person. */
 function presenceFor(userId){
   if(!userId)return "offline";
+  const record=contactPresence.get(String(userId));
+  if(record?.presence_enabled===false)return "hidden";
   if(String(userId)===String(viewerId()))return "online";
   if(meetingStatusFor(userId))return "busy";
-  const record=contactPresence.get(String(userId));
   const fresh=record?.is_open&&Date.now()-new Date(record.last_seen).getTime()<45000;
   return fresh?"online":"offline";
 }
@@ -2075,7 +2158,7 @@ async function publishPresence(isOpen){
   if(!viewerId())return;
   try{
     await db("medha_communications_presence",{method:"POST",headers:{Prefer:"resolution=merge-duplicates,return=minimal"},
-      body:JSON.stringify({user_id:viewerId(),is_open:isOpen,last_seen:new Date().toISOString()})});
+      body:JSON.stringify({user_id:viewerId(),is_open:presenceEnabled()&&isOpen,presence_enabled:presenceEnabled(),last_seen:new Date().toISOString()})});
   }catch{}
 }
 function startPresenceHeartbeat(){
@@ -2083,7 +2166,7 @@ function startPresenceHeartbeat(){
   /* Online means the tab is OPEN, not focused. A background tab still
      counts - previously visibilityState made you look offline the moment
      you switched tabs. Only closing the page marks you offline. */
-  const publish=()=>publishPresence(true);
+  const publish=()=>{if(presenceEnabled())publishPresence(true)};
   publish();
   presenceTimer=setInterval(publish,15000);
   document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")publish()});
@@ -2114,6 +2197,7 @@ document.addEventListener("visibilitychange",()=>{
     audioContext.resume().catch(()=>{});
 });
 function playIncomingPing(){
+  if(!soundEnabled())return;
   try{
     audioContext??=new (window.AudioContext||window.webkitAudioContext)();
     if(audioContext.state==="suspended"){audioContext.resume().catch(()=>{})}
@@ -2175,6 +2259,8 @@ window.__space={get presenceFor(){return presenceFor},get writeCache(){return wr
   get streamChannels(){return streamChannels},
   get watchStreamChannel(){return watchStreamChannel},
   get showBanner(){return showBanner},get dismissBanner(){return dismissBanner},
+  get renderGroupMembers(){return renderGroupMembers},
+  get selectedGroupMembers(){return selectedGroupMembers},
   get ensureDevicePermission(){return ensureDevicePermission},
   get readPermissionStore(){return readPermissionStore},
   get writePermissionStore(){return writePermissionStore},
