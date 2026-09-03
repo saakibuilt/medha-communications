@@ -42,6 +42,9 @@ let callActivityStartedAt=null;
 let callActivityFinalized=false;
 let pushSetupPromise=null;
 const streamChannels=new Map();
+const streamChannelWatchPromises=new Map();
+const handledStreamMessageIds=new Set();
+let streamConversationsLoadPromise=null;
 
 const WEB_PUSH_PUBLIC_KEY="BHZx1IN2FDoblv8PEfq6fTCORea622j9nL9wSIvX-BI4by1ZYqnXR1TTMNAWcP_xuiuJ0rb-d2u6YNNiHo-c1ak";
 const PUSH_SUBSCRIPTION_URL="https://medha-activities.vercel.app/api/push-subscription";
@@ -92,9 +95,15 @@ function streamChannelFor(chat){return streamChannels.get(String(chat.cid||chat.
 function applyIncomingStreamMessage(event){
   const message=event?.message;
   if(!message||String(message.user?.id)===String(viewerId()))return;
+  const messageId=String(message.id||"");
+  if(messageId&&handledStreamMessageIds.has(messageId))return;
   const cid=event.channel?.cid||event.cid||message.cid;
   const chat=conversations.find(item=>String(item.cid)===String(cid));
   if(!chat){hydrateConversations();return}
+  if(messageId){
+    handledStreamMessageIds.add(messageId);
+    if(handledStreamMessageIds.size>2000)handledStreamMessageIds.delete(handledStreamMessageIds.values().next().value);
+  }
   const incoming=streamMessageToApp(message);
   chat.preview=message.text||"Attachment";
   chat.updatedAt=message.created_at||new Date().toISOString();
@@ -117,23 +126,32 @@ async function ensureStreamUsers(){
 }
 async function watchStreamChannel(chat){
   const channel=streamChannelFor(chat)||streamClient.channel("messaging",chat.id,{members:[viewerId(),String(chat.participantId)]});
-  streamChannels.set(String(chat.cid||chat.id),channel);chat.cid=channel.cid;
-  await channel.watch();
-  channel.on("message.new",event=>{
-    if(event.message?.user?.id===viewerId())return;
-    applyIncomingStreamMessage({...event,cid:chat.cid,channel:{cid:chat.cid}});
-  });
-  /* Repaint a poll card the moment anyone votes, so the bars are live for
-     everyone in the channel rather than only for whoever clicked. */
-  ["poll.vote_casted","poll.vote_changed","poll.vote_removed","poll.updated","poll.closed"]
-    .forEach(name=>channel.on(name,event=>{
-      const poll=event.poll;
-      if(!poll?.id)return;
-      const message=active?.messages?.find(m=>String(m.pollId)===String(poll.id));
-      if(message)message.poll=poll;
-      const card=$(`.poll-card[data-poll-card="${CSS.escape(String(poll.id))}"]`);
-      if(card)card.outerHTML=pollHtml(poll,message?.id||"");
-    }));
+  streamChannels.set(String(channel.cid),channel);chat.cid=channel.cid;
+  const key=String(channel.cid);
+  let watchPromise=streamChannelWatchPromises.get(key);
+  if(!watchPromise){
+    watchPromise=(async()=>{
+      await channel.watch();
+      channel.on("message.new",event=>{
+        if(event.message?.user?.id===viewerId())return;
+        applyIncomingStreamMessage({...event,cid:channel.cid,channel:{cid:channel.cid}});
+      });
+      /* Repaint a poll card the moment anyone votes, so the bars are live for
+         everyone in the channel rather than only for whoever clicked. */
+      ["poll.vote_casted","poll.vote_changed","poll.vote_removed","poll.updated","poll.closed"]
+        .forEach(name=>channel.on(name,event=>{
+          const poll=event.poll;
+          if(!poll?.id)return;
+          const message=active?.messages?.find(m=>String(m.pollId)===String(poll.id));
+          if(message)message.poll=poll;
+          const card=$(`.poll-card[data-poll-card="${CSS.escape(String(poll.id))}"]`);
+          if(card)card.outerHTML=pollHtml(poll,message?.id||"");
+        }));
+      return channel;
+    })().catch(error=>{streamChannelWatchPromises.delete(key);throw error});
+    streamChannelWatchPromises.set(key,watchPromise);
+  }
+  await watchPromise;
   return channel;
 }
 
@@ -637,11 +655,12 @@ async function ensureDirectory(){
 }
 
 async function hydrateConversations(){
+  if(streamConversationsLoadPromise)return streamConversationsLoadPromise;
   const me=viewerId();
   if(!me){conversations=[];active=null;renderList();renderMessages();return}
   if(!streamClient){conversations=[];active=null;renderList();renderMessages();return}
   if(streamClient){
-    try{
+    streamConversationsLoadPromise=(async()=>{try{
       await ensureDirectory();
       await ensureStreamUsers();
       const channels=await streamClient.queryChannels({type:"messaging",members:{$in:[me]}},{last_message_at:-1},{limit:100});
@@ -661,7 +680,9 @@ async function hydrateConversations(){
       const previousCid=active?.cid;conversations=loaded;active=conversations.find(c=>c.cid===previousCid)||null;
       writeCache();
       renderList();renderMessages();return;
-    }catch(error){toast(`Stream unavailable: ${error.message}`);return}
+    }catch(error){toast(`Stream unavailable: ${error.message}`);return}})();
+    try{await streamConversationsLoadPromise}finally{streamConversationsLoadPromise=null}
+    return;
   }
   try{
     const cache=readChatNameCache();
@@ -1789,7 +1810,11 @@ async function initializeAuthorizedUser(user){
   const openId=active?.id||conversations[0]?.id;
   if(openId)await switchChat(openId);
   if(syncTimer)clearInterval(syncTimer);
-  syncTimer=setInterval(()=>{syncIncomingMessages();refreshContactPresence()},5000);
+  syncTimer=setInterval(()=>{
+    /* Stream's WebSocket delivers messages instantly. Presence is the only
+       remaining periodic read, and it does not need a 5-second query. */
+    if(document.visibilityState!=="hidden")refreshContactPresence();
+  },15000);
   setInterval(async()=>{try{firebaseIdToken=await user.getIdToken(true)}catch{}},30*60*1000);
   /* Register an existing permission silently. On iOS/iPadOS the first
      permission request must happen from a user gesture, so subscribe from
