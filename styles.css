@@ -1285,3 +1285,12 @@ body.keyboard-open .thread-composer{padding-bottom:10px}
 .favorites-sidebar .favorite-card strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;font-size:13px;color:var(--ink)}
 .favorites-sidebar .chat-list>.empty{grid-column:1 / -1;min-height:220px}
 @media(max-width:720px){.app-shell.favorites-mode{grid-template-columns:60px minmax(0,1fr)}.favorites-sidebar{grid-column:2}.favorites-sidebar .sidebar-top{padding:25px 20px 15px}.favorites-sidebar .chat-list{grid-template-columns:repeat(2,minmax(115px,1fr));gap:16px;padding:14px 18px 28px}.favorites-sidebar .favorite-card{min-height:130px}.favorites-sidebar .favorite-avatar,.favorites-sidebar .favorite-avatar .person-avatar{width:68px;height:68px}}
+
+/* ---------- GIFs in the conversation ----------
+   A GIF plays inline at its own aspect ratio, like iMessage. It is not a
+   tile, not cropped, and has no download chrome - it is the message. */
+.message-gif-wrap{margin-top:7px;border-radius:14px;overflow:hidden;background:#eef1f5;
+  max-width:min(260px,100%);line-height:0}
+.mine .message-gif-wrap{margin-left:auto}
+.message-gif-live{display:block;width:100%;height:auto;max-height:280px;object-fit:contain;background:#eef1f5}
+@media (max-width:640px){.message-gif-wrap{max-width:min(220px,78%)}}

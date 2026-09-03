@@ -108,11 +108,14 @@ await page.click(".gif-tile");
 await page.waitForTimeout(500);
 let r=await page.evaluate(()=>({open:document.querySelector("#gif-dialog").open,
   pending:window.__space.pendingAttachments.map(a=>({kind:a.kind,url:a.url})),
-  cards:document.querySelectorAll(".attach-card").length}));
+  cards:document.querySelectorAll(".attach-card").length,
+  liveGifs:document.querySelectorAll(".message-gif-live").length}));
 ok("clicking a GIF closes the picker",r.open===false,r);
-ok("clicking a GIF attaches it",r.pending.length===1&&r.pending[0].kind==="gif",r.pending);
-ok("the attached GIF uses the full-size url",/full/.test(r.pending[0]?.url||""),r.pending);
-ok("the GIF shows in the composer tray",r.cards===1,r.cards);
+/* A GIF is sent straight to the conversation now, so it must NOT be staged
+   in the composer tray. gif-chat.spec.mjs covers how it renders. */
+ok("clicking a GIF does not stage an attachment",r.pending.length===0,r.pending);
+ok("clicking a GIF leaves the composer tray empty",r.cards===0,r.cards);
+ok("clicking a GIF sends it to the chat",r.liveGifs>0,{liveGifs:r.liveGifs});
 /* a missing API key must explain itself, not fail silently */
 await page.evaluate(()=>{window.__space.pendingAttachments=[];window.__space.renderPending()});
 await page.unroute("**/api/gif-search**");

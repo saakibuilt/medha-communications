@@ -99,7 +99,14 @@ function streamMessageToApp(message){
   const profile=directory.find(person=>String(person.id)===senderId);
   return {id:String(message.id),senderId,who:isMine(senderId)?"me":"them",parentId:message.parent_id||null,pinned:!!message.pinned,callId:message.call_id||null,pollId:message.poll_id||null,poll:message.poll||null,
     senderName:isMine(senderId)?(currentAppUser?.full_name||currentAppUser?.name||"You"):(profile?.full_name||message.user?.name||active?.name||"Unknown user"),text:message.text||"",
-    attachments:(message.attachments||[]).map(a=>({kind:a.type==="image"?"image":"file",name:a.title||a.asset_url?.split("/").pop()||"File",url:a.image_url||a.asset_url||a.file_url||a.og_scrape_url})).filter(a=>a.url),
+    /* Stream returns a GIF as type "image", so the kind has to be recovered
+       from the url or the giphy marker - otherwise a sent GIF comes back as a
+       still image and stops playing in the bubble. */
+    attachments:(message.attachments||[]).map(a=>({kind:(()=>{
+      const u=a.image_url||a.asset_url||a.thumb_url||"";
+      if(a.type==="giphy"||a.giphy||/\.gif(?:$|[?#])/i.test(u)||/giphy\.com|media\d*\.giphy/i.test(u))return "gif";
+      return a.type==="image"?"image":"file";
+    })(),name:a.title||a.asset_url?.split("/").pop()||"File",url:a.image_url||a.asset_url||a.file_url||a.og_scrape_url})).filter(a=>a.url),
     reactions:(message.latest_reactions||[]).reduce((all,r)=>{const emoji=reactionEmojiFor(r.type);(all[emoji]??=[]).push(r.user_id);return all},{}),createdAt:message.created_at,time:new Date(message.created_at||Date.now()).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
 }
 /* Stream reaction types are identifiers, not arbitrary Unicode strings. Keep
@@ -625,19 +632,26 @@ $("#thread-composer").addEventListener("submit",async e=>{
 function attachmentsHtml(list){
   const items=(list||[]).filter(a=>a?.url);
   if(!items.length)return "";
-  const images=items.filter(a=>a.kind==="image"||a.kind==="gif");
+  /* A GIF is the message, not a file on it: it plays at its own size in the
+     bubble rather than being cropped into a square tile with a badge. It is
+     also never lazy-loaded - a lazy GIF sits on a still frame until it
+     scrolls into view, which reads as broken. */
+  const gifs=items.filter(a=>a.kind==="gif");
+  const images=items.filter(a=>a.kind==="image");
   const files=items.filter(a=>!(a.kind==="image"||a.kind==="gif"));
+  const gifHtml=gifs.map(a=>`<div class="message-gif-wrap">
+      <img class="message-gif-live" src="${esc(a.url)}" alt="${esc(a.name||"GIF")}" decoding="async">
+    </div>`).join("");
   const grid=images.length?`<div class="message-media count-${Math.min(images.length,4)}">${images.map(a=>
     `<button type="button" class="media-tile" data-open-attachment="${esc(a.url)}" data-attachment-name="${esc(a.name||"")}" data-attachment-kind="${esc(a.kind||"")}">
       <img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy">
-      ${a.kind==="gif"?'<span class="media-badge">GIF</span>':""}
     </button>`).join("")}</div>`:"";
   const rows=files.map(a=>`<button type="button" class="message-file" data-open-attachment="${esc(a.url)}" data-attachment-name="${esc(a.name||"")}" data-attachment-kind="${esc(a.kind||"")}">
       <span class="file-glyph">${fileGlyph(a.name,a.kind)}</span>
       <span class="file-copy"><strong>${esc(a.name||"Attached file")}</strong><small>${esc(fileSizeLabel(a.size)||"Open")}</small></span>
       <span class="file-download" aria-hidden="true">\u2193</span>
     </button>`).join("");
-  return grid+rows;
+  return gifHtml+grid+rows;
 }
 /* Opening a sent attachment uses the same lightbox as a pending one. */
 $("#message-area").addEventListener("click",e=>{
@@ -923,12 +937,21 @@ function resolveMentions(chat,body){
 async function persistMessage(chat,text,attachments,extra={}){
   if(!streamClient)throw Error("Stream is not connected; messages were not sent");
   if(streamClient){
-    const body=(text||"").trim()||(attachments?.length?"Attachment":"");
-    if(!body)throw Error("Enter a message before sending");
+    /* A picture or a GIF carries the whole message, so it goes with no text
+       rather than the literal word "Attachment" underneath it. */
+    const visual=(attachments||[]).every(a=>a.kind==="gif"||a.kind==="image");
+    const body=(text||"").trim()||(attachments?.length&&!visual?"Attachment":"");
+    if(!body&&!attachments?.length)throw Error("Enter a message before sending");
     const channel=await watchStreamChannel(chat);
     const mentionIds=resolveMentions(chat,body);
-    const saved=await channel.sendMessage({text:body,attachments:(attachments||[]).map(a=>({type:a.kind==="image"?"image":"file",title:a.name,asset_url:a.url})),...(mentionIds.length?{mentioned_users:mentionIds}:{}),...extra});
-    chat.preview=body.slice(0,120);chat.updatedAt=new Date().toISOString();
+    /* type:"image" is what makes Stream treat a GIF as playable media;
+       "file" is why they used to arrive as download cards. */
+    const saved=await channel.sendMessage({text:body,attachments:(attachments||[]).map(a=>({
+      type:(a.kind==="image"||a.kind==="gif")?"image":"file",
+      title:a.name,asset_url:a.url,
+      ...(a.kind==="gif"?{image_url:a.url,thumb_url:a.url,giphy:{}}:{})})),
+      ...(mentionIds.length?{mentioned_users:mentionIds}:{}),...extra});
+    chat.preview=body.slice(0,120)||(visual?"GIF":"Attachment");chat.updatedAt=new Date().toISOString();
     return streamMessageToApp(saved.message);
   }
   const me=viewerId();
@@ -2465,12 +2488,22 @@ $("#gif-search").addEventListener("input",e=>{
   const value=e.target.value.trim();
   gifSearchTimer=setTimeout(()=>loadGifs(value),300);
 });
-$("#gif-results").addEventListener("click",e=>{
+/* A GIF is sent straight away rather than queued as an attachment: it is a
+   message in its own right, and staging it in the tray made it arrive as a
+   file card instead of playing in the conversation. */
+$("#gif-results").addEventListener("click",async e=>{
   const tile=e.target.closest("[data-gif-url]");
   if(!tile)return;
-  pendingAttachments.push({kind:"gif",name:tile.dataset.gifName||"GIF",url:tile.dataset.gifUrl});
-  renderPending();
+  if(!active){toast("Select a conversation first");return}
+  const url=tile.dataset.gifUrl,name=tile.dataset.gifName||"GIF";
   $("#gif-dialog").close();
+  try{
+    const saved=await persistMessage(active,"",[{kind:"gif",name,url}]);
+    if(saved&&!active.messages.some(m=>String(m.id)===String(saved.id))){
+      active.messages.push(saved);active.messagesLoaded=true;
+    }
+    renderList();renderMessages();scrollMessagesToEnd();
+  }catch(error){toast(error.message)}
 });
 
 /* ---------- calendar ---------- */
