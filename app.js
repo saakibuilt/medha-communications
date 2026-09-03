@@ -105,6 +105,9 @@ function applyIncomingStreamMessage(event){
     if(handledStreamMessageIds.size>2000)handledStreamMessageIds.delete(handledStreamMessageIds.values().next().value);
   }
   const incoming=streamMessageToApp(message);
+  /* Stream unarchives a channel on new activity; mirror that locally so the
+     chat does not stay hidden with an unread badge nobody can reach. */
+  if(chat.archived)chat.archived=false;
   chat.preview=message.text||"Attachment";
   chat.updatedAt=message.created_at||new Date().toISOString();
   chat.time=new Date(chat.updatedAt).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
@@ -114,7 +117,19 @@ function applyIncomingStreamMessage(event){
     renderMessages();
     scrollMessagesToEnd();
     streamChannelFor(chat)?.markRead().catch(()=>{});
-  }else chat.unread=(chat.unread||0)+1;
+  }else{
+    chat.unread=(chat.unread||0)+1;
+    /* mentioned_users comes down with the message, so an @ is counted
+       without asking Stream for anything. */
+    if((message.mentioned_users||[]).some(user=>String(user.id)===String(viewerId())))
+      chat.mentions=(chat.mentions||0)+1;
+    /* Only for a chat that is not on screen. Banner-ing the conversation
+       the person is already reading would announce a message they can see. */
+    showBanner({chatId:chat.id,kind:"message",
+      title:chat.kind==="group"?`${incoming.senderName} in ${chat.name}`:incoming.senderName||chat.name,
+      body:message.text||"Sent an attachment",
+      initials:initialsFor(incoming.senderName||chat.name),color:chat.color});
+  }
   renderList();
   writeCache();
 }
@@ -138,6 +153,51 @@ async function watchStreamChannel(chat){
       });
       /* Repaint a poll card the moment anyone votes, so the bars are live for
          everyone in the channel rather than only for whoever clicked. */
+      /* Reactions, edits and deletions from other people are pushed down the
+         same websocket the channel is already watching, so keeping these in
+         sync costs no extra queries. */
+      ["reaction.new","reaction.updated","reaction.deleted"].forEach(name=>channel.on(name,event=>{
+        const found=findMessageEverywhere(event.message?.id);
+        if(!found)return;
+        applyLocalReaction(found.message,event.user?.id,name==="reaction.deleted"?null:event.reaction?.type);
+        if(active?.cid===found.chat.cid)renderMessages();
+        /* Someone reacting to your message is worth a banner; a removed
+           reaction, or one on someone else's message, is not. */
+        if(name!=="reaction.deleted"&&String(event.user?.id)!==String(viewerId())
+           &&isMine(found.message.senderId)){
+          const who=directory.find(person=>String(person.id)===String(event.user?.id));
+          const reactorName=who?.full_name||event.user?.name||"Someone";
+          showBanner({chatId:found.chat.id,kind:"reaction",
+            title:`${reactorName} reacted ${event.reaction?.type||""}`.trim(),
+            body:String(found.message.text||"your message").replace(/\s+/g," ").slice(0,90),
+            initials:initialsFor(reactorName),color:found.chat.color});
+        }
+      }));
+      channel.on("message.updated",event=>{
+        const found=findMessageEverywhere(event.message?.id);
+        if(!found)return;
+        found.message.text=event.message.text||"";
+        found.message._decorated=false;
+        if(active?.cid===found.chat.cid)renderMessages();
+      });
+      channel.on("message.deleted",event=>{
+        const id=String(event.message?.id||"");
+        const found=findMessageEverywhere(id);
+        if(!found)return;
+        found.chat.messages=(found.chat.messages||[]).filter(m=>String(m.id)!==id);
+        if(active?.cid===found.chat.cid)renderMessages();
+        writeCache();
+      });
+      /* Typing is a transient websocket event - nothing is stored and no
+         query is made, so the indicator is free. */
+      channel.on("typing.start",event=>{
+        if(event.user?.id===viewerId())return;
+        setTyping(channel.cid,event.user?.id,event.user?.name,true);
+      });
+      channel.on("typing.stop",event=>{
+        if(event.user?.id===viewerId())return;
+        setTyping(channel.cid,event.user?.id,event.user?.name,false);
+      });
       ["poll.vote_casted","poll.vote_changed","poll.vote_removed","poll.updated","poll.closed"]
         .forEach(name=>channel.on(name,event=>{
           const poll=event.poll;
@@ -234,7 +294,7 @@ function writeCache(){
       conversations:ordered.map(c=>({
         cid:c.cid,id:c.id,name:c.name,participantId:c.participantId,kind:c.kind,
         initials:c.initials,color:c.color,team:c.team,
-        updatedAt:c.updatedAt,unread:c.unread||0
+        updatedAt:c.updatedAt,unread:c.unread||0,mentions:c.mentions||0,archived:!!c.archived
       }))
     };
     localStorage.setItem(CACHE_KEY(),JSON.stringify(payload));
@@ -296,6 +356,10 @@ function renderList(){
   });
   const shown=ordered.filter(c=>{
     if(q&&!`${c.name} ${c.preview}`.toLowerCase().includes(q))return false;
+    if(chatFilter==="archived")return !!c.archived;
+    /* An archived chat stays out of every other tab until it is unarchived
+       or someone sends into it again. */
+    if(c.archived)return false;
     if(chatFilter==="unread")return !!c.unread;
     if(chatFilter==="pinned")return rank.has(String(c.id));
     return true;
@@ -313,11 +377,13 @@ function renderList(){
         </div>
         <div class="chat-line-2">
           <p>${esc(c.preview||"")}</p>
+          ${c.mentions?`<span class="mention-badge" title="${c.mentions} mention${c.mentions===1?"":"s"}">@${c.mentions>9?"9+":c.mentions}</span>`:""}
           ${c.unread?`<span class="unread-badge">${c.unread>9?"9+":c.unread}</span>`:""}
         </div>
       </div>
     </div>`}).join("")
     :`<p class="empty">${chatFilter==="unread"?"No unread conversations."
+       :chatFilter==="archived"?"No archived conversations. Long-press or right-click a chat to archive it."
        :chatFilter==="pinned"?"No pinned conversations. Long-press or right-click a chat to pin it."
        :q?(people.length?"":"No conversations or people match that search.")
        :"No conversations yet. Select + to start a chat."}</p>`;
@@ -383,8 +449,107 @@ function messageHtml(m){
       :{initials:active?.initials,color:active?.color};
   const reactions=Object.entries(m.reactions||{}).filter(([,u])=>Array.isArray(u)&&u.length);
   const pollCard=m.poll?pollHtml(m.poll,m.id):"";
-  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(m.text||"")}</span></div>`:""}${m.text&&!m.poll&&!quoted?`<div class="bubble">${esc(m.text)}</div>`:""}${links.map(a=>a.kind==="gif"||a.kind==="image"?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy"></a>`:`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener" download>📎 ${esc(a.name||"Attached file")}</a>`).join("")}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span title="${users.length} reaction${users.length===1?"":"s"}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}</div></div>`;
+  /* Replies already show inline (show_in_channel), so the thread footer is
+     an extra way to read one conversation on its own - counted from the
+     messages already loaded, never from a query. */
+  const replyCount=(active?.messages||[]).filter(item=>String(item.parentId||"")===String(m.id)).length;
+  const threadFooter=replyCount?`<button type="button" class="thread-open" data-thread-id="${esc(m.id||"")}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4.2-1L3 20l1.2-4.6A8.4 8.4 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>
+      ${replyCount} ${replyCount===1?"reply":"replies"}
+    </button>`:"";
+  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(m.text||"")}</span></div>`:""}${m.text&&!m.poll&&!quoted?`<div class="bubble">${esc(m.text)}</div>`:""}${links.map(a=>a.kind==="gif"||a.kind==="image"?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy"></a>`:`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener" download>📎 ${esc(a.name||"Attached file")}</a>`).join("")}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}</div></div>`;
 }
+
+/* ---------- thread view (replies only) ----------
+   Every reply is already in active.messages because it is sent with
+   show_in_channel, so opening a thread reads local state and makes no
+   Stream call. getReplies is used only when a parent's replies predate
+   show_in_channel and are therefore missing locally. */
+let threadParentId=null;
+const threadPanel=document.createElement("aside");
+threadPanel.className="thread-panel";threadPanel.hidden=true;
+threadPanel.innerHTML=`<div class="thread-head"><h3>Thread</h3><button type="button" class="thread-close" aria-label="Close thread">&times;</button></div>
+  <div class="thread-body" id="thread-body"></div>
+  <form class="thread-composer" id="thread-composer"><textarea id="thread-input" rows="1" placeholder="Reply in thread" aria-label="Reply in thread"></textarea><button type="submit" class="send-button">Send</button></form>`;
+document.body.append(threadPanel);
+threadPanel.querySelector(".thread-close").addEventListener("click",()=>closeThread());
+
+function closeThread(){
+  threadParentId=null;threadPanel.hidden=true;
+  document.body.classList.remove("thread-open");
+}
+function threadMessages(){
+  const parent=(active?.messages||[]).find(m=>String(m.id)===String(threadParentId));
+  if(!parent)return null;
+  const replies=(active.messages||[])
+    .filter(m=>String(m.parentId||"")===String(parent.id))
+    .sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+  return {parent,replies};
+}
+function renderThread(){
+  if(!threadParentId){closeThread();return}
+  const found=threadMessages();
+  if(!found){closeThread();return}
+  const {parent,replies}=found;
+  const row=m=>`<div class="thread-message ${m.who==="me"?"mine":""}" data-message-id="${esc(m.id||"")}">
+      <div class="thread-meta"><strong>${esc(m.senderName||"Unknown user")}</strong><time>${esc(m.time||"")}</time></div>
+      <div class="bubble">${esc(m.text||"Attachment")}</div>
+      ${(m.attachments||[]).map(a=>a.kind==="image"||a.kind==="gif"
+        ?`<a class="message-gif" href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name||"Attached image")}" loading="lazy"></a>`
+        :`<a class="message-file" href="${esc(a.url)}" target="_blank" rel="noopener" download>\u{1F4CE} ${esc(a.name||"Attached file")}</a>`).join("")}
+    </div>`;
+  $("#thread-body").innerHTML=`<div class="thread-parent">${row(parent)}</div>
+    <div class="thread-count">${replies.length} ${replies.length===1?"reply":"replies"}</div>
+    ${replies.map(row).join("")}`;
+  const body=$("#thread-body");body.scrollTop=body.scrollHeight;
+}
+async function openThread(parentId){
+  if(!active)return;
+  threadParentId=String(parentId);
+  threadPanel.hidden=false;
+  document.body.classList.add("thread-open");
+  renderThread();
+  /* Replies written before show_in_channel existed live only inside the
+     thread. Pull them once, merge into the conversation, and they stay
+     available inline too. */
+  const parent=(active.messages||[]).find(m=>String(m.id)===String(threadParentId));
+  const channel=streamChannelFor(active);
+  if(!parent||!channel||parent._threadFetched)return;
+  parent._threadFetched=true;
+  try{
+    const thread=await channel.getReplies(parent.id,{limit:100});
+    const seen=new Set((active.messages||[]).map(m=>String(m.id)));
+    const added=(thread?.messages||[]).filter(reply=>!seen.has(String(reply.id))).map(streamMessageToApp);
+    if(!added.length)return;
+    active.messages=[...active.messages,...added].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+    renderMessages();renderThread();
+  }catch{/* the inline copies already on screen are enough */}
+}
+document.addEventListener("click",e=>{
+  const button=e.target.closest("[data-thread-id]");
+  if(button){e.preventDefault();openThread(button.dataset.threadId)}
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&threadParentId)closeThread()});
+$("#thread-input").addEventListener("keydown",e=>{
+  if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("#thread-composer").requestSubmit()}
+});
+let threadSending=false;
+$("#thread-composer").addEventListener("submit",async e=>{
+  e.preventDefault();
+  if(threadSending||!active||!threadParentId)return;
+  const input=$("#thread-input"),text=input.value.trim();
+  if(!text)return;
+  threadSending=true;
+  try{
+    /* show_in_channel keeps the reply visible in the main list too, so the
+       thread never becomes a place messages hide. */
+    const saved=await persistMessage(active,text,[],{parent_id:threadParentId,show_in_channel:true});
+    input.value="";
+    if(saved&&!active.messages.some(m=>String(m.id)===String(saved.id))){active.messages.push(saved);active.messagesLoaded=true}
+    renderList();renderMessages();renderThread();scrollMessagesToEnd();
+  }catch(error){toast(error.message)}
+  finally{threadSending=false;input.focus()}
+});
 
 function dayLabel(date){
   const d=new Date(date),now=new Date();
@@ -400,17 +565,34 @@ function detailRow(label,value){
 function renderDetailsPanel(){
   if(!active)return;
   const person=directory.find(p=>String(p.id)===String(active.participantId));
+  const isGroup=active.kind==="group";
   const isSelf=String(active.participantId)===String(viewerId());
   const status=$("#conversation-status").textContent||"";
   const media=(active.messages||[]).flatMap(m=>m.attachments||[]);
-  const facts=[
-    detailRow("Name",active.name),
-    detailRow("Status",active.kind==="group"?"":isSelf?"This is you":status),
-    detailRow("Email",person?.email)
-  ].filter(Boolean).join("");
+  const creatorId=String(active.createdById||"");
+  const creator=directory.find(p=>String(p.id)===creatorId);
+  const creatorName=creator?.full_name||(creatorId===String(viewerId())?currentAppUser?.full_name:"")||active.createdByName||"Unknown";
+  const facts=isGroup
+    ?[detailRow("Name",active.name),detailRow("Created by",creatorName),detailRow("Members",String((active.participantIds||[]).length))].filter(Boolean).join("")
+    :[detailRow("Name",active.name),detailRow("Status",isSelf?"This is you":status),detailRow("Email",person?.email)].filter(Boolean).join("");
   const facts_el=$("#details-facts");
   if(facts_el)facts_el.innerHTML=facts||'<div class="directory-empty">No details available</div>';
+  const contactTitle=$("#contact-details-title");
+  if(contactTitle)contactTitle.textContent=isGroup?"Group":"Contact";
+  const membersSection=$("#group-members-section");
+  const membersList=$("#group-members-list");
+  if(membersSection)membersSection.hidden=!isGroup;
+  if(membersList&&isGroup){
+    const members=(active.participantIds||[]).map(id=>{
+      const member=directory.find(p=>String(p.id)===String(id));
+      const name=member?.full_name||(String(id)===String(viewerId())?currentAppUser?.full_name:"")||"Unknown user";
+      return '<div class="group-member"><span class="person-avatar blue small">'+esc(initialsFor(name))+'</span><strong>'+esc(name)+'</strong>'+(String(id)===creatorId?'<span class="group-owner">Creator</span>':"")+'</div>';
+    });
+    membersList.innerHTML=members.join("")||'<div class="directory-empty">No members found</div>';
+  }
   const presence=$(".details-person .presence");
+  if(presence&&isGroup){presence.textContent="";presence.hidden=true}
+  if(presence&&!isGroup)presence.hidden=false;
   if(presence&&isSelf){presence.textContent="This is you";presence.className="presence"}
   $("#shared-media").innerHTML=media.length
     ?media.map(a=>a.kind==="gif"
@@ -586,13 +768,35 @@ async function ensureConversationRow(chat){
   return chat.cid;
 }
 
+/* Turns "@Full Name" in the body into Stream user ids. Only people who are
+   actually in the channel can be mentioned, so an @ in a direct chat cannot
+   silently notify a third party. Longest name first, so "@Anil Kumar Rao"
+   is not matched as "@Anil Kumar". */
+function resolveMentions(chat,body){
+  const text=String(body||"").toLowerCase();
+  if(!text.includes("@"))return [];
+  const members=new Set((chat.participantIds||[chat.participantId]).filter(Boolean).map(String));
+  const found=new Set();
+  let remaining=text;
+  directory.slice()
+    .filter(person=>person.full_name&&members.has(String(person.id))&&String(person.id)!==String(viewerId()))
+    .sort((a,b)=>b.full_name.length-a.full_name.length)
+    .forEach(person=>{
+      const needle="@"+person.full_name.toLowerCase();
+      if(!remaining.includes(needle))return;
+      found.add(String(person.id));
+      remaining=remaining.split(needle).join(" ");
+    });
+  return [...found];
+}
+
 async function persistMessage(chat,text,attachments,extra={}){
   if(!streamClient)throw Error("Stream is not connected; messages were not sent");
   if(streamClient){
     const body=(text||"").trim()||(attachments?.length?"Attachment":"");
     if(!body)throw Error("Enter a message before sending");
     const channel=await watchStreamChannel(chat);
-    const mentionIds=(chat.kind==="group"?directory.filter(person=>person.full_name&&body.toLowerCase().includes(`@${person.full_name.toLowerCase()}`)).map(person=>String(person.id)):[]);
+    const mentionIds=resolveMentions(chat,body);
     const saved=await channel.sendMessage({text:body,attachments:(attachments||[]).map(a=>({type:a.kind==="image"?"image":"file",title:a.name,asset_url:a.url})),...(mentionIds.length?{mentioned_users:mentionIds}:{}),...extra});
     chat.preview=body.slice(0,120);chat.updatedAt=new Date().toISOString();
     return streamMessageToApp(saved.message);
@@ -673,8 +877,12 @@ async function hydrateConversations(){
         const last=channel.state?.messages?.at(-1);
         const participantIds=Object.keys(channel.state?.members||channel.data?.members||{});
         const kind=participantIds.length>2?"group":"direct";
-        return {cid:channel.cid,id:channel.id,name,participantId:other,participantIds,kind,initials:initialsFor(name),color:kind==="group"?"purple":"blue",team:kind==="group"?"Group chat":"",
+        return {cid:channel.cid,id:channel.id,name,participantId:other,participantIds,createdById:channel.data?.created_by?.id||channel.data?.created_by_id||channel.created_by?.id||"",createdByName:channel.data?.created_by?.name||channel.created_by?.name||"",kind,initials:initialsFor(name),color:kind==="group"?"purple":"blue",team:kind==="group"?"Group chat":"",
           preview:last?.text||"",updatedAt:channel.data?.last_message_at||channel.data?.updated_at||new Date().toISOString(),time:"",unread:channel.countUnread?.()||0,
+          /* Stream tracks mentions against the read state it already holds
+             from queryChannels, so this is a local read, not a request. */
+          mentions:channel.countUnreadMentions?.()||0,
+          archived:!!(channel.data?.archived||channel.state?.membership?.archived_at),
           messages:[],messagesLoaded:false,messageOffset:0,hasMore:true,streamChannel:channel};
       });
       const previousCid=active?.cid;conversations=loaded;active=conversations.find(c=>c.cid===previousCid)||null;
@@ -730,8 +938,8 @@ async function switchChat(id){
   const chat=conversations.find(c=>String(c.id)===String(id));
   if(!chat)return;
   active=chat;
-  if(chat.unread){chat.unread=0;markConversationRead(chat)}
-  renderList();renderMessages();
+  if(chat.unread){chat.unread=0;chat.mentions=0;markConversationRead(chat)}
+  renderList();renderMessages();renderTyping();
   if(isMobile())document.body.classList.add("chat-open");
   closeMobileSidebar();
   if(document.body.classList.contains("details-open"))renderDetailsPanel();
@@ -800,6 +1008,60 @@ async function openDirectChat(person,openingText){
    the drawer disagree about when they apply. */
 const mobileQuery=window.matchMedia("(max-width:1024px)");
 function isMobile(){return mobileQuery.matches}
+
+/* ---------- in-app banner (phones and tablets) ----------
+   Web Push covers the app being closed or backgrounded. This covers the gap
+   push deliberately leaves: Space is open and in the foreground, so the OS
+   shows nothing, but the new message is in a chat the person is not looking
+   at. Desktop has the sidebar in view at all times and does not need it. */
+const bannerHost=document.createElement("div");
+bannerHost.className="banner-host";bannerHost.id="banner-host";
+document.body.append(bannerHost);
+let bannerTimer=null;
+function dismissBanner(){
+  const card=bannerHost.firstElementChild;
+  if(!card)return;
+  clearTimeout(bannerTimer);
+  card.classList.remove("in");
+  /* Removed on transitionend rather than immediately so the slide-out is
+     actually seen; the timeout is the fallback if the transition is
+     skipped (reduced motion, a backgrounded tab). */
+  const drop=()=>card.remove();
+  card.addEventListener("transitionend",drop,{once:true});
+  setTimeout(drop,400);
+}
+/* kind is "message" or "reaction" - both look the same but read differently. */
+function showBanner({chatId,title,body,initials,color,kind}){
+  if(!isMobile())return;
+  bannerHost.innerHTML="";
+  const card=document.createElement("button");
+  card.type="button";card.className="banner";card.dataset.chatId=chatId||"";
+  card.innerHTML=`<span class="person-avatar ${esc(color||"blue")} small">${esc(initials||"?")}</span>
+    <span class="banner-copy">
+      <span class="banner-title">${esc(title||"New message")}</span>
+      <span class="banner-body">${esc(body||"")}</span>
+    </span>
+    <span class="banner-kind" aria-hidden="true">${kind==="reaction"?"&#9829;":"&#128172;"}</span>`;
+  bannerHost.append(card);
+  requestAnimationFrame(()=>card.classList.add("in"));
+  clearTimeout(bannerTimer);
+  bannerTimer=setTimeout(dismissBanner,4200);
+}
+bannerHost.addEventListener("click",e=>{
+  const card=e.target.closest(".banner");
+  if(!card)return;
+  const id=card.dataset.chatId;
+  dismissBanner();
+  if(id)switchChat(id);
+});
+/* A downward swipe is the gesture people expect for dismissing a banner. */
+let bannerTouchY=null;
+bannerHost.addEventListener("touchstart",e=>{bannerTouchY=e.touches[0].clientY},{passive:true});
+bannerHost.addEventListener("touchmove",e=>{
+  if(bannerTouchY===null)return;
+  if(e.touches[0].clientY-bannerTouchY<-18){bannerTouchY=null;dismissBanner()}
+},{passive:true});
+["touchend","touchcancel"].forEach(evt=>bannerHost.addEventListener(evt,()=>{bannerTouchY=null},{passive:true}));
 function openMobileSidebar(){if(isMobile()){document.body.classList.add("sidebar-open");$("#chat-sidebar").setAttribute("aria-hidden","false")}}
 function closeMobileSidebar(){
   document.body.classList.remove("sidebar-open");
@@ -872,6 +1134,56 @@ function autosizeComposer(){
   messageInput.style.height=`${Math.min(messageInput.scrollHeight,max)}px`;
   messageInput.style.overflowY=messageInput.scrollHeight>max?"auto":"hidden";
 }
+/* ---------- typing indicators ----------
+   Stream rate-limits keystroke() internally to one event every few seconds
+   and typing events are websocket-only, so this adds no HTTP calls. The map
+   is keyed by channel so a person typing in a background chat never shows
+   up in the open one. */
+const typingByChannel=new Map();
+function setTyping(cid,userId,userName,isTyping){
+  const key=String(cid);
+  let people=typingByChannel.get(key);
+  if(!people){people=new Map();typingByChannel.set(key,people)}
+  const id=String(userId||"");
+  if(!id)return;
+  if(isTyping){
+    const known=directory.find(person=>String(person.id)===id);
+    clearTimeout(people.get(id)?.timer);
+    /* Stream does not always deliver typing.stop (a dropped tab, a lost
+       socket), so every start carries its own expiry. */
+    people.set(id,{name:known?.full_name||userName||"Someone",
+      timer:setTimeout(()=>{people.delete(id);renderTyping()},7000)});
+  }else{
+    clearTimeout(people.get(id)?.timer);
+    people.delete(id);
+  }
+  renderTyping();
+}
+function renderTyping(){
+  const el=$("#typing");
+  if(!el)return;
+  const people=active?typingByChannel.get(String(active.cid)):null;
+  const names=people?[...people.values()].map(entry=>entry.name):[];
+  if(!names.length){el.hidden=true;el.classList.remove("typing-active");return}
+  const label=names.length===1?`${names[0]} is typing`
+    :names.length===2?`${names[0]} and ${names[1]} are typing`
+    :`${names[0]} and ${names.length-1} others are typing`;
+  el.innerHTML=`<span class="typing-label">${esc(label)}</span><span class="typing-dots"><span></span><span></span><span></span></span>`;
+  el.hidden=false;el.classList.add("typing-active");
+}
+/* Clears our own indicator on the other side the moment the message goes,
+   rather than leaving it to the 7s expiry. */
+function stopTypingNow(chat){
+  const channel=streamChannelFor(chat||active);
+  channel?.stopTyping?.().catch(()=>{});
+}
+messageInput.addEventListener("input",()=>{
+  if(!active)return;
+  const channel=streamChannelFor(active);
+  if(!channel)return;
+  if(messageInput.value.trim())channel.keystroke().catch(()=>{});
+  else channel.stopTyping?.().catch(()=>{});
+});
 messageInput.addEventListener("input",autosizeComposer);
 window.addEventListener("resize",autosizeComposer);
 autosizeComposer();
@@ -933,6 +1245,7 @@ $("#composer").addEventListener("submit",async e=>{
     const saved=await persistMessage(active,text,attachments,
       replyTarget?{parent_id:replyTarget.id,show_in_channel:true}:{});
     messageInput.value="";setReplyTarget(null);pendingAttachments=[];renderPending();autosizeComposer();
+    stopTypingNow(active);
     if(saved&&!active.messages.some(m=>m.id===saved.id)){active.messages.push(saved);active.messagesLoaded=true}
     renderList();renderMessages();scrollMessagesToEnd();
   }catch(error){toast(error.message)}
@@ -980,6 +1293,10 @@ function openChatActions(row,event){
   let pin=menu.querySelector('[data-chat-action="pin"]');
   if(!pin){pin=document.createElement("button");pin.type="button";pin.dataset.chatAction="pin";menu.prepend(pin)}
   pin.textContent=pinned.includes(row.dataset.id)?"📌 Unpin chat":"📌 Pin chat";
+  const chat=conversations.find(c=>String(c.id)===String(row.dataset.id));
+  let archive=menu.querySelector('[data-chat-action="archive"]');
+  if(!archive){archive=document.createElement("button");archive.type="button";archive.dataset.chatAction="archive";menu.append(archive)}
+  archive.textContent=chat?.archived?"\u{1F4E5} Unarchive chat":"\u{1F4E6} Archive chat";
   const rect=menu.getBoundingClientRect();
   menu.style.left=`${Math.min(event.clientX,window.innerWidth-Math.max(rect.width,220)-8)}px`;
   menu.style.top=`${Math.min(event.clientY,window.innerHeight-Math.max(rect.height,150)-8)}px`;
@@ -1023,6 +1340,15 @@ $("#chat-actions").addEventListener("click",async e=>{
     sessionStorage.setItem(key,JSON.stringify(next));renderList();
   }else if(action==="unread"){
     chat.unread=1;renderList();toast("Conversation marked unread");
+  }else if(action==="archive"){
+    const channel=streamChannelFor(chat);
+    if(!channel){toast("Open this conversation once before archiving it");closeChatActions();return}
+    const next=!chat.archived;
+    chat.archived=next;renderList();writeCache();
+    /* Stream stores archived on this user's membership, so the other
+       person's sidebar is untouched. */
+    try{await (next?channel.archive():channel.unarchive());toast(next?"Conversation archived":"Conversation unarchived")}
+    catch(error){chat.archived=!next;renderList();toast(error.message)}
   }
   closeChatActions();
 });
@@ -1113,7 +1439,7 @@ $("#group-chat-form").addEventListener("submit",async e=>{
     await ensureStreamUsers();
     const id="group-"+crypto.randomUUID(),channel=streamClient.channel("messaging",id,{name,members});
     await channel.create();await channel.watch();streamChannels.set(channel.cid,channel);
-    const chat={cid:channel.cid,id,name,participantId:selectedGroupMembers[0],participantIds:members,kind:"group",initials:initialsFor(name),color:"purple",team:"Group chat",preview:"",updatedAt:new Date().toISOString(),unread:0,messages:[],messagesLoaded:true,messageOffset:0,hasMore:false,streamChannel:channel};
+      const chat={cid:channel.cid,id,name,participantId:selectedGroupMembers[0],participantIds:members,createdById:String(viewerId()),createdByName:currentAppUser?.full_name||"You",kind:"group",initials:initialsFor(name),color:"purple",team:"Group chat",preview:"",updatedAt:new Date().toISOString(),unread:0,messages:[],messagesLoaded:true,messageOffset:0,hasMore:false,streamChannel:channel};
     conversations.unshift(chat);active=chat;writeCache();$("#group-chat-dialog").close();renderList();renderMessages();toast("Group chat created");
   }catch(error){toast(error.message)}
 });
@@ -1177,11 +1503,84 @@ function showCallSurface(call,title,mode){
   if(activeCallMediaEnabled)enableCallMedia(call,mode).catch(error=>toast(error.message||"Could not start call media"));
   $("#toggle-call-mic").classList.toggle("off",!activeCallMediaEnabled||call.microphone.state.status!=="enabled");$("#toggle-call-camera").classList.toggle("off",mode!=="video"||!activeCallMediaEnabled||call.camera.state.status!=="enabled");
 }
+/* ---------- device permissions, asked once ----------
+   Browsers keep a real grant themselves, but they only remember it when the
+   page actually reads it back. Three things go wrong without this:
+     - every call blindly re-runs getUserMedia, so a "this time only" grant
+       re-prompts on the next call;
+     - a denied device makes each later call throw the same error again;
+     - the media stream is torn down and re-acquired per call.
+   So the state is read from the Permissions API first, cached for the
+   session, and mirrored to localStorage so a reload knows what was already
+   settled without asking again. */
+const PERMISSION_KEY=()=>`medha-space-permissions-${viewerId()||"guest"}`;
+let permissionState=null;
+function readPermissionStore(){
+  if(permissionState)return permissionState;
+  try{permissionState=JSON.parse(localStorage.getItem(PERMISSION_KEY())||"{}")}
+  catch{permissionState={}}
+  return permissionState;
+}
+function writePermissionStore(name,value){
+  const store=readPermissionStore();
+  store[name]=value;store[name+"_at"]=Date.now();
+  try{localStorage.setItem(PERMISSION_KEY(),JSON.stringify(store))}catch{/* private mode */}
+}
+/* The browser is the authority; the store is only a hint so we can skip the
+   prompt path. A grant revoked in site settings is picked up here. */
+async function permissionStatus(name){
+  try{
+    const status=await navigator.permissions?.query({name});
+    if(status?.state){
+      writePermissionStore(name,status.state);
+      /* Revoking in site settings fires this, so the next call re-asks
+         instead of failing on a stale "granted". */
+      status.onchange=()=>writePermissionStore(name,status.state);
+      return status.state;
+    }
+  }catch{/* Safari and Firefox reject camera/microphone queries */}
+  return readPermissionStore()[name]||"prompt";
+}
+/* Returns true when the device may be used. Only ever prompts when the
+   browser still says "prompt" - a stored grant or denial is reused. */
+async function ensureDevicePermission(name){
+  const state=await permissionStatus(name);
+  if(state==="granted")return true;
+  if(state==="denied"){
+    writePermissionStore(name,"denied");
+    throw Error(`${name==="camera"?"Camera":"Microphone"} access is blocked. Enable it in your browser's site settings for Medha Space.`);
+  }
+  /* "prompt": ask once, then remember the answer for the rest of the
+     session so a second call does not re-request. */
+  const constraints=name==="camera"?{video:true}:{audio:true};
+  let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia(constraints)}
+  catch(error){
+    writePermissionStore(name,error?.name==="NotAllowedError"?"denied":"prompt");
+    throw Error(error?.name==="NotAllowedError"
+      ?`${name==="camera"?"Camera":"Microphone"} access was declined. Enable it in your browser's site settings to use calls.`
+      :`No ${name==="camera"?"camera":"microphone"} is available on this device.`);
+  }
+  /* Release the probe stream immediately - Stream's SDK opens its own, and
+     holding this one would leave the camera light on between calls. */
+  stream.getTracks().forEach(track=>track.stop());
+  writePermissionStore(name,"granted");
+  return true;
+}
+
 async function enableCallMedia(call,mode){
   if(activeCall!==call||call.state.callingState!==CallingState.JOINED)return;
   if(activeCallMediaEnabled)return;
   if(activeCallMediaPromise)return activeCallMediaPromise;
-  activeCallMediaPromise=(async()=>{await call.microphone.enable();if(mode==="video")await call.camera.enable();else await call.camera.disable().catch(()=>{});activeCallMediaEnabled=true})().finally(()=>{activeCallMediaPromise=null});
+  activeCallMediaPromise=(async()=>{
+    /* Checked before enable() so a stored grant goes straight through and a
+       stored denial fails with a clear message instead of a second prompt. */
+    await ensureDevicePermission("microphone");
+    await call.microphone.enable();
+    if(mode==="video"){await ensureDevicePermission("camera");await call.camera.enable()}
+    else await call.camera.disable().catch(()=>{});
+    activeCallMediaEnabled=true;
+  })().finally(()=>{activeCallMediaPromise=null});
   await activeCallMediaPromise;
   $("#toggle-call-mic").classList.toggle("off",call.microphone.state.status!=="enabled");$("#toggle-call-camera").classList.toggle("off",mode!=="video"||call.camera.state.status!=="enabled");
 }
@@ -1290,8 +1689,14 @@ async function refreshPoll(messageId,pollId){
   }catch{}
 }
 
-$("#toggle-call-mic").addEventListener("click",async()=>{if(!activeCall)return;if(activeCall.state.callingState!==CallingState.JOINED){toast("Microphone starts when the call is connected");return}await activeCall.microphone.toggle();const off=activeCall.microphone.state.status!=="enabled";$("#toggle-call-mic").classList.toggle("off",off);$("#toggle-call-mic").title=off?"Turn microphone on":"Mute microphone"});
-$("#toggle-call-camera").addEventListener("click",async()=>{if(!activeCall)return;if(activeCall.state.callingState!==CallingState.JOINED){toast("Camera starts when the call is connected");return}await activeCall.camera.toggle();const off=activeCall.camera.state.status!=="enabled";$("#toggle-call-camera").classList.toggle("off",off);$("#toggle-call-camera").title=off?"Turn camera on":"Turn camera off"});
+$("#toggle-call-mic").addEventListener("click",async()=>{if(!activeCall)return;if(activeCall.state.callingState!==CallingState.JOINED){toast("Microphone starts when the call is connected");return}
+  /* Turning a device back on reuses the stored grant, so unmuting mid-call
+     never re-prompts. */
+  try{await ensureDevicePermission("microphone")}catch(error){toast(error.message);return}
+  await activeCall.microphone.toggle();const off=activeCall.microphone.state.status!=="enabled";$("#toggle-call-mic").classList.toggle("off",off);$("#toggle-call-mic").title=off?"Turn microphone on":"Mute microphone"});
+$("#toggle-call-camera").addEventListener("click",async()=>{if(!activeCall)return;if(activeCall.state.callingState!==CallingState.JOINED){toast("Camera starts when the call is connected");return}
+  try{await ensureDevicePermission("camera")}catch(error){toast(error.message);return}
+  await activeCall.camera.toggle();const off=activeCall.camera.state.status!=="enabled";$("#toggle-call-camera").classList.toggle("off",off);$("#toggle-call-camera").title=off?"Turn camera on":"Turn camera off"});
 async function leaveStreamCall(){const call=activeCall||incomingCall;if(call){try{await call.camera.disable()}catch{}try{await call.microphone.disable()}catch{}try{if(call.state.callingState===CallingState.RINGING)await call.leave({reject:true,reason:"cancel"});else if(call.state.callingState!==CallingState.LEFT)await call.endCall()}catch{try{await call.leave()}catch{}}}await finalizeCallActivity(!!callActivityStartedAt);dismissCallSurface()}
 /* Optional chaining: #close-call is not present in every layout, and a
    missing one used to throw here and abort the rest of boot. */
@@ -1394,21 +1799,64 @@ reactionMenu.addEventListener("click",async e=>{
   const button=e.target.closest("[data-reaction]");
   if(!button||!reactionTargetId||!active)return;
   reactionMenu.hidden=true;
-  const emoji=button.dataset.reaction,me=viewerId();
-  const message=active.messages.find(m=>String(m.id)===String(reactionTargetId));
+  await toggleReaction(reactionTargetId,button.dataset.reaction);
+});
+
+/* Selecting an existing chip toggles that reaction, so removing one does not
+   require reopening the picker. */
+$("#message-area").addEventListener("click",async e=>{
+  const chip=e.target.closest("[data-reaction-toggle]");
+  if(!chip)return;
+  e.preventDefault();e.stopPropagation();
+  const row=chip.closest(".message");
+  if(row)await toggleReaction(row.dataset.messageId,chip.dataset.reactionToggle);
+});
+
+/* enforce_unique means Stream keeps at most one reaction per person per
+   message, so picking a different emoji is a change, not a second vote.
+   Picking the same emoji again is a removal, which needs deleteReaction -
+   sendReaction alone can only ever add. */
+async function toggleReaction(messageId,emoji){
+  const me=viewerId();
+  if(!messageId||!emoji||!me||!active)return;
+  const message=active.messages.find(m=>String(m.id)===String(messageId));
   if(!message)return;
-  const users=(message.reactions?.[emoji]||[]).map(String);
-  const next=users.includes(me)?users.filter(u=>u!==me):[...users,me];
-  const reactions=next.length?{[emoji]:next}:{};
+  const mine=Object.entries(message.reactions||{}).find(([,users])=>(users||[]).map(String).includes(me));
+  const removing=(mine?.[0]||null)===emoji;
+  const before=JSON.parse(JSON.stringify(message.reactions||{}));
+  applyLocalReaction(message,me,removing?null:emoji);
+  renderMessages();
   try{
     if(!streamClient)throw Error("Stream is not connected; reactions are unavailable");
     const channel=streamChannelFor(active);
-    const streamMessage=channel?.state?.messages?.find(item=>String(item.id)===String(reactionTargetId));
-    if(!channel||!streamMessage)throw Error("Message is not loaded in Stream");
-    await channel.sendReaction(reactionTargetId,emoji,{enforce_unique:true});
-    message.reactions=reactions;renderMessages();
-  }catch(error){toast(error.message)}
-});
+    if(!channel)throw Error("Message is not loaded in Stream");
+    if(removing)await channel.deleteReaction(messageId,emoji,me);
+    else await channel.sendReaction(messageId,emoji,{enforce_unique:true});
+    writeCache();
+  }catch(error){message.reactions=before;renderMessages();toast(error.message)}
+}
+
+/* One place that edits the local reaction map, so the optimistic paint and
+   the reaction.new / reaction.deleted events can never disagree. Passing
+   null for emoji clears whatever that person had. */
+function applyLocalReaction(message,userId,emoji){
+  const me=String(userId),next={};
+  Object.entries(message.reactions||{}).forEach(([type,users])=>{
+    const kept=(users||[]).map(String).filter(id=>id!==me);
+    if(kept.length)next[type]=kept;
+  });
+  if(emoji)(next[emoji]??=[]).push(me);
+  message.reactions=next;
+}
+function findMessageEverywhere(messageId){
+  const id=String(messageId||"");
+  if(!id)return null;
+  for(const chat of conversations){
+    const found=(chat.messages||[]).find(m=>String(m.id)===id);
+    if(found)return {chat,message:found};
+  }
+  return null;
+}
 
 
 /* ---------- emoji & gif pickers ---------- */
@@ -1714,7 +2162,24 @@ window.__space={get presenceFor(){return presenceFor},get writeCache(){return wr
   get conversations(){return conversations},set conversations(v){conversations=v},
   get active(){return active},set active(v){active=v},
   get contactPresence(){return contactPresence},
-  set currentUserId(v){currentUserId=v}};
+  set currentUserId(v){currentUserId=v},
+  /* Exposed so the feature tests can drive the same functions the UI calls,
+     rather than re-implementing them. */
+  get setTyping(){return setTyping},get renderTyping(){return renderTyping},
+  get applyLocalReaction(){return applyLocalReaction},get toggleReaction(){return toggleReaction},
+  get resolveMentions(){return resolveMentions},get openThread(){return openThread},
+  get renderThread(){return renderThread},get closeThread(){return closeThread},
+  get renderList(){return renderList},get renderMessages(){return renderMessages},
+  get messageHtml(){return messageHtml},get findMessageEverywhere(){return findMessageEverywhere},
+  get directory(){return directory},set directory(v){directory=v},
+  get streamChannels(){return streamChannels},
+  get watchStreamChannel(){return watchStreamChannel},
+  get showBanner(){return showBanner},get dismissBanner(){return dismissBanner},
+  get ensureDevicePermission(){return ensureDevicePermission},
+  get readPermissionStore(){return readPermissionStore},
+  get writePermissionStore(){return writePermissionStore},
+  resetPermissionCache(){permissionState=null},
+  set chatFilter(v){chatFilter=v},get chatFilter(){return chatFilter}};
 window.testping=()=>{
   unlockNotifications();
   playIncomingPing();
@@ -1819,10 +2284,21 @@ async function initializeAuthorizedUser(user){
   /* Register an existing permission silently. On iOS/iPadOS the first
      permission request must happen from a user gesture, so subscribe from
      the first pointer interaction when permission is still undecided. */
-  if("Notification" in window&&Notification.permission==="granted")setupWebPush(user,false);
-  if("Notification" in window&&Notification.permission==="default"){
-    document.addEventListener("pointerdown",()=>setupWebPush(user,true),{once:true});
+  if("Notification" in window&&Notification.permission==="granted"){
+    writePermissionStore("notifications","granted");
+    setupWebPush(user,false);
   }
+  /* Asked once per device. If the person dismisses the prompt we do not ask
+     again on the next visit - Notification.permission stays "default" in
+     that case, so without this flag every reload would prompt afresh. */
+  if("Notification" in window&&Notification.permission==="default"&&!readPermissionStore().notifications_asked){
+    document.addEventListener("pointerdown",async()=>{
+      writePermissionStore("notifications_asked",true);
+      await setupWebPush(user,true);
+      writePermissionStore("notifications",Notification.permission);
+    },{once:true});
+  }
+  if("Notification" in window&&Notification.permission==="denied")writePermissionStore("notifications","denied");
 }
 
 async function authorizeHubLaunch(){

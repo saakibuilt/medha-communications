@@ -49,9 +49,9 @@
     </aside>
 
     <aside class="chat-sidebar" id="chat-sidebar">
-      <div class="sidebar-top"><div><h1>Space</h1></div><div class="header-actions"><button class="icon-button" id="new-group" title="Create group chat" aria-label="Create group chat">♧</button><button class="icon-button" id="new-chat" title="Start a new chat" aria-label="Start a new chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button></div></div>
+      <div class="sidebar-top"><div><h1>Space</h1></div><div class="header-actions"><button class="icon-button icon-button-soft" id="new-group" title="Create group chat" aria-label="Create group chat"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3.1"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9.5" r="2.4"/><path d="M16.2 14.4A4.6 4.6 0 0 1 21 19"/><path d="M18.5 4.2v3.1"/><path d="M17 5.7h3"/></svg></button><button class="icon-button" id="new-chat" title="Start a new chat" aria-label="Start a new chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.4a8 8 0 0 1-11.6 7.2L4 20l1.5-4.5A8 8 0 1 1 20.5 11.4z"/><path d="M15.4 7.6 12 11l-.4 1.9 1.9-.4 3.4-3.4a1.06 1.06 0 0 0-1.5-1.5z"/></svg></button></div></div>
       <div class="search-wrap"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input id="chat-search" type="search" placeholder="Search chats"></div>
-      <div class="sidebar-tabs"><button class="tab active">All</button><button class="tab">Unread</button><button class="tab">Pinned</button></div>
+      <div class="sidebar-tabs"><button class="tab active">All</button><button class="tab">Unread</button><button class="tab">Pinned</button><button class="tab">Archived</button></div>
       <div class="chat-list" id="chat-list"></div>
       <div class="sidebar-footer"><span class="status-dot"></span><span id="current-user">Authenticating…</span><button title="More options">•••</button></div>
     </aside>
@@ -71,7 +71,7 @@
       
     </main>
 
-    <aside class="details-panel" id="details-panel"><div class="details-head"><h3>Chat details</h3><button id="close-details">×</button></div><div class="details-person"><div class="person-avatar blue large"></div><h3 id="details-name">No conversation selected</h3><p></p><span class="presence"></span></div><div class="details-section"><h4>Contact</h4><div id="details-facts" class="details-facts"></div></div><div class="details-section"><h4>Shared media</h4><div class="media-strip" id="shared-media"><div class="directory-empty">No shared media</div></div></div><div class="details-section"><h4>Chat settings</h4><button class="detail-row">☆ Add to favorites <span>›</span></button><button class="detail-row">⌕ Search in conversation <span>›</span></button></div></aside>
+    <aside class="details-panel" id="details-panel"><div class="details-head"><h3>Chat details</h3><button id="close-details">×</button></div><div class="details-person"><div class="person-avatar blue large"></div><h3 id="details-name">No conversation selected</h3><p></p><span class="presence"></span></div><div class="details-section" id="contact-details-section"><h4 id="contact-details-title">Contact</h4><div id="details-facts" class="details-facts"></div></div><div class="details-section"><h4>Shared media</h4><div class="media-strip" id="shared-media"><div class="directory-empty">No shared media</div></div></div><div class="details-section" id="group-members-section" hidden><h4>Members</h4><div id="group-members-list" class="group-members-list"></div></div><div class="details-section"><h4>Chat settings</h4><button class="detail-row">☆ Add to favorites <span>›</span></button><button class="detail-row">⌕ Search in conversation <span>›</span></button></div></aside>
   </div>
   <div class="toast" id="toast" role="status"></div>
   <div id="chat-actions" class="chat-actions" hidden><button type="button" data-chat-action="favorite">☆ Add to favorite</button><button type="button" data-chat-action="unread">◉ Mark unread</button></div>
