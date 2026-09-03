@@ -1207,17 +1207,20 @@ syncResponsiveChrome();
 function syncKeyboardViewport(){
   const viewport=window.visualViewport;
   const focused=document.activeElement;
-  const textField=focused instanceof HTMLElement&&(
-    focused.matches("textarea,input")||focused.isContentEditable);
-  const keyboard=textField&&viewport
-    ?Math.max(0,window.innerHeight-viewport.height-viewport.offsetTop)
+  const composerField=focused instanceof HTMLElement&&focused.closest("#composer");
+  const keyboard=composerField&&viewport
+    ?Math.max(0,window.innerHeight-viewport.height)
     :0;
   document.documentElement.style.setProperty("--keyboard-height",`${Math.round(keyboard)}px`);
   document.body.classList.toggle("keyboard-open",keyboard>80);
 }
 window.visualViewport?.addEventListener("resize",syncKeyboardViewport);
 window.visualViewport?.addEventListener("scroll",syncKeyboardViewport);
-document.addEventListener("focusin",()=>requestAnimationFrame(syncKeyboardViewport));
+document.addEventListener("focusin",event=>{
+  if(event.target instanceof HTMLElement&&event.target.closest("#composer"))
+    document.body.classList.add("keyboard-open");
+  requestAnimationFrame(syncKeyboardViewport);
+});
 document.addEventListener("focusout",()=>setTimeout(syncKeyboardViewport,120));
 syncKeyboardViewport();
 
