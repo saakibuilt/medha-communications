@@ -429,6 +429,23 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
 @media(prefers-reduced-motion:reduce){.conversation-search-dialog,.conversation-search-result{animation:none;transition:none}}
 .chat-list>.empty{display:flex;align-items:center;justify-content:center;min-height:150px;margin:0;padding:28px 18px;text-align:center;color:#8b98a8;font-size:12px;letter-spacing:.01em}
 .chat-list>.empty::before{content:"";width:5px;height:5px;margin-right:9px;border-radius:50%;background:#d9a8b5;box-shadow:0 0 0 5px #fff1f2;flex:none}
+.calendar-grid i[data-meeting-id]{position:relative;display:flex;align-items:center;gap:4px;min-width:0;padding-right:4px}
+.calendar-event-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.calendar-event-actions{display:flex;gap:2px;margin-left:auto;opacity:0;transition:opacity .16s ease;flex:none}
+.calendar-grid i[data-meeting-id]:hover .calendar-event-actions,.calendar-grid i[data-meeting-id]:focus-within .calendar-event-actions{opacity:1}
+.calendar-event-actions button{display:grid;place-items:center;width:20px;height:20px;padding:0;border:0;border-radius:5px;background:#ffffffb8;color:currentColor;font:inherit;font-size:13px;line-height:1;cursor:pointer}
+.calendar-event-actions button:hover{background:#fff;color:var(--brand)}
+.calendar-event-actions button[data-delete-meeting]{color:#b4233d}
+.event-details-dialog{width:min(470px,calc(100vw - 28px));overflow:hidden;border:1px solid #ead6dc;background:linear-gradient(145deg,#fff 0%,#fff8fa 100%)}
+.event-details-shell{padding-bottom:8px}.event-details-dialog .dialog-head{padding:22px 22px 16px;background:linear-gradient(135deg,#fff 0%,#fff0f3 100%)}
+.event-details-content{display:grid;gap:0;padding:4px 22px 18px}.event-detail-line{display:grid;grid-template-columns:minmax(80px,.5fr) minmax(0,1.5fr);gap:14px;padding:13px 0;border-bottom:1px solid #f0e4e7}.event-detail-line:last-child{border-bottom:0}.event-detail-line span{color:#8a98a9;font-size:11px;font-weight:700}.event-detail-line strong{min-width:0;color:var(--ink);font-size:12px;overflow-wrap:anywhere}
+@media(pointer:coarse){.calendar-event-actions{opacity:1}.calendar-event-actions button{width:24px;height:24px}}
+@media(max-width:600px){.event-details-dialog{width:calc(100vw - 20px)}.event-details-content{padding-inline:18px}.event-details-dialog .dialog-head{padding-inline:18px}}
+.agenda{display:flex;flex-direction:column;gap:18px;min-height:520px}
+.agenda-section{min-height:220px}.agenda-section .eyebrow{margin-bottom:10px}.agenda-section .empty-state{min-height:150px;display:grid;place-items:center;border:1px dashed #e4e8ee;border-radius:10px;background:#fbfcfd}
+.invited-section{padding-top:18px;border-top:1px solid var(--line)}
+.agenda-item{min-width:0}.agenda-item>div{min-width:0}.agenda-item strong,.agenda-item span{overflow-wrap:anywhere}
+@media(max-width:760px){.agenda{min-height:0}.agenda-section{min-height:0}.agenda-section .empty-state{min-height:100px}}
 
 /* Settings is intentionally fluid: it must remain readable without creating
    a second horizontal scroll area at any viewport size. */

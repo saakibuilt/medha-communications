@@ -320,9 +320,19 @@ function writeCache(){
       }))
     };
     localStorage.setItem(CACHE_KEY(),JSON.stringify(payload));
+    /* The ten most recent messages for the five most recent chats, so
+       reopening one paints instantly instead of showing a loading line while
+       Stream responds. Only fields the renderer needs are kept, and bodies
+       are capped, so a long thread cannot blow the storage quota. */
     localStorage.setItem(TOP_CHATS_KEY(),JSON.stringify(ordered.slice(0,5).map(c=>({
       cid:c.cid,id:c.id,name:c.name,participantId:c.participantId,kind:c.kind,
-      initials:c.initials,color:c.color,team:c.team,updatedAt:c.updatedAt
+      initials:c.initials,color:c.color,team:c.team,updatedAt:c.updatedAt,
+      messages:(c.messages||[]).slice(-10).map(m=>({
+        id:m.id,senderId:m.senderId,who:m.who,senderName:m.senderName,
+        text:String(m.text||"").slice(0,600),parentId:m.parentId||null,
+        pinned:!!m.pinned,pollId:m.pollId||null,
+        attachments:(m.attachments||[]).slice(0,6),
+        reactions:m.reactions||{},createdAt:m.createdAt,time:m.time}))
     }))));
   }catch{/* quota or private mode - the app works without the cache */}
 }
@@ -332,14 +342,29 @@ function hydrateFromCache(){
   const cached=readCache();
   const cachedConversations=cached?.conversations?.length?cached.conversations:readTopChatsCache();
   if(!cachedConversations.length)return false;
+  /* Messages already in memory win over anything on disk. This runs again
+     every time Chat is re-entered (returning from Favorites, for example),
+     and rebuilding the objects from scratch threw away the loaded thread -
+     leaving "Loading the latest messages..." with nothing to refetch it,
+     because switchChat is not called when the chat is already open. */
+  const byId=new Map(conversations.map(c=>[String(c.id),c]));
+  const cachedMessagesById=new Map(readTopChatsCache()
+    .filter(c=>Array.isArray(c.messages)&&c.messages.length)
+    .map(c=>[String(c.id),c.messages]));
   conversations=cachedConversations.map(c=>{
-    return {...c,preview:"",messages:[],
-      messagesLoaded:false,
-      messageOffset:0,
+    const live=byId.get(String(c.id));
+    if(live?.messagesLoaded&&(live.messages||[]).length)return live;
+    const seeded=live?.messages?.length?live.messages:(cachedMessagesById.get(String(c.id))||[]);
+    return {...c,...(live||{}),preview:live?.preview||c.preview||"",
+      messages:seeded,
+      /* Seeded messages are shown immediately but still marked fromCache, so
+         switchChat refreshes them from the server rather than trusting disk. */
+      messagesLoaded:seeded.length>0,
+      messageOffset:seeded.length,
       hasMore:true,
       fromCache:true};
   });
-  active=conversations.find(c=>c.id===cached.activeId)||conversations[0]||null;
+  active=conversations.find(c=>c.id===(active?.id||cached.activeId))||conversations[0]||null;
   renderList();
   if(active){renderMessages();scrollMessagesToEnd()}
   return true;
@@ -2322,7 +2347,8 @@ function renderCalendar(){
       }
       const label=(!multi||rowStart)?esc(x.title):"";
       const style=multi&&rowStart&&daysInRow>1?` style="--span-days:${daysInRow}"`:"";
-      return `<i class="${span.trim()}" title="${esc(x.title)}${esc(range)}" data-meeting-id="${esc(x.id||"")}"${style}>${label}</i>`;
+      const controls=(!multi||rowStart)?`<span class="calendar-event-actions"><button type="button" data-edit-meeting="${esc(x.id||"")}" aria-label="Edit ${esc(x.title)}" title="Edit event">✎</button><button type="button" data-delete-meeting="${esc(x.id||"")}" aria-label="Delete ${esc(x.title)}" title="Delete event">×</button></span>`:"";
+      return `<i class="${span.trim()}" title="${esc(x.title)}${esc(range)}" data-meeting-id="${esc(x.id||"")}"><span class="calendar-event-label">${label}</span>${controls}</i>`;
     }).join("")}</div>`);
   }
   $("#calendar-grid").innerHTML=cells.join("")||'<div class="empty-state">No scheduled meetings.</div>';
@@ -2339,7 +2365,17 @@ function renderCalendar(){
   }).join(""):'<div class="empty-state">No upcoming meetings.</div>';
 }
 
-async function loadMeetings(){try{meetings=await db(`medha_communications_meetings?select=id,title,start_at,end_at,invitee_ids,created_by&order=start_at.asc`)||[];meetings=meetings.map(x=>({...x,start:String(x.start_at||""),end:String(x.end_at||x.start_at||"")}));renderCalendar();if(typeof refreshContactPresence==="function")refreshContactPresence()}catch{meetings=[];renderCalendar()}}
+function renderInvitedMeetings(){
+  const list=$("#invited-list");
+  if(!list)return;
+  const me=String(viewerId()||"");
+  const invited=meetings.filter(item=>item.start&&new Date(item.end||item.start)>=new Date()&&String(item.created_by)!==me&&(item.invitee_ids||[]).map(String).includes(me)).sort((a,b)=>new Date(a.start)-new Date(b.start));
+  list.innerHTML=invited.length?invited.map(item=>{
+    const start=new Date(item.start),creator=directory.find(person=>String(person.id)===String(item.created_by));
+    return `<div class="agenda-item"><b>${esc(start.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}))}</b><div><strong>${esc(item.title||"Untitled event")}</strong><span>${esc(start.toLocaleDateString([], {weekday:"short",month:"short",day:"numeric"}))} · From ${esc(creator?.full_name||"another employee")}</span></div></div>`;
+  }).join(""):"<div class=\"empty-state\">No invitations found.</div>";
+}
+async function loadMeetings(){try{meetings=await db(`medha_communications_meetings?select=id,title,start_at,end_at,invitee_ids,created_by,location&order=start_at.asc`)||[];meetings=meetings.map(x=>({...x,start:String(x.start_at||""),end:String(x.end_at||x.start_at||"")}));renderCalendar();renderInvitedMeetings();if(typeof refreshContactPresence==="function")refreshContactPresence()}catch{meetings=[];renderCalendar();renderInvitedMeetings()}}
 $("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);renderCalendar()};$("#calendar-next").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);renderCalendar()};$("#calendar-today").onclick=()=>{calendarCursor=new Date();renderCalendar()};$("#new-event").onclick=()=>$("#event-dialog").showModal();$("#event-form").addEventListener("submit",async e=>{if(e.submitter?.value==="cancel"){e.target.closest("dialog").close();return}e.preventDefault();if(!currentUserId){toast("Sign in to create meetings");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db("medha_communications_meetings",{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean),created_by:currentUserId})});$("#event-dialog").close();e.target.reset();await loadMeetings();toast("Meeting created")}catch(err){toast(err.message)}});
 function openEventForCalendarDate(day){const date=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),day,9,0);const end=new Date(date);end.setHours(10);const localValue=value=>{const pad=n=>String(n).padStart(2,"0");return `${value.getFullYear()}-${pad(value.getMonth()+1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`};$("#event-form").reset();$("#event-start").value=localValue(date);$("#event-end").value=localValue(end);$("#event-dialog").showModal()}
 $("#calendar-grid").addEventListener("dblclick",event=>{const cell=event.target.closest("#calendar-grid>div");if(!cell||cell.classList.contains("muted"))return;const first=(new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1).getDay()+6)%7;const day=[...$("#calendar-grid").children].indexOf(cell)-first+1;if(day>0)openEventForCalendarDate(day)});
@@ -2389,6 +2425,22 @@ function setWorkspaceView(viewName){
        synchronization can replace it afterward without a blank state. */
     hydrateFromCache();
     renderList();
+    /* Returning to Chat does not go through switchChat, so nothing would
+       fetch the open conversation. Paint whatever is cached, then top it up
+       from the server. */
+    if(active&&streamClient){
+      const chat=active;
+      (async()=>{
+        try{
+          await watchStreamChannel(chat);
+          if(!chat.messagesLoaded||chat.fromCache){
+            await loadChatPage(chat,0);
+            chat.fromCache=false;
+            if(active?.id===chat.id)scrollMessagesToEnd();
+          }
+        }catch(error){toast(error.message)}
+      })();
+    }
   }
   document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.classList.toggle("active",item.dataset.view===baseView));
   document.querySelectorAll(".rail-item[data-rail-filter]").forEach(item=>item.classList.remove("active"));
@@ -2794,6 +2846,48 @@ onAuthStateChanged(auth,user=>{
   if(user)initializeAuthorizedUser(user);
   else $("#current-user").textContent="Authentication required";
 });
+
+/* Calendar event actions use capture so the legacy marker listener cannot
+   accidentally open the edit form when the event body is clicked. */
+function meetingDetailsText(meeting){
+  const start=new Date(meeting.start),end=new Date(meeting.end||meeting.start);
+  const date=start.toLocaleDateString([], {weekday:"long",month:"long",day:"numeric",year:"numeric"});
+  const time=start.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})+" – "+end.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
+  const creator=directory.find(person=>String(person.id)===String(meeting.created_by));
+  const invitees=(meeting.invitee_ids||[]).map(id=>directory.find(person=>String(person.id)===String(id))?.full_name||String(id)).filter(Boolean);
+  return {date,time,creator:creator?.full_name||(String(meeting.created_by)===String(viewerId())?currentAppUser?.full_name:"Unknown employee")||"Unknown employee",invitees:invitees.length?invitees.join(", "):"No invitees"};
+}
+function openMeetingDetails(meeting){
+  const details=meetingDetailsText(meeting);
+  $("#event-details-title").textContent=meeting.title||"Untitled event";
+  $("#event-details-when").textContent=details.date+" · "+details.time;
+  $("#event-details-location").textContent=meeting.location||"No location";
+  $("#event-details-creator").textContent=details.creator;
+  $("#event-details-invitees").textContent=details.invitees;
+  $("#event-details-dialog").showModal();
+}
+async function deleteMeeting(meeting){
+  if(!meeting||!confirm(`Delete “${meeting.title||"this event"}”?`))return;
+  try{
+    await db(`medha_communications_meetings?id=eq.${encodeURIComponent(meeting.id)}`,{method:"DELETE",headers:{Prefer:"return=minimal"}});
+    meetings=meetings.filter(item=>String(item.id)!==String(meeting.id));
+    renderCalendar();toast("Event deleted");
+  }catch(error){toast(error.message||"Could not delete event")}
+}
+document.addEventListener("click",async event=>{
+  const marker=event.target.closest("#calendar-grid i");
+  if(!marker)return;
+  event.preventDefault();event.stopPropagation();
+  const meeting=meetings.find(item=>String(item.id)===String(marker.dataset.meetingId));
+  if(!meeting)return;
+  const edit=event.target.closest("[data-edit-meeting]"),remove=event.target.closest("[data-delete-meeting]");
+  if(remove){await deleteMeeting(meeting);return}
+  if(edit){
+    try{const rows=await db(`medha_communications_meetings?id=eq.${encodeURIComponent(meeting.id)}&select=id,title,start_at,end_at,invitee_ids,location`);openMeetingEditor({...meeting,...(rows?.[0]||{}),start:rows?.[0]?.start_at||meeting.start,end:rows?.[0]?.end_at||meeting.end})}catch{openMeetingEditor(meeting)}
+    return;
+  }
+  openMeetingDetails(meeting);
+},true);
 
 renderList();
 renderMessages();
