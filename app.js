@@ -100,7 +100,16 @@ function streamMessageToApp(message){
   return {id:String(message.id),senderId,who:isMine(senderId)?"me":"them",parentId:message.parent_id||null,pinned:!!message.pinned,callId:message.call_id||null,pollId:message.poll_id||null,poll:message.poll||null,
     senderName:isMine(senderId)?(currentAppUser?.full_name||currentAppUser?.name||"You"):(profile?.full_name||message.user?.name||active?.name||"Unknown user"),text:message.text||"",
     attachments:(message.attachments||[]).map(a=>({kind:a.type==="image"?"image":"file",name:a.title||a.asset_url?.split("/").pop()||"File",url:a.image_url||a.asset_url||a.file_url||a.og_scrape_url})).filter(a=>a.url),
-    reactions:(message.latest_reactions||[]).reduce((all,r)=>{(all[r.type]??=[]).push(r.user_id);return all},{}),createdAt:message.created_at,time:new Date(message.created_at||Date.now()).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
+    reactions:(message.latest_reactions||[]).reduce((all,r)=>{const emoji=reactionEmojiFor(r.type);(all[emoji]??=[]).push(r.user_id);return all},{}),createdAt:message.created_at,time:new Date(message.created_at||Date.now()).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
+}
+/* Stream reaction types are identifiers, not arbitrary Unicode strings. Keep
+   the visible emoji in the app state while using a reversible safe key on
+   Stream, so add, remove, websocket events, and old messages agree. */
+function reactionTypeFor(emoji){return "emoji_"+[...String(emoji)].map(char=>char.codePointAt(0).toString(16)).join("_")}
+function reactionEmojiFor(type){
+  const value=String(type||"");
+  if(!value.startsWith("emoji_"))return value;
+  try{return value.slice(6).split("_").map(code=>String.fromCodePoint(parseInt(code,16))).join("")}catch{return value}
 }
 function streamChannelFor(chat){return streamChannels.get(String(chat.cid||chat.id))||null}
 function applyIncomingStreamMessage(event){
@@ -171,7 +180,7 @@ async function watchStreamChannel(chat){
       ["reaction.new","reaction.updated","reaction.deleted"].forEach(name=>channel.on(name,event=>{
         const found=findMessageEverywhere(event.message?.id);
         if(!found)return;
-        applyLocalReaction(found.message,event.user?.id,name==="reaction.deleted"?null:event.reaction?.type);
+        applyLocalReaction(found.message,event.user?.id,name==="reaction.deleted"?null:reactionEmojiFor(event.reaction?.type));
         if(active?.cid===found.chat.cid)renderMessages();
         /* Someone reacting to your message is worth a banner; a removed
            reaction, or one on someone else's message, is not. */
@@ -180,7 +189,7 @@ async function watchStreamChannel(chat){
           const who=directory.find(person=>String(person.id)===String(event.user?.id));
           const reactorName=who?.full_name||event.user?.name||"Someone";
           showBanner({chatId:found.chat.id,kind:"reaction",
-            title:`${reactorName} reacted ${event.reaction?.type||""}`.trim(),
+            title:`${reactorName} reacted ${reactionEmojiFor(event.reaction?.type)||""}`.trim(),
             body:String(found.message.text||"your message").replace(/\s+/g," ").slice(0,90),
             initials:initialsFor(reactorName),color:found.chat.color});
           if(soundEnabled())playIncomingPing();
@@ -2198,10 +2207,11 @@ async function toggleReaction(messageId,emoji){
     if(!streamClient)throw Error("Stream is not connected; reactions are unavailable");
     const channel=streamChannelFor(active);
     if(!channel)throw Error("Message is not loaded in Stream");
-    if(removing)await channel.deleteReaction(messageId,emoji,me);
+    const reactionType=reactionTypeFor(emoji);
+    if(removing)await channel.deleteReaction(messageId,reactionType,me);
     /* sendReaction takes a Reaction object; passing the bare emoji string
        fails server-side with "expected object for field reaction". */
-    else await channel.sendReaction(messageId,{type:emoji},{enforce_unique:true});
+    else await channel.sendReaction(messageId,{type:reactionType},{enforce_unique:true});
     writeCache();
   }catch(error){message.reactions=before;renderMessages();toast(error.message)}
 }
@@ -2390,6 +2400,10 @@ function setWorkspaceView(viewName){
   });
   const shell=document.querySelector(".app-shell");
   shell.classList.toggle("calendar-mode",viewName==="calendar");
+  /* Settings hides the chat sidebar but its 300px grid column stayed, so the
+     page rendered inside that narrow slot - a 220px card on a 1440px screen.
+     full-page collapses the unused columns so the view gets the real width. */
+  shell.classList.toggle("full-page",viewName==="settings");
   $("#chat-sidebar").style.display=conversationView?"flex":"none";
   const calendarSidebar=$("#calendar-sidebar");calendarSidebar.hidden=viewName!=="calendar";calendarSidebar.style.display=viewName==="calendar"?"flex":"none";if(viewName==="calendar")shell.style.gridTemplateColumns="80px 280px minmax(500px,1fr) 0";else shell.style.removeProperty("grid-template-columns");
   $("#details-panel").classList.remove("open");

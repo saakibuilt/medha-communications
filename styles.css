@@ -434,7 +434,7 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
    a second horizontal scroll area at any viewport size. */
 #settings-view{width:100%;max-width:100%;min-width:0;overflow-x:hidden}
 #settings-view .page-head{width:100%;min-width:0}
-.settings-layout{width:min(100%,860px);max-width:100%;min-width:0;padding:0 clamp(16px,6vw,96px) clamp(24px,5vh,56px)}
+
 .settings-card{width:100%;min-width:0}
 .settings-profile{min-width:0}
 .settings-profile>div{min-width:0;flex:1}
@@ -443,7 +443,6 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
 .settings-option small{line-height:1.45}
 @media(max-width:600px){
   #settings-view .page-head{padding:24px 16px 18px}
-  .settings-layout{padding-inline:16px;padding-bottom:24px}
   .settings-profile{gap:12px;padding:18px}
   .settings-profile .person-avatar.large{width:58px;height:58px;font-size:18px}
   .settings-options{padding-inline:18px}
@@ -453,7 +452,6 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
 }
 @media(max-width:360px){
   #settings-view .page-head{padding-inline:12px}
-  .settings-layout{padding-inline:12px}
   .settings-profile{padding:15px}
   .settings-profile .person-avatar.large{width:48px;height:48px;font-size:15px}
   .settings-options{padding-inline:14px}
@@ -863,14 +861,29 @@ dialog:has(.call-shell).video-call{width:min(1180px,calc(100vw - 24px));height:m
 @media(prefers-reduced-motion:reduce){.space-launch-loader::before,.loader-bubble,.loader-bubble-small,.loader-bubble-call,.loader-connection,.loader-orbit-dot,.loader-device{animation:none!important}}
 
 /* ---------- settings ---------- */
-.settings-layout{padding:0 6% 40px;max-width:760px}
+
+/* One source of truth for the settings column. Five competing rules had
+   accumulated here: a later unconditional rule overrode the earlier width,
+   the phone overrides sat *before* it so they lost the cascade, and nothing
+   set an auto margin - so the card was 264px wide on a laptop and sat
+   off-centre (61px left / 325px right) at 1024px.
+   margin-inline:auto centers it; the flex parent needs width:100% because a
+   column flex item otherwise shrinks to its content. */
+/* The heading shares the column's width and padding so it lines up with the
+   card edge instead of floating against the viewport. Scoped to the settings
+   view because .page-head is shared with Calendar. */
+#settings-view .page-head{width:100%;max-width:760px;margin-inline:auto;
+  padding-left:clamp(16px,5vw,40px);padding-right:clamp(16px,5vw,40px);box-sizing:border-box}
+#settings-view{align-items:stretch}
+.settings-layout{width:100%;max-width:760px;margin-inline:auto;
+  padding:0 clamp(16px,5vw,40px) clamp(24px,5vh,48px);min-width:0}
 .settings-card{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
 .settings-profile{display:flex;align-items:center;gap:15px;padding:24px;border-bottom:1px solid var(--line)}
 .settings-profile h3{margin:0 0 4px;font-size:16px}.settings-profile p{margin:0;color:#8a98a9;font-size:12px}
 .settings-options{padding:8px 24px}.settings-option{display:flex;align-items:center;gap:15px;padding:18px 0;border-bottom:1px solid #f0f2f5;cursor:pointer}
 .settings-option:last-child{border-bottom:0}.settings-option span{display:flex;flex-direction:column;gap:4px;flex:1}.settings-option strong{font-size:13px}.settings-option small{color:#8a98a9;font-size:11px}
 .settings-option input{position:absolute;opacity:0;pointer-events:none}.settings-option i{position:relative;width:42px;height:24px;border-radius:99px;background:#d7dde6;flex:none;transition:background .18s ease}.settings-option i::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #17202b25;transition:transform .18s ease}.settings-option input:checked+i{background:#881337}.settings-option input:checked+i::after{transform:translateX(18px)}.settings-option input:focus-visible+i{outline:2px solid #881337;outline-offset:3px}.settings-note{min-height:18px;margin:0;padding:0 24px 18px;color:#15803d;font-size:11px}
-@media(max-width:720px){.settings-layout{padding:0 18px 24px}.settings-profile{padding:20px}.settings-options{padding:6px 20px}.settings-note{padding-left:20px;padding-right:20px}}
+@media(max-width:720px){.settings-profile{padding:20px}.settings-options{padding:6px 20px}.settings-note{padding-left:20px;padding-right:20px}}
 
 /* ---------- new chat / new group dialogs ---------- */
 .icon-button svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round;display:block;margin:auto}
@@ -1058,3 +1071,20 @@ button.attach-thumb:hover{transform:scale(1.05)}
   .compose-dialog{width:auto}
   #edit-message-dialog.sheet-dialog,#forward-dialog.sheet-dialog{width:auto;max-width:none}
 }
+
+/* Settings has no chat sidebar and no details panel, so those grid columns
+   collapse and the page gets the full remaining width. */
+/* Settings has no chat sidebar and no details panel. Rather than rewrite the
+   shell's columns - several rules there already fight over them with
+   :has() and !important - the main area is placed explicitly across the two
+   unused tracks, so it spans the full width whichever column set wins. */
+.app-shell.full-page>.main-area{grid-column:2 / -1}
+/* Spanning collapsed tracks leaves the row auto-height, so the shell stopped
+   short of the viewport and left bare canvas below. */
+.app-shell.full-page{grid-template-rows:100%;align-items:stretch}
+.app-shell.full-page>.main-area{min-height:0;height:100%;overflow:auto;background:var(--canvas)}
+.app-shell.full-page #settings-view{background:var(--canvas)}
+/* At and below 1024px the shell collapses to two columns whose first track
+   is the (hidden) sidebar, so starting at track 2 stranded ~540px. Spanning
+   the whole row is correct for every one of those layouts. */
+@media(max-width:1024px){.app-shell.full-page>.main-area{grid-column:1 / -1}}
