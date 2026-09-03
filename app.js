@@ -2392,7 +2392,19 @@ function renderInvitedMeetings(){
     return `<div class="agenda-item"><b>${esc(start.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}))}</b><div><strong>${esc(item.title||"Untitled event")}</strong><span>${esc(start.toLocaleDateString([], {weekday:"short",month:"short",day:"numeric"}))} · From ${esc(creator?.full_name||"another employee")}</span></div></div>`;
   }).join(""):"<div class=\"empty-state\">No invitations found.</div>";
 }
-async function loadMeetings(){try{meetings=await db(`medha_communications_meetings?select=id,title,start_at,end_at,invitee_ids,created_by,location&order=start_at.asc`)||[];meetings=meetings.map(x=>({...x,start:String(x.start_at||""),end:String(x.end_at||x.start_at||"")}));renderCalendar();renderInvitedMeetings();if(typeof refreshContactPresence==="function")refreshContactPresence()}catch{meetings=[];renderCalendar();renderInvitedMeetings()}}
+async function loadMeetings(){
+  const me=String(viewerId()||"");
+  /* Calendar visibility is per employee: creator OR listed invitee. Never
+     request the complete meetings table for a signed-out/unknown user. */
+  if(!me){meetings=[];renderCalendar();renderInvitedMeetings();return}
+  try{
+    const filter=encodeURIComponent(`(created_by.eq.${me},invitee_ids.cs.{${me}})`);
+    meetings=await db(`medha_communications_meetings?select=id,title,start_at,end_at,invitee_ids,created_by,location&or=${filter}&order=start_at.asc`)||[];
+    meetings=meetings.map(x=>({...x,start:String(x.start_at||""),end:String(x.end_at||x.start_at||"")}));
+    renderCalendar();renderInvitedMeetings();
+    if(typeof refreshContactPresence==="function")refreshContactPresence();
+  }catch{meetings=[];renderCalendar();renderInvitedMeetings()}
+}
 $("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);renderCalendar()};$("#calendar-next").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);renderCalendar()};$("#calendar-today").onclick=()=>{calendarCursor=new Date();renderCalendar()};$("#new-event").onclick=()=>$("#event-dialog").showModal();$("#event-form").addEventListener("submit",async e=>{if(e.submitter?.value==="cancel"){e.target.closest("dialog").close();return}e.preventDefault();if(!currentUserId){toast("Sign in to create meetings");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db("medha_communications_meetings",{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean),created_by:currentUserId})});$("#event-dialog").close();e.target.reset();await loadMeetings();toast("Meeting created")}catch(err){toast(err.message)}});
 function openEventForCalendarDate(day){const date=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),day,9,0);const end=new Date(date);end.setHours(10);const localValue=value=>{const pad=n=>String(n).padStart(2,"0");return `${value.getFullYear()}-${pad(value.getMonth()+1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`};$("#event-form").reset();$("#event-start").value=localValue(date);$("#event-end").value=localValue(end);$("#event-dialog").showModal()}
 $("#calendar-grid").addEventListener("dblclick",event=>{const cell=event.target.closest("#calendar-grid>div");if(!cell||cell.classList.contains("muted"))return;const first=(new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1).getDay()+6)%7;const day=[...$("#calendar-grid").children].indexOf(cell)-first+1;if(day>0)openEventForCalendarDate(day)});
