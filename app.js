@@ -1201,6 +1201,33 @@ function syncResponsiveChrome(){
 mobileQuery.addEventListener("change",syncResponsiveChrome);
 syncResponsiveChrome();
 
+/* Mobile browsers can keep the layout viewport at full height while the
+   keyboard shrinks only the visual viewport. Track that inset so the composer
+   follows the keyboard instead of being panned to the top of the page. */
+function syncKeyboardViewport(){
+  const viewport=window.visualViewport;
+  const focused=document.activeElement;
+  const composerField=focused instanceof HTMLElement&&focused.closest("#composer");
+  const keyboard=composerField&&viewport
+    ?Math.max(0,window.innerHeight-viewport.height)
+    :0;
+  if(keyboard>80&&viewport)
+    document.documentElement.style.setProperty("--keyboard-viewport-height",`${Math.round(viewport.height)}px`);
+  else
+    document.documentElement.style.removeProperty("--keyboard-viewport-height");
+  document.documentElement.style.setProperty("--keyboard-height",`${Math.round(keyboard)}px`);
+  document.body.classList.toggle("keyboard-open",keyboard>80);
+}
+window.visualViewport?.addEventListener("resize",syncKeyboardViewport);
+window.visualViewport?.addEventListener("scroll",syncKeyboardViewport);
+document.addEventListener("focusin",event=>{
+  if(event.target instanceof HTMLElement&&event.target.closest("#composer"))
+    document.body.classList.add("keyboard-open");
+  requestAnimationFrame(syncKeyboardViewport);
+});
+document.addEventListener("focusout",()=>setTimeout(syncKeyboardViewport,120));
+syncKeyboardViewport();
+
 /* Back / menu button in the conversation header, only shown on small screens. */
 /* Small screens get a three-line menu button that opens the rail and the
    conversation list together, and a back arrow once a chat is open. */
@@ -1210,6 +1237,18 @@ menuButton.setAttribute("aria-label","Open menu");
 menuButton.innerHTML='<span></span><span></span><span></span>';
 $(".conversation-header").prepend(menuButton);
 menuButton.addEventListener("click",openMobileSidebar);
+
+/* Calendar and Settings are full-page views on small screens, so give them
+   the same navigation entry point as the chat header. */
+["calendar","settings"].forEach(viewName=>{
+  const head=document.querySelector(`#${viewName}-view .page-head`);
+  if(!head)return;
+  const button=document.createElement("button");
+  button.type="button";button.className="mobile-view-menu";button.setAttribute("aria-label","Open menu");
+  button.innerHTML="<span></span><span></span><span></span>";
+  button.addEventListener("click",openMobileSidebar);
+  head.prepend(button);
+});
 
 const backButton=document.createElement("button");
 backButton.type="button";backButton.className="chat-back";backButton.id="chat-back";
@@ -2273,7 +2312,59 @@ function findMessageEverywhere(messageId){
 /* ---------- emoji & gif pickers ---------- */
 
 const emojiGroups={"Smileys & people":"😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🤑 🤠 😈 👿 👹 👺 🤡 💩 👻 💀 ☠️ 👽 👾 🤖 🎃 😺 😸 😹 😻 😼 😽 🙀 😿 😾 🙌 👏 🤝 👍 👎 👌 ✌️ 🤞 🤟 🤘 👈 👉 👆 👇 ☝️ ✋ 🤚 🖐️ 🖖 👋 💪 🙏 👀 👁️ 👄 💋 💯" ,"Animals & nature":"🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🐤 🦄 🐝 🦋 🐌 🐞 🐜 🕷️ 🦂 🐢 🐍 🦎 🦖 🐙 🦀 🐠 🐟 🐡 🐬 🐳 🐋 🦈 🐊 🐅 🐆 🦓 🦍 🐘 🦏 🦒 🦘 🦬 🐄 🐎 🐖 🐑 🦙 🐐 🐕 🐈 🐓 🦃 🕊️ 🐇 🐿️ 🦔 🌸 🌹 🌻 🌞 🌝 🌈 ⭐ 🌟 ✨ ⚡ 🔥 🌊 🍀 🌱 🌲 🌴 🌵 🍁" ,"Food & activities":"🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🍞 🧀 🍔 🍟 🍕 🌭 🌮 🌯 🥗 🍿 🍩 🍪 🎂 🍰 🍫 🍭 ☕ 🍺 🍻 🍷 🥂 ⚽ 🏀 🏈 ⚾ 🎾 🏐 🏆 🎮 🎲 🎯 🎨 🎵 🎶 🎤 🎬 🚗 🚕 🚌 🚆 ✈️ 🚀 🚲 ⛵" ,"Objects & symbols":"❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ✅ ❌ ❗ ❓ ‼️ ⁉️ ⚠️ 🚫 💡 🔒 🔓 🔑 🔔 🎁 🎈 🎉 🎊 📌 📎 📝 📅 📁 📂 💻 🖥️ 📱 ☎️ ⌚ 🔍 🔗 🛠️ ⚙️ 🔥 💬 🗨️ 💤 ✔️ ➕ ➖ ➡️ ⬆️ ⬇️"};
-let allEmojis=Object.entries(emojiGroups).flatMap(([group,value])=>value.split(" ").map(emoji=>({group,emoji})));function renderEmojiPicker(query=""){const q=query.toLowerCase();$("#emoji-grid").innerHTML=allEmojis.filter(x=>!q||x.emoji.includes(q)||x.group.toLowerCase().includes(q)).map(x=>`<button type="button" class="emoji-choice" data-emoji="${x.emoji}" title="${x.group}">${x.emoji}</button>`).join("")||'<div class="directory-empty">No emoji found</div>'}$("#emoji-button").onclick=()=>{$("#emoji-dialog").showModal();renderEmojiPicker();$("#emoji-search").focus()};$("#close-emoji").onclick=()=>$("#emoji-dialog").close();$("#emoji-search").addEventListener("input",e=>renderEmojiPicker(e.target.value));$("#emoji-grid").addEventListener("click",e=>{const b=e.target.closest("[data-emoji]");if(b){$("#message-input").value+=b.dataset.emoji;$("#message-input").focus();$("#emoji-dialog").close()}});$("#gif-button").onclick=()=>$("#gif-dialog").showModal();$("#gif-form").addEventListener("submit",e=>{if(e.submitter?.value==="cancel"){e.target.closest("dialog").close();return}e.preventDefault();const url=$("#gif-url").value.trim();try{const parsed=new URL(url);if(!["http:","https:"].includes(parsed.protocol))throw Error();pendingAttachments.push({kind:"gif",name:"GIF",url:parsed.href});renderPending();$("#gif-url").value="";$("#gif-dialog").close()}catch{toast("Enter a valid GIF URL")}});
+let allEmojis=Object.entries(emojiGroups).flatMap(([group,value])=>value.split(" ").map(emoji=>({group,emoji})));function renderEmojiPicker(query=""){const q=query.toLowerCase();$("#emoji-grid").innerHTML=allEmojis.filter(x=>!q||x.emoji.includes(q)||x.group.toLowerCase().includes(q)).map(x=>`<button type="button" class="emoji-choice" data-emoji="${x.emoji}" title="${x.group}">${x.emoji}</button>`).join("")||'<div class="directory-empty">No emoji found</div>'}$("#emoji-button").onclick=()=>{$("#emoji-dialog").showModal();renderEmojiPicker();$("#emoji-search").focus()};$("#close-emoji").onclick=()=>$("#emoji-dialog").close();$("#emoji-search").addEventListener("input",e=>renderEmojiPicker(e.target.value));$("#emoji-grid").addEventListener("click",e=>{const b=e.target.closest("[data-emoji]");if(b){$("#message-input").value+=b.dataset.emoji;$("#message-input").focus();$("#emoji-dialog").close()}});/* ---------- GIF picker ----------
+   Browse and click a GIF instead of pasting a URL. Results come from
+   /api/gif-search, which holds the API key server-side. */
+let gifRequestId=0;
+function renderGifResults(items){
+  const host=$("#gif-results");
+  if(!items.length){host.innerHTML=`<div class="directory-empty">No GIFs found. Try another search.</div>`;return}
+  host.innerHTML=items.map(item=>`<button type="button" class="gif-tile" data-gif-url="${esc(item.url)}" data-gif-name="${esc(item.description||"GIF")}" title="${esc(item.description||"GIF")}">
+      <img src="${esc(item.preview)}" alt="${esc(item.description||"GIF")}" loading="lazy">
+    </button>`).join("");
+}
+async function loadGifs(query=""){
+  /* Each search carries a token so a slow earlier response cannot overwrite
+     the results of a newer keystroke. */
+  const token=++gifRequestId;
+  const host=$("#gif-results");
+  host.innerHTML=`<div class="directory-loading">${query?"Searching":"Loading"} GIFs\u2026</div>`;
+  try{
+    const response=await fetch(`/api/gif-search?q=${encodeURIComponent(query)}&limit=24`);
+    const body=await response.json().catch(()=>({}));
+    if(token!==gifRequestId)return;
+    if(!response.ok){
+      host.innerHTML=`<div class="directory-empty">${esc(response.status===503
+        ?"GIF search is not set up yet. Ask an admin to add a Tenor API key."
+        :body.error||"GIF search is unavailable right now.")}</div>`;
+      return;
+    }
+    renderGifResults(body.results||[]);
+  }catch(error){
+    if(token!==gifRequestId)return;
+    host.innerHTML=`<div class="directory-empty">GIF search is unavailable right now.</div>`;
+  }
+}
+let gifSearchTimer=null;
+$("#gif-button").onclick=()=>{
+  $("#gif-search").value="";
+  $("#gif-dialog").showModal();
+  loadGifs("");
+};
+$("#close-gif").addEventListener("click",()=>$("#gif-dialog").close());
+$("#gif-search").addEventListener("input",e=>{
+  /* Debounced so typing does not fire a request per character. */
+  clearTimeout(gifSearchTimer);
+  const value=e.target.value.trim();
+  gifSearchTimer=setTimeout(()=>loadGifs(value),300);
+});
+$("#gif-results").addEventListener("click",e=>{
+  const tile=e.target.closest("[data-gif-url]");
+  if(!tile)return;
+  pendingAttachments.push({kind:"gif",name:tile.dataset.gifName||"GIF",url:tile.dataset.gifUrl});
+  renderPending();
+  $("#gif-dialog").close();
+});
 
 /* ---------- calendar ---------- */
 
@@ -2444,6 +2535,8 @@ const eventInvitees=new Set(),eventInviteeSearch=$("#event-invitees"),eventInvit
 /* ---------- workspace views ---------- */
 
 function setWorkspaceView(viewName){
+  /* Selecting a destination completes the mobile navigation action. */
+  closeMobileSidebar();
   const conversationView=viewName==="chat"||viewName==="favorites";
   const baseView=conversationView?"chat":viewName;
   /* Details and threads belong to the currently visible chat only. Never
