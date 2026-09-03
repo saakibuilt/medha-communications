@@ -6,7 +6,7 @@
     "dev": "node server.js",
     "check": "node --check app.js && node --check server.js && node --check api/stream-token.js && node --check api/stream-users.js && node --check api/stream-webhook.js",
     "test": "node test/conversation-integrity.mjs",
-    "test:browser": "node test/browser/stream-features.spec.mjs && node test/browser/permissions.spec.mjs && node test/browser/ui.spec.mjs && node test/browser/attachments.spec.mjs && node test/browser/edit-forward.spec.mjs"
+    "test:browser": "node test/browser/stream-features.spec.mjs && node test/browser/permissions.spec.mjs && node test/browser/ui.spec.mjs && node test/browser/attachments.spec.mjs && node test/browser/edit-forward.spec.mjs && node test/browser/settings.spec.mjs"
   },
   "dependencies": {
     "@stream-io/video-client": "latest",

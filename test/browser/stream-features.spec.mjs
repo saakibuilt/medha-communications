@@ -67,10 +67,16 @@ await page.waitForTimeout(200);
 let r=await page.evaluate(()=>({
   calls:globalThis.__streamCalls.map(c=>c[0]),
   reactionArg:globalThis.__streamCalls.find(c=>c[0]==="sendReaction")?.[2],
+  roundTrip:(()=>{const t=globalThis.__streamCalls.find(c=>c[0]==="sendReaction")?.[2]?.type||"";
+    return t.startsWith("emoji_")?t.slice(6).split("_").map(c=>String.fromCodePoint(parseInt(c,16))).join(""):t})(),
   chip:document.querySelector('.message[data-message-id="m1"] .stored-reactions span')?.className,
   reactions:window.__space.conversations[0].messages[0].reactions}));
 ok("add reaction calls sendReaction",r.calls.includes("sendReaction"),r.calls);
-ok("sendReaction is given a Reaction object, not a string",r.reactionArg&&typeof r.reactionArg==="object"&&r.reactionArg.type==="\u{1F44D}",r.reactionArg);
+/* Stream rejects raw emoji in a reaction type, so the app sends a reversible
+   emoji_<codepoints> key. What matters is that it is an OBJECT (a bare string
+   fails server-side) and that the key round-trips back to the emoji. */
+ok("sendReaction is given a Reaction object, not a string",r.reactionArg&&typeof r.reactionArg==="object"&&typeof r.reactionArg.type==="string",r.reactionArg);
+ok("reaction type round-trips back to the emoji",r.roundTrip==="\u{1F44D}",r.roundTrip);
 ok("added reaction stored for me",(r.reactions["👍"]||[]).includes("u_me"),r.reactions);
 ok("own reaction chip marked by-me",r.chip==="by-me",r.chip);
 

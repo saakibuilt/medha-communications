@@ -872,8 +872,11 @@ dialog:has(.call-shell).video-call{width:min(1180px,calc(100vw - 24px));height:m
 /* The heading shares the column's width and padding so it lines up with the
    card edge instead of floating against the viewport. Scoped to the settings
    view because .page-head is shared with Calendar. */
-#settings-view .page-head{width:100%;max-width:760px;margin-inline:auto;
-  padding-left:clamp(16px,5vw,40px);padding-right:clamp(16px,5vw,40px);box-sizing:border-box}
+/* Later .page-head rules re-set padding for the calendar page and win on
+   source order, so the settings heading needs !important to keep its edge
+   locked to the card below it. */
+#settings-view .page-head{width:100%;max-width:760px;margin-inline:auto;box-sizing:border-box;
+  padding-left:clamp(16px,5vw,40px)!important;padding-right:clamp(16px,5vw,40px)!important}
 #settings-view{align-items:stretch}
 .settings-layout{width:100%;max-width:760px;margin-inline:auto;
   padding:0 clamp(16px,5vw,40px) clamp(24px,5vh,48px);min-width:0}
