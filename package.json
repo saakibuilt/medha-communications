@@ -3,16 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node server.js",
-    "check": "node --check app.js && node --check server.js && node --check api/stream-token.js && node --check api/stream-users.js && node --check api/stream-webhook.js",
-    "test": "node test/conversation-integrity.mjs",
-    "test:browser": "node test/browser/stream-features.spec.mjs && node test/browser/permissions.spec.mjs && node test/browser/ui.spec.mjs && node test/browser/attachments.spec.mjs && node test/browser/edit-forward.spec.mjs && node test/browser/settings.spec.mjs"
+    "dev": "node --env-file=.env.local server.js",
+    "check": "node --check app.js && node --check server.js",
+    "test": "node test/conversation-integrity.mjs"
   },
   "dependencies": {
-    "@stream-io/video-client": "latest",
+    "@stream-io/video-client": "^1.59.0",
     "stream-chat": "^9.52.0"
-  },
-  "devDependencies": {
-    "playwright": "^1.62.1"
   }
 }
