@@ -2289,10 +2289,10 @@ function sizeCalendarSpans(){
   const byDay=new Map(cells.map(c=>[c.dataset.day,c]));
   const gridBox=grid.getBoundingClientRect();
   const pad=n=>String(n).padStart(2,"0");
-  grid.querySelectorAll("i.span-start[style*='--span-days']").forEach(bar=>{
+  grid.querySelectorAll("i.span-start[data-span-days]").forEach(bar=>{
     const cell=bar.closest("div[data-day]");
     if(!cell)return;
-    const days=Number(getComputedStyle(bar).getPropertyValue("--span-days"))||1;
+    const days=Number(bar.dataset.spanDays)||1;
     if(days<2)return;
     const first=new Date(cell.dataset.day+"T00:00:00");
     const lastDate=new Date(first);
@@ -2361,13 +2361,15 @@ function renderCalendar(){
         daysInRow=Math.max(1,daysInRow);
       }
       const label=(!multi||rowStart)?esc(x.title):"";
-      const style=multi&&rowStart&&daysInRow>1?` style="--span-days:${daysInRow}"`:"";
+      const style=multi&&rowStart&&daysInRow>1?` style="--span-days:${daysInRow}" data-span-days="${daysInRow}"`:"";
       const controls=(!multi||rowStart)?`<span class="calendar-event-actions"><button type="button" data-edit-meeting="${esc(x.id||"")}" aria-label="Edit ${esc(x.title)}" title="Edit event">✎</button><button type="button" data-delete-meeting="${esc(x.id||"")}" aria-label="Delete ${esc(x.title)}" title="Delete event">×</button></span>`:"";
-      return `<i class="${span.trim()}" title="${esc(x.title)}${esc(range)}" data-meeting-id="${esc(x.id||"")}"><span class="calendar-event-label">${label}</span>${controls}</i>`;
+      return `<i class="${span.trim()}"${style} title="${esc(x.title)}${esc(range)}" data-meeting-id="${esc(x.id||"")}"><span class="calendar-event-label">${label}</span>${controls}</i>`;
     }).join("")}</div>`);
   }
   $("#calendar-grid").innerHTML=cells.join("")||'<div class="empty-state">No scheduled meetings.</div>';
   sizeCalendarSpans();
+  /* Re-measure once CSS grid sizing and responsive fonts have settled. */
+  requestAnimationFrame(sizeCalendarSpans);
   const now=new Date();
   const future=meetings.filter(x=>new Date(x.end||x.start)>=now).sort((a,b)=>new Date(a.start)-new Date(b.start));
   $("#agenda-list").innerHTML=future.length?future.map(x=>{
