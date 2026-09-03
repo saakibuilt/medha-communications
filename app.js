@@ -1207,16 +1207,35 @@ syncResponsiveChrome();
 function syncKeyboardViewport(){
   const viewport=window.visualViewport;
   const focused=document.activeElement;
-  const composerField=focused instanceof HTMLElement&&focused.closest("#composer");
-  const keyboard=composerField&&viewport
+  /* Any text field counts, not just the composer: the thread reply box and
+     the search fields need the same treatment. */
+  const typing=focused instanceof HTMLElement
+    &&(focused.matches("textarea,input:not([type=checkbox]):not([type=radio])")||focused.isContentEditable);
+  /* offsetTop is where the visual viewport has been scrolled to, not extra
+     keyboard height - subtracting it cancelled the whole inset on iOS and
+     the keyboard was never detected. The keyboard is simply the difference
+     between the layout and visual viewport heights. */
+  const keyboard=typing&&viewport
     ?Math.max(0,window.innerHeight-viewport.height)
     :0;
-  if(keyboard>80&&viewport)
+  const open=keyboard>80;
+  if(open&&viewport){
     document.documentElement.style.setProperty("--keyboard-viewport-height",`${Math.round(viewport.height)}px`);
-  else
+    /* iOS does not shrink the layout viewport - it scrolls it under the
+       keyboard. Height alone therefore leaves the shell anchored to the
+       document top and pushes the composer off screen, which is why the
+       type box appeared at the top. Offsetting by the visual viewport's
+       own top pins the shell to what the user can actually see. */
+    document.documentElement.style.setProperty("--keyboard-offset",`${Math.round(viewport.offsetTop)}px`);
+  }else{
     document.documentElement.style.removeProperty("--keyboard-viewport-height");
+    document.documentElement.style.removeProperty("--keyboard-offset");
+  }
   document.documentElement.style.setProperty("--keyboard-height",`${Math.round(keyboard)}px`);
-  document.body.classList.toggle("keyboard-open",keyboard>80);
+  document.body.classList.toggle("keyboard-open",open);
+  /* Keep the newest message visible above the keyboard, the way iMessage
+     keeps the conversation pinned to the composer. */
+  if(open&&stickToBottom)scrollMessagesToEnd();
 }
 window.visualViewport?.addEventListener("resize",syncKeyboardViewport);
 window.visualViewport?.addEventListener("scroll",syncKeyboardViewport);
@@ -1270,6 +1289,9 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMobileSidebar()
 function applyViewportHeight(){
   const h=window.visualViewport?window.visualViewport.height:window.innerHeight;
   document.documentElement.style.setProperty("--app-height",`${h}px`);
+  /* Same source of truth as syncKeyboardViewport, so the two cannot fight
+     over the shell height on the same resize event. */
+  syncKeyboardViewport();
 }
 applyViewportHeight();
 window.addEventListener("resize",applyViewportHeight);
@@ -1945,6 +1967,9 @@ $("#accept-call").addEventListener("click",async()=>{if(!incomingCall)return;try
 $("#decline-call").addEventListener("click",async()=>{if(incomingCall){try{await incomingCall.leave({reject:true,reason:"decline"})}catch{}incomingCall=null}stopRingTone();$("#call-dialog").close()});
 async function startStreamCall(mode){
   if(!active||!streamClient){toast("Open a Stream conversation first");return}
+  /* Start from the button gesture. Waiting for getOrCreate() first causes
+     browsers to reject Web Audio because the user-activation window ended. */
+  startRingTone(false);
   try{
     callActivityMessageId=null;callActivityChannel=null;callActivityMode=mode;callActivityStartedAt=null;callActivityFinalized=false;
     if(!videoClient)videoClient=new StreamVideoClient({apiKey:streamClient.key,user:streamClient.user,token:streamSessionToken});
@@ -1953,17 +1978,16 @@ async function startStreamCall(mode){
     await call.getOrCreate({ring:true,video:mode==="video",settings:{ring:{incoming_call_timeout_ms:60000,auto_cancel_timeout_ms:60000,missed_call_timeout_ms:60000}},data:{members,custom:{channelCid:active.cid,mode}}});
     showCallSurface(call,(mode==="video"?"Video":"Audio")+" call · "+active.name,mode);
     if(call.state.callingState!==CallingState.JOINED){
-      startRingTone(false);
       outgoingRingSubscription=call.state.callingState$.subscribe(state=>{
         if(state===CallingState.JOINED||state===CallingState.LEFT){stopRingTone();outgoingRingSubscription?.unsubscribe?.();outgoingRingSubscription=null}
       });
       outgoingCallTimeout=setTimeout(()=>{if(activeCall===call&&call.state.callingState!==CallingState.JOINED)leaveStreamCall()},60000);
-    }
+    }else stopRingTone();
     callActivityChannel=streamChannelFor(active);
     const activity=await callActivityChannel.sendMessage({text:(mode==="video"?"🎥 Video":"☎ Audio")+" call started",call_id:callId,call_type:"default"});
     callActivityMessageId=activity.message?.id||null;
     if(call.state.callingState===CallingState.JOINED)callActivityStartedAt=Date.now();
-  }catch(error){toast(error.message)}
+  }catch(error){stopRingTone();toast(error.message)}
 }
 $("#audio-call").addEventListener("click",()=>startStreamCall("audio"));
 $("#video-call").addEventListener("click",()=>startStreamCall("video"));
