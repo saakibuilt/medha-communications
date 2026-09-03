@@ -2308,7 +2308,59 @@ function findMessageEverywhere(messageId){
 /* ---------- emoji & gif pickers ---------- */
 
 const emojiGroups={"Smileys & people":"😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🤑 🤠 😈 👿 👹 👺 🤡 💩 👻 💀 ☠️ 👽 👾 🤖 🎃 😺 😸 😹 😻 😼 😽 🙀 😿 😾 🙌 👏 🤝 👍 👎 👌 ✌️ 🤞 🤟 🤘 👈 👉 👆 👇 ☝️ ✋ 🤚 🖐️ 🖖 👋 💪 🙏 👀 👁️ 👄 💋 💯" ,"Animals & nature":"🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🐤 🦄 🐝 🦋 🐌 🐞 🐜 🕷️ 🦂 🐢 🐍 🦎 🦖 🐙 🦀 🐠 🐟 🐡 🐬 🐳 🐋 🦈 🐊 🐅 🐆 🦓 🦍 🐘 🦏 🦒 🦘 🦬 🐄 🐎 🐖 🐑 🦙 🐐 🐕 🐈 🐓 🦃 🕊️ 🐇 🐿️ 🦔 🌸 🌹 🌻 🌞 🌝 🌈 ⭐ 🌟 ✨ ⚡ 🔥 🌊 🍀 🌱 🌲 🌴 🌵 🍁" ,"Food & activities":"🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🍞 🧀 🍔 🍟 🍕 🌭 🌮 🌯 🥗 🍿 🍩 🍪 🎂 🍰 🍫 🍭 ☕ 🍺 🍻 🍷 🥂 ⚽ 🏀 🏈 ⚾ 🎾 🏐 🏆 🎮 🎲 🎯 🎨 🎵 🎶 🎤 🎬 🚗 🚕 🚌 🚆 ✈️ 🚀 🚲 ⛵" ,"Objects & symbols":"❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ✅ ❌ ❗ ❓ ‼️ ⁉️ ⚠️ 🚫 💡 🔒 🔓 🔑 🔔 🎁 🎈 🎉 🎊 📌 📎 📝 📅 📁 📂 💻 🖥️ 📱 ☎️ ⌚ 🔍 🔗 🛠️ ⚙️ 🔥 💬 🗨️ 💤 ✔️ ➕ ➖ ➡️ ⬆️ ⬇️"};
-let allEmojis=Object.entries(emojiGroups).flatMap(([group,value])=>value.split(" ").map(emoji=>({group,emoji})));function renderEmojiPicker(query=""){const q=query.toLowerCase();$("#emoji-grid").innerHTML=allEmojis.filter(x=>!q||x.emoji.includes(q)||x.group.toLowerCase().includes(q)).map(x=>`<button type="button" class="emoji-choice" data-emoji="${x.emoji}" title="${x.group}">${x.emoji}</button>`).join("")||'<div class="directory-empty">No emoji found</div>'}$("#emoji-button").onclick=()=>{$("#emoji-dialog").showModal();renderEmojiPicker();$("#emoji-search").focus()};$("#close-emoji").onclick=()=>$("#emoji-dialog").close();$("#emoji-search").addEventListener("input",e=>renderEmojiPicker(e.target.value));$("#emoji-grid").addEventListener("click",e=>{const b=e.target.closest("[data-emoji]");if(b){$("#message-input").value+=b.dataset.emoji;$("#message-input").focus();$("#emoji-dialog").close()}});$("#gif-button").onclick=()=>$("#gif-dialog").showModal();$("#gif-form").addEventListener("submit",e=>{if(e.submitter?.value==="cancel"){e.target.closest("dialog").close();return}e.preventDefault();const url=$("#gif-url").value.trim();try{const parsed=new URL(url);if(!["http:","https:"].includes(parsed.protocol))throw Error();pendingAttachments.push({kind:"gif",name:"GIF",url:parsed.href});renderPending();$("#gif-url").value="";$("#gif-dialog").close()}catch{toast("Enter a valid GIF URL")}});
+let allEmojis=Object.entries(emojiGroups).flatMap(([group,value])=>value.split(" ").map(emoji=>({group,emoji})));function renderEmojiPicker(query=""){const q=query.toLowerCase();$("#emoji-grid").innerHTML=allEmojis.filter(x=>!q||x.emoji.includes(q)||x.group.toLowerCase().includes(q)).map(x=>`<button type="button" class="emoji-choice" data-emoji="${x.emoji}" title="${x.group}">${x.emoji}</button>`).join("")||'<div class="directory-empty">No emoji found</div>'}$("#emoji-button").onclick=()=>{$("#emoji-dialog").showModal();renderEmojiPicker();$("#emoji-search").focus()};$("#close-emoji").onclick=()=>$("#emoji-dialog").close();$("#emoji-search").addEventListener("input",e=>renderEmojiPicker(e.target.value));$("#emoji-grid").addEventListener("click",e=>{const b=e.target.closest("[data-emoji]");if(b){$("#message-input").value+=b.dataset.emoji;$("#message-input").focus();$("#emoji-dialog").close()}});/* ---------- GIF picker ----------
+   Browse and click a GIF instead of pasting a URL. Results come from
+   /api/gif-search, which holds the API key server-side. */
+let gifRequestId=0;
+function renderGifResults(items){
+  const host=$("#gif-results");
+  if(!items.length){host.innerHTML=`<div class="directory-empty">No GIFs found. Try another search.</div>`;return}
+  host.innerHTML=items.map(item=>`<button type="button" class="gif-tile" data-gif-url="${esc(item.url)}" data-gif-name="${esc(item.description||"GIF")}" title="${esc(item.description||"GIF")}">
+      <img src="${esc(item.preview)}" alt="${esc(item.description||"GIF")}" loading="lazy">
+    </button>`).join("");
+}
+async function loadGifs(query=""){
+  /* Each search carries a token so a slow earlier response cannot overwrite
+     the results of a newer keystroke. */
+  const token=++gifRequestId;
+  const host=$("#gif-results");
+  host.innerHTML=`<div class="directory-loading">${query?"Searching":"Loading"} GIFs\u2026</div>`;
+  try{
+    const response=await fetch(`/api/gif-search?q=${encodeURIComponent(query)}&limit=24`);
+    const body=await response.json().catch(()=>({}));
+    if(token!==gifRequestId)return;
+    if(!response.ok){
+      host.innerHTML=`<div class="directory-empty">${esc(response.status===503
+        ?"GIF search is not set up yet. Ask an admin to add a Tenor API key."
+        :body.error||"GIF search is unavailable right now.")}</div>`;
+      return;
+    }
+    renderGifResults(body.results||[]);
+  }catch(error){
+    if(token!==gifRequestId)return;
+    host.innerHTML=`<div class="directory-empty">GIF search is unavailable right now.</div>`;
+  }
+}
+let gifSearchTimer=null;
+$("#gif-button").onclick=()=>{
+  $("#gif-search").value="";
+  $("#gif-dialog").showModal();
+  loadGifs("");
+};
+$("#close-gif").addEventListener("click",()=>$("#gif-dialog").close());
+$("#gif-search").addEventListener("input",e=>{
+  /* Debounced so typing does not fire a request per character. */
+  clearTimeout(gifSearchTimer);
+  const value=e.target.value.trim();
+  gifSearchTimer=setTimeout(()=>loadGifs(value),300);
+});
+$("#gif-results").addEventListener("click",e=>{
+  const tile=e.target.closest("[data-gif-url]");
+  if(!tile)return;
+  pendingAttachments.push({kind:"gif",name:tile.dataset.gifName||"GIF",url:tile.dataset.gifUrl});
+  renderPending();
+  $("#gif-dialog").close();
+});
 
 /* ---------- calendar ---------- */
 
@@ -2479,6 +2531,8 @@ const eventInvitees=new Set(),eventInviteeSearch=$("#event-invitees"),eventInvit
 /* ---------- workspace views ---------- */
 
 function setWorkspaceView(viewName){
+  /* Selecting a destination completes the mobile navigation action. */
+  closeMobileSidebar();
   const conversationView=viewName==="chat"||viewName==="favorites";
   const baseView=conversationView?"chat":viewName;
   /* Details and threads belong to the currently visible chat only. Never
