@@ -2946,7 +2946,7 @@ async function authorizeHubLaunch(){
     let customToken;
     if(location.hostname==="localhost"&&launchToken.startsWith("custom:")){customToken=launchToken.slice(7)}
     else{
-      const r=await fetch("/api/hub-session",{method:"POST",headers:{Authorization:`Bearer ${launchToken}`}});
+      const r=await fetchWithTimeout("/api/hub-session",{method:"POST",headers:{Authorization:`Bearer ${launchToken}`}},10000);
       if(!r.ok)throw Error();
       customToken=(await r.json()).customToken;
     }
