@@ -716,6 +716,23 @@ function renderDetailsPanel(){
   if(presence&&isGroup){presence.textContent="";presence.hidden=true}
   if(presence&&!isGroup)presence.hidden=false;
   if(presence&&isSelf){presence.textContent="This is you";presence.className="presence"}
+  /* Pinned messages come from the conversation already in memory, so opening
+     the details panel costs no extra channel queries. */
+  const pins=(active.messages||[]).filter(m=>m.pinned);
+  const pinsBox=$("#chat-pins");
+  if(pinsBox)pinsBox.innerHTML=pins.length
+    ?pins.map(m=>{
+      const who=m.who==="me"?"You":(directory.find(p=>String(p.id)===String(m.senderId))?.full_name||m.name||"Unknown");
+      /* Pinned text carries a decorative leading pin - strip it so the
+         preview does not show two. */
+      const body=String(m.text||"").replace(/^\uD83D\uDCCC\s*/,"").replace(/\s+/g," ").trim();
+      const label=body||((m.attachments||[]).length?"Attachment":"Message");
+      return `<button type="button" class="chat-pin-item" data-pin-jump="${esc(m.id)}">
+        <span class="chat-pin-mark">\u{1F4CC}</span>
+        <span class="chat-pin-copy"><strong>${esc(who)}</strong><span>${esc(label.slice(0,120))}</span></span>
+        <span class="chat-pin-go">\u203A</span>
+      </button>`}).join("")
+    :'<div class="directory-empty">No pinned messages</div>';
   $("#shared-media").innerHTML=media.length
     ?media.map(a=>a.kind==="gif"
       ?`<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.name||"GIF")}"><img src="${esc(a.url)}" alt="Shared GIF" loading="lazy"></a>`
@@ -2309,7 +2326,7 @@ forwardDialog.innerHTML=`<form method="dialog" id="forward-form">
       <button value="cancel" formnovalidate class="close-dialog" aria-label="Close">&times;</button></div>
     <div class="forward-preview" id="forward-preview"></div>
     <div class="dialog-search"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-      <input id="forward-search" placeholder="Search conversations" autocomplete="off"></div>
+      <input id="forward-search" placeholder="Search people and conversations" autocomplete="off"></div>
     <div class="employee-list" id="forward-list"></div>
     <div class="dialog-actions"><button value="cancel" formnovalidate class="secondary-button">Cancel</button></div>
   </form>`;
@@ -2318,12 +2335,32 @@ let forwardingMessage=null;
 function renderForwardTargets(query=""){
   const q=String(query||"").toLowerCase();
   const choices=conversations.filter(item=>item.id!==active?.id&&item.name.toLowerCase().includes(q));
-  $("#forward-list").innerHTML=choices.length?choices.map(chat=>`
+  /* Everyone else in the directory, so a message can be forwarded to someone
+     never messaged before. Anyone who already has a conversation is dropped -
+     they are in `choices` above and would otherwise appear twice. */
+  const chatted=new Set(conversations.map(c=>String(c.participantId||"")));
+  const people=directory.filter(person=>{
+    const id=String(person.id);
+    if(id===String(viewerId())||chatted.has(id))return false;
+    return `${person.full_name} ${person.email||""} ${person.department||""}`.toLowerCase().includes(q);
+  });
+  const chatCards=choices.map(chat=>`
     <button type="button" class="employee-option" data-forward-to="${esc(chat.id)}">
       <span class="person-avatar ${esc(chat.color||"blue")}">${esc(chat.initials||"?")}</span>
       <span class="employee-copy"><strong>${esc(chat.name)}</strong></span>
       <span class="employee-state">${chat.kind==="group"?"Group":"Direct"}</span>
-    </button>`).join(""):'<div class="directory-empty">No other conversations to forward to.</div>';
+    </button>`).join("");
+  const peopleCards=people.map(person=>`
+    <button type="button" class="employee-option" data-forward-person="${esc(person.id)}">
+      <span class="person-avatar blue">${esc(initialsFor(person.full_name))}</span>
+      <span class="employee-copy"><strong>${esc(person.full_name)}</strong><small>${esc(person.department||person.email||"")}</small></span>
+      <span class="employee-state">New chat</span>
+    </button>`).join("");
+  const html=[
+    chatCards?`<div class="forward-group-label">Conversations</div>${chatCards}`:"",
+    peopleCards?`<div class="forward-group-label">All people</div>${peopleCards}`:"",
+  ].filter(Boolean).join("");
+  $("#forward-list").innerHTML=html||'<div class="directory-empty">No people match that search.</div>';
 }
 function openForwardDialog(message){
   forwardingMessage=message;
@@ -2334,20 +2371,54 @@ function openForwardDialog(message){
   renderForwardTargets();
   forwardDialog.showModal();
 }
+/* Clicking a pin scrolls the conversation to that message and flashes it. */
+document.addEventListener("click",e=>{
+  const card=e.target.closest("[data-pin-jump]");
+  if(!card)return;
+  /* .message, not any [data-message-id] - poll option buttons carry the same
+     attribute and would match first. */
+  const row=document.querySelector(`.message[data-message-id="${CSS.escape(card.dataset.pinJump)}"]`);
+  if(!row){toast("That message is not loaded yet");return}
+  closeDetails();
+  row.scrollIntoView({behavior:"smooth",block:"center"});
+  row.classList.add("message-flash");
+  setTimeout(()=>row.classList.remove("message-flash"),1600);
+});
 $("#forward-search").addEventListener("input",e=>renderForwardTargets(e.target.value));
 $("#forward-list").addEventListener("click",async e=>{
-  const button=e.target.closest("[data-forward-to]");
+  const button=e.target.closest("[data-forward-to],[data-forward-person]");
   if(!button||!forwardingMessage)return;
-  const target=conversations.find(item=>String(item.id)===String(button.dataset.forwardTo));
-  if(!target)return;
   button.disabled=true;
   try{
-    const targetChannel=await watchStreamChannel(target);
+    let target,targetChannel;
+    if(button.dataset.forwardPerson){
+      /* Somebody with no conversation yet. Build the channel on the same
+         deterministic id openDirectChat uses, so this does not create a
+         second thread alongside one started from the sidebar. Deliberately
+         does NOT switch the active chat - forwarding should leave the user
+         where they are. */
+      const person=directory.find(p=>String(p.id)===String(button.dataset.forwardPerson));
+      if(!person)throw Error("That person is no longer in the directory");
+      const me=viewerId();
+      if(!me)throw Error("Sign in to Medha Hub before forwarding");
+      if(!streamClient)throw Error("Stream is not connected; chat is unavailable");
+      const id=directConversationId(me,String(person.id));
+      target={name:person.full_name||"Conversation"};
+      targetChannel=streamClient.channel("messaging",id,{members:[me,String(person.id)]});
+      await targetChannel.watch();
+      streamChannels.set(targetChannel.cid,targetChannel);
+    }else{
+      target=conversations.find(item=>String(item.id)===String(button.dataset.forwardTo));
+      if(!target)return;
+      targetChannel=await watchStreamChannel(target);
+    }
     await targetChannel.sendMessage({text:forwardingMessage.text||"Forwarded attachment",
       attachments:(forwardingMessage.attachments||[]).map(a=>({type:a.kind==="image"?"image":"file",title:a.name,asset_url:a.url})),
       forwarded_message_id:forwardingMessage.id,forwarded_from:active?.name});
     forwardDialog.close();forwardingMessage=null;
     toast("Forwarded to "+target.name);
+    /* A brand new conversation must appear in the sidebar. */
+    if(button.dataset.forwardPerson)hydrateConversations().catch(()=>{});
   }catch(error){toast(error.message)}
   finally{button.disabled=false}
 });
@@ -2361,7 +2432,14 @@ $("#message-actions").addEventListener("click",async e=>{
       if(!canEditMessage(message)){toast("Only your latest unread message can be edited");return}
       openEditDialog(message);
     }else if(button.dataset.messageAction==="delete"){await streamClient.deleteMessage(message.id);active.messages=active.messages.filter(item=>item.id!==message.id);renderMessages()}
-    else if(button.dataset.messageAction==="pin"){message.pinned=!message.pinned;await (message.pinned?streamClient.pinMessage(message.id):streamClient.unpinMessage(message.id));renderMessages()}
+    else if(button.dataset.messageAction==="pin"){
+      message.pinned=!message.pinned;
+      await (message.pinned?streamClient.pinMessage(message.id):streamClient.unpinMessage(message.id));
+      renderMessages();
+      /* Chat Pins lists these, so it has to repaint with the message. */
+      if(document.body.classList.contains("details-open"))renderDetailsPanel();
+      toast(message.pinned?"Pinned to this chat":"Removed from pins");
+    }
     else if(button.dataset.messageAction==="forward"){
       if(!conversations.some(item=>item.id!==active.id)){toast("No other conversation available");return}
       openForwardDialog(message)
@@ -2960,6 +3038,7 @@ window.__space={get presenceFor(){return presenceFor},get writeCache(){return wr
   get showBanner(){return showBanner},get dismissBanner(){return dismissBanner},
   get renderPending(){return renderPending},get openAttachmentPreview(){return openAttachmentPreview},
   get openEditDialog(){return openEditDialog},get openForwardDialog(){return openForwardDialog},
+  get renderDetailsPanel(){return renderDetailsPanel},
   get setReplyTarget(){return setReplyTarget},get syncKeyboardViewport(){return syncKeyboardViewport},
   get attachmentsHtml(){return attachmentsHtml},get fileSizeLabel(){return fileSizeLabel},
   get fileGlyph(){return fileGlyph},get queueAttachment(){return queueAttachment},

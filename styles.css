@@ -1330,3 +1330,21 @@ body.keyboard-open .thread-composer{padding-bottom:10px}
    sheet must scroll vertically only - never sideways. */
 .emoji-grid,.gif-results{overflow-x:hidden!important;max-width:100%}
 .emoji-picker,.gif-picker{max-width:100vw;overflow-x:hidden}
+
+/* ---------- Chat Pins (details panel) ---------- */
+.chat-pins{display:grid;gap:6px}
+.chat-pin-item{display:flex;gap:9px;align-items:center;width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;font:inherit;text-align:left;cursor:pointer;transition:background .15s ease,border-color .15s ease}
+.chat-pin-item:hover{background:var(--brand-soft);border-color:#d4b5be}
+.chat-pin-mark{flex:none;font-size:13px;line-height:1}
+.chat-pin-copy{min-width:0;flex:1;display:grid;gap:2px}
+.chat-pin-copy strong{font-size:12px;color:var(--ink)}
+.chat-pin-copy span{color:#8a98a9;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-pin-go{flex:none;color:#b0b8c3}
+/* Flash the message the pin points at, so the jump is obvious. */
+.message-flash>.message-body>.bubble,.message-flash>.message-body>.bubble-reply{animation:pin-flash 1.6s ease}
+@keyframes pin-flash{0%,100%{box-shadow:0 0 0 0 transparent}25%,60%{box-shadow:0 0 0 3px #88133733}}
+/* Section headings in the forward picker, which lists existing conversations
+   and then everyone else in the directory. */
+.forward-group-label{padding:10px 4px 5px;color:#9aa6b5;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.forward-group-label:first-child{padding-top:2px}
+.employee-option .employee-copy small{display:block;color:#8a98a9;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
