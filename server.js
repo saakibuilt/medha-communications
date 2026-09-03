@@ -1,8 +1,10 @@
 import http from "node:http";
+import { loadEnvFile } from "node:process";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StreamChat } from "stream-chat";
+try{loadEnvFile(".env.local")}catch{}
 const root=fileURLToPath(new URL(".",import.meta.url));
 const types={".html":"text/html",".js":"text/javascript",".css":"text/css"};
 const json=(res,status,body)=>{res.writeHead(status,{"Content-Type":"application/json","Cache-Control":"no-store"});res.end(JSON.stringify(body))};
@@ -47,8 +49,33 @@ async function streamUsers(req,res){
     return json(res,200,{ok:true,count:users.length});
   }catch(error){return json(res,400,{error:error.message||"Could not provision Stream users"})}
 }
+/* Mirrors api/gif-search.js so the picker works against `npm run dev`
+   too. The key is read from the environment and never reaches the client. */
+async function gifSearch(req,res){
+  const key=process.env.TENOR_API_KEY;
+  if(!key)return json(res,503,{error:"GIF search is not configured"});
+  const url=new URL(req.url,"http://localhost");
+  const query=String(url.searchParams.get("q")||"").trim().slice(0,100);
+  const limit=Math.min(Number(url.searchParams.get("limit"))||24,50);
+  const params=new URLSearchParams({key,limit:String(limit),contentfilter:"medium",
+    media_filter:"tinygif,gif",client_key:"medha_space"});
+  if(query)params.set("q",query);
+  try{
+    const response=await fetch(`https://tenor.googleapis.com/v2/${query?"search":"featured"}?${params}`);
+    if(!response.ok)throw Error(`Tenor responded ${response.status}`);
+    const body=await response.json();
+    const results=(body.results||[]).map(item=>({
+      id:String(item.id||""),description:String(item.content_description||"GIF").slice(0,120),
+      preview:item.media_formats?.tinygif?.url||item.media_formats?.gif?.url||"",
+      url:item.media_formats?.gif?.url||item.media_formats?.tinygif?.url||"",
+      width:item.media_formats?.gif?.dims?.[0]||null,height:item.media_formats?.gif?.dims?.[1]||null,
+    })).filter(item=>item.preview&&item.url);
+    return json(res,200,{results});
+  }catch(error){return json(res,502,{error:error.message||"GIF search failed"})}
+}
 http.createServer(async(req,res)=>{try{
   const path=normalize(new URL(req.url,"http://localhost").pathname);
+  if(path==="/api/gif-search")return gifSearch(req,res);
   if(path==="/api/stream-token")return streamToken(req,res);
   if(path==="/api/stream-users")return streamUsers(req,res);
   let filePath=path;if(filePath==="/")filePath="/index.html";if(filePath.includes(".."))throw Error();
