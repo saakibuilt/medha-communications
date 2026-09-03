@@ -1231,6 +1231,18 @@ menuButton.innerHTML='<span></span><span></span><span></span>';
 $(".conversation-header").prepend(menuButton);
 menuButton.addEventListener("click",openMobileSidebar);
 
+/* Calendar and Settings are full-page views on small screens, so give them
+   the same navigation entry point as the chat header. */
+["calendar","settings"].forEach(viewName=>{
+  const head=document.querySelector(`#${viewName}-view .page-head`);
+  if(!head)return;
+  const button=document.createElement("button");
+  button.type="button";button.className="mobile-view-menu";button.setAttribute("aria-label","Open menu");
+  button.innerHTML="<span></span><span></span><span></span>";
+  button.addEventListener("click",openMobileSidebar);
+  head.prepend(button);
+});
+
 const backButton=document.createElement("button");
 backButton.type="button";backButton.className="chat-back";backButton.id="chat-back";
 backButton.setAttribute("aria-label","Back to conversations");backButton.innerHTML="\u2039";

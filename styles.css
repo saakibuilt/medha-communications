@@ -313,6 +313,10 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
 .chat-menu-btn{display:none;flex-direction:column;justify-content:center;gap:4px;
   width:40px;height:40px;padding:0 10px;border:0;background:none;cursor:pointer;flex:0 0 auto}
 .chat-menu-btn span{display:block;height:2px;width:20px;border-radius:2px;background:var(--ink)}
+.mobile-view-menu{display:none;flex-direction:column;justify-content:center;gap:4px;
+  width:40px;height:40px;padding:0 10px;border:0;border-radius:9px;background:#f3f5f8;
+  cursor:pointer;flex:0 0 auto}
+.mobile-view-menu span{display:block;height:2px;width:20px;border-radius:2px;background:var(--ink)}
 
 @media(max-width:1024px){
   /* One column: the rail is inside the drawer, not beside the content. */
@@ -342,6 +346,7 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
 
   .main-area{grid-column:1;grid-row:1;min-width:0;min-height:0;height:100%}
   .chat-menu-btn{display:flex}
+  .mobile-view-menu{display:flex}
   .chat-back{display:none}
   /* Once a chat is open, the arrow returns to the list. */
   body.chat-open .chat-back{display:block}
