@@ -2369,6 +2369,10 @@ const eventInvitees=new Set(),eventInviteeSearch=$("#event-invitees"),eventInvit
 /* ---------- workspace views ---------- */
 
 function setWorkspaceView(viewName){
+  if(viewName==="chat"){
+    chatFilter="all";
+    document.querySelectorAll(".sidebar-tabs .tab").forEach((tab,index)=>tab.classList.toggle("active",index===0));
+  }
   document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.classList.toggle("active",item.dataset.view===viewName));
   document.querySelectorAll(".rail-item[data-rail-filter]").forEach(item=>item.classList.remove("active"));
   document.querySelectorAll(".view").forEach(view=>{
