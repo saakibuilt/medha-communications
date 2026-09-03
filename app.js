@@ -2154,6 +2154,7 @@ function setReplyTarget(message){
   if(!replyTarget){
     replyBar.hidden=true;
     messageInput.placeholder="Type a new message";
+    requestAnimationFrame(()=>{autosizeComposer();syncKeyboardViewport()});
     return;
   }
   replyBar.querySelector(".reply-bar-name").textContent=replyTarget.senderName||"Unknown user";
@@ -2162,6 +2163,12 @@ function setReplyTarget(message){
   replyBar.hidden=false;
   messageInput.placeholder="Reply to "+(replyTarget.senderName||"message");
   messageInput.focus();
+  /* Showing the reply bar makes the composer taller. On iOS the keyboard is
+     already up when replying from the message menu, so the pinned height is
+     now stale and the composer ends up off screen. Resync after the bar has
+     been laid out, and again once the keyboard settles. */
+  requestAnimationFrame(()=>{autosizeComposer();syncKeyboardViewport();scrollMessagesToEnd()});
+  [120,300].forEach(delay=>setTimeout(()=>{syncKeyboardViewport();scrollMessagesToEnd()},delay));
 }
 /* Escape cancels a reply, matching the rest of the app's dialogs. */
 messageInput.addEventListener("keydown",e=>{
@@ -2940,6 +2947,7 @@ window.__space={get presenceFor(){return presenceFor},get writeCache(){return wr
   get showBanner(){return showBanner},get dismissBanner(){return dismissBanner},
   get renderPending(){return renderPending},get openAttachmentPreview(){return openAttachmentPreview},
   get openEditDialog(){return openEditDialog},get openForwardDialog(){return openForwardDialog},
+  get setReplyTarget(){return setReplyTarget},get syncKeyboardViewport(){return syncKeyboardViewport},
   get attachmentsHtml(){return attachmentsHtml},get fileSizeLabel(){return fileSizeLabel},
   get fileGlyph(){return fileGlyph},get queueAttachment(){return queueAttachment},
   get pendingAttachments(){return pendingAttachments},

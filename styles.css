@@ -1294,3 +1294,24 @@ body.keyboard-open .thread-composer{padding-bottom:10px}
 .mine .message-gif-wrap{margin-left:auto}
 .message-gif-live{display:block;width:100%;height:auto;max-height:280px;object-fit:contain;background:#eef1f5}
 @media (max-width:640px){.message-gif-wrap{max-width:min(220px,78%)}}
+
+/* ---------- iOS: never auto-zoom a focused field ----------
+   Safari on iPhone/iPad zooms the page into any input whose font is under
+   16px. Body text is 14px and every field inherits it, so focusing the emoji
+   search (or the composer, or any search box) zoomed the page in - which is
+   also what left the user able to scroll left and right afterwards, since the
+   zoomed layout is wider than the screen.
+   16px is the threshold, so this is the smallest value that prevents it.
+   Scoped to coarse pointers so desktop keeps its 14px scale. */
+@media (pointer:coarse){
+  input:not([type=checkbox]):not([type=radio]),textarea,select,
+  .emoji-search,.dialog-search input,#message-input,#thread-input{font-size:16px!important}
+  /* 16px inputs are taller, so keep the compact rows from growing. */
+  .dialog-search{padding-block:9px}
+  .emoji-search{padding:9px 10px}
+}
+
+/* Belt and braces on the pickers: even if a stray wide child appears, the
+   sheet must scroll vertically only - never sideways. */
+.emoji-grid,.gif-results{overflow-x:hidden!important;max-width:100%}
+.emoji-picker,.gif-picker{max-width:100vw;overflow-x:hidden}
