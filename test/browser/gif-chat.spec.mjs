@@ -86,6 +86,48 @@ const r=await page.evaluate(()=>({
   tiles:document.querySelectorAll(".media-tile").length}));
 ok("a received GIF also plays live",r.live,r);
 ok("a received GIF is not a file card or tile",r.fileCards===0&&r.tiles===0,r);
+/* Messages sent before the send path stopped writing "Attachment" still carry
+   that text in Stream. A GIF must show as the GIF alone - never with the word
+   above it - in the chat, in a thread, and in a reply quote. */
+{
+  const legacy=await page.evaluate(()=>{
+    const s=window.__space;
+    const gif={kind:"gif",name:"Tom & Jerry",url:"https://media.giphy.com/x.gif"};
+    s.active.messages=[
+      {id:"L1",senderId:"u_me",who:"me",senderName:"Saksham Nirula",text:"Attachment",
+       parentId:null,attachments:[gif],reactions:{},time:"2:26 PM",
+       createdAt:new Date().toISOString()},
+      {id:"L2",senderId:"u_kavya",who:"them",senderName:"Kavya Sharma",text:"Attachment",
+       parentId:null,attachments:[{kind:"image",name:"p.png",url:"/p.png"}],reactions:{},
+       time:"2:27 PM",createdAt:new Date().toISOString()},
+      {id:"L3",senderId:"u_kavya",who:"them",senderName:"Kavya Sharma",text:"Attachment",
+       parentId:null,attachments:[{kind:"file",name:"report.pdf",url:"/r.pdf"}],reactions:{},
+       time:"2:28 PM",createdAt:new Date().toISOString()},
+      {id:"L4",senderId:"u_me",who:"me",senderName:"Saksham Nirula",text:"look at this",
+       parentId:null,attachments:[gif],reactions:{},time:"2:29 PM",
+       createdAt:new Date().toISOString()}];
+    s.renderMessages();
+    const row=id=>document.querySelector(`.message[data-message-id="${id}"]`);
+    return {
+      gifText:row("L1")?.innerText||"",
+      imageText:row("L2")?.innerText||"",
+      fileText:row("L3")?.innerText||"",
+      captionText:row("L4")?.innerText||"",
+      gifImg:!!row("L1")?.querySelector("img"),
+    };
+  });
+  ok("a legacy GIF does not show the word Attachment",!/Attachment/.test(legacy.gifText),legacy);
+  ok("a legacy GIF still renders the GIF itself",legacy.gifImg,legacy);
+  ok("a legacy image does not show the word Attachment",!/Attachment/.test(legacy.imageText),legacy);
+  /* The card already names the file, so the placeholder is noise there too -
+     but the card itself must stay. */
+  ok("a real file keeps its card",/report\.pdf/.test(legacy.fileText),legacy);
+  ok("a file card does not repeat the word Attachment",
+    !/Attachment/.test(legacy.fileText),legacy);
+  ok("a genuine caption is never suppressed",/look at this/.test(legacy.captionText),legacy);
+}
+
+
 await page.close();
 
 await browser.close();

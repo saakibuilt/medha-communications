@@ -91,6 +91,23 @@ async function initializeStream(user){
   setupVideoClient(body);
   return body.user;
 }
+/* Older messages were stored with the literal text "Attachment" before the
+   send path learned to leave a GIF or image wordless, and that text is now
+   baked into Stream. Suppress it at render time so history looks right too:
+   the picture already IS the message, so the word is noise above it. Any
+   real caption the sender typed is left alone. */
+function isVisualOnly(m){
+  const attachments=m?.attachments||[];
+  return attachments.length>0&&attachments.every(a=>a.kind==="gif"||a.kind==="image");
+}
+function displayText(m){
+  const text=String(m?.text||"");
+  /* The attachment always renders below - a GIF or image IS the message, and
+     a file card already names the file - so the placeholder is noise either
+     way. Only the stock words are dropped; a real caption is left alone. */
+  if((m?.attachments||[]).length&&/^(attachment|gif)$/i.test(text.trim()))return "";
+  return text;
+}
 function streamMessageToApp(message){
   const rawSenderId=String(message.user?.id||"");
   /* Older local development messages used a placeholder ID. Treat those as
@@ -135,7 +152,7 @@ function applyIncomingStreamMessage(event){
   /* Stream unarchives a channel on new activity; mirror that locally so the
      chat does not stay hidden with an unread badge nobody can reach. */
   if(chat.archived)chat.archived=false;
-  chat.preview=message.text||"Attachment";
+  chat.preview=message.text||((message.attachments||[]).some(a=>a.type==="giphy"||a.giphy||/\.gif(?:$|[?#])/i.test(a.image_url||a.asset_url||""))?"GIF":"Attachment");
   chat.updatedAt=message.created_at||new Date().toISOString();
   chat.time=new Date(chat.updatedAt).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
   if(active?.cid===chat.cid){
@@ -145,6 +162,16 @@ function applyIncomingStreamMessage(event){
     scrollMessagesToEnd();
     streamChannelFor(chat)?.markRead().catch(()=>{});
   }else{
+    /* Store the body, not just the badge. The message is already in hand from
+       the websocket, so keeping it costs nothing - and without it a chat that
+       was open earlier keeps messagesLoaded:true, so switchChat skips the
+       fetch and the new message stayed invisible until a refresh. Only append
+       to a chat whose history is actually loaded; for one never opened the
+       first switchChat fetches the page anyway, and a lone message would
+       otherwise render as its entire history. */
+    if(chat.messagesLoaded&&!chat.fromCache){
+      chat.messages=[...(chat.messages||[]).filter(item=>String(item.id)!==String(incoming.id)),incoming];
+    }
     chat.unread=(chat.unread||0)+1;
     if(soundEnabled())playIncomingPing();
     /* mentioned_users comes down with the message, so an @ is counted
@@ -508,7 +535,7 @@ function messageHtml(m){
   if(!m._decorated){if(m.pinned&&!String(m.text||"").startsWith("📌"))m.text="📌 "+m.text;m._decorated=true}
   const quoted=reply?`<button type="button" class="reply-quote" data-jump-to="${esc(reply.id||"")}">
       <svg class="reply-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h7a9 9 0 0 1 9 9v2"/></svg>
-      <span class="reply-quote-body"><span class="reply-quote-name">${esc(reply.senderName||"Unknown user")}</span><span class="reply-quote-text">${esc((reply.text||"Attachment").replace(/\s+/g," ").slice(0,120))}</span></span>
+      <span class="reply-quote-body"><span class="reply-quote-name">${esc(reply.senderName||"Unknown user")}</span><span class="reply-quote-text">${esc((displayText(reply)||(isVisualOnly(reply)?"GIF":"Attachment")).replace(/\s+/g," ").slice(0,120))}</span></span>
     </button>`:"";
   /* In a group each message shows its own sender, not the group glyph -
      otherwise every bubble would carry the same icon. */
@@ -527,7 +554,7 @@ function messageHtml(m){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4.2-1L3 20l1.2-4.6A8.4 8.4 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>
       ${replyCount} ${replyCount===1?"reply":"replies"}
     </button>`:"";
-  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(m.text||"")}</span></div>`:""}${m.text&&!m.poll&&!quoted?`<div class="bubble">${esc(m.text)}</div>`:""}${attachmentsHtml(links)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}</div></div>`;
+  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted?`<div class="bubble">${esc(displayText(m))}</div>`:""}${attachmentsHtml(links)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}</div></div>`;
 }
 
 /* ---------- thread view (replies only) ----------
@@ -563,7 +590,7 @@ function renderThread(){
   const {parent,replies}=found;
   const row=m=>`<div class="thread-message ${m.who==="me"?"mine":""}" data-message-id="${esc(m.id||"")}">
       <div class="thread-meta"><strong>${esc(m.senderName||"Unknown user")}</strong><time>${esc(m.time||"")}</time></div>
-      <div class="bubble">${esc(m.text||"Attachment")}</div>
+      ${displayText(m)?`<div class="bubble">${esc(displayText(m))}</div>`:""}
       ${attachmentsHtml(m.attachments)}
     </div>`;
   $("#thread-body").innerHTML=`<div class="thread-parent">${row(parent)}</div>
@@ -726,7 +753,7 @@ function renderDetailsPanel(){
       /* Pinned text carries a decorative leading pin - strip it so the
          preview does not show two. */
       const body=String(m.text||"").replace(/^\uD83D\uDCCC\s*/,"").replace(/\s+/g," ").trim();
-      const label=body||((m.attachments||[]).length?"Attachment":"Message");
+      const label=body||(isVisualOnly(m)?"GIF":(m.attachments||[]).length?"Attachment":"Message");
       return `<button type="button" class="chat-pin-item" data-pin-jump="${esc(m.id)}">
         <span class="chat-pin-mark">\u{1F4CC}</span>
         <span class="chat-pin-copy"><strong>${esc(who)}</strong><span>${esc(label.slice(0,120))}</span></span>
@@ -1036,8 +1063,13 @@ async function hydrateConversations(){
   if(streamClient){
     streamConversationsLoadPromise=(async()=>{try{
       await ensureDirectory();
-      await ensureStreamUsers();
+      /* ensureStreamUsers only upserts display names into Stream; the channel
+         query does not depend on it, so uploading the whole directory must
+         not sit in front of the conversation list. It is still awaited below
+         so a failure is not swallowed. */
+      const streamUsers=ensureStreamUsers();
       const channels=await streamClient.queryChannels({type:"messaging",members:{$in:[me]}},{last_message_at:-1},{limit:100});
+      await streamUsers;
       const nameOf=id=>directory.find(p=>String(p.id)===String(id))?.full_name||readChatNameCache()[String(id)]||"";
       const loaded=channels.map(channel=>{
         streamChannels.set(String(channel.cid),channel);
@@ -2189,7 +2221,7 @@ function setReplyTarget(message){
   }
   replyBar.querySelector(".reply-bar-name").textContent=replyTarget.senderName||"Unknown user";
   replyBar.querySelector(".reply-bar-text").textContent=
-    String(replyTarget.text||"Attachment").replace(/\s+/g," ").slice(0,140);
+    String(displayText(replyTarget)||(isVisualOnly(replyTarget)?"GIF":"Attachment")).replace(/\s+/g," ").slice(0,140);
   replyBar.hidden=false;
   messageInput.placeholder="Reply to "+(replyTarget.senderName||"message");
   messageInput.focus();
@@ -2364,7 +2396,7 @@ function renderForwardTargets(query=""){
 }
 function openForwardDialog(message){
   forwardingMessage=message;
-  const body=String(message.text||"").replace(/\s+/g," ").slice(0,140);
+  const body=String(displayText(message)||(isVisualOnly(message)?"GIF":"")).replace(/\s+/g," ").slice(0,140);
   $("#forward-preview").innerHTML=`<span class="forward-label">Forwarding</span>
     <span class="forward-text">${esc(body||"Attachment")}</span>`;
   $("#forward-search").value="";
@@ -3039,6 +3071,8 @@ window.__space={get presenceFor(){return presenceFor},get writeCache(){return wr
   get renderPending(){return renderPending},get openAttachmentPreview(){return openAttachmentPreview},
   get openEditDialog(){return openEditDialog},get openForwardDialog(){return openForwardDialog},
   get renderDetailsPanel(){return renderDetailsPanel},
+  get applyIncomingStreamMessage(){return applyIncomingStreamMessage},
+  get switchChat(){return switchChat},
   get setReplyTarget(){return setReplyTarget},get syncKeyboardViewport(){return syncKeyboardViewport},
   get attachmentsHtml(){return attachmentsHtml},get fileSizeLabel(){return fileSizeLabel},
   get fileGlyph(){return fileGlyph},get queueAttachment(){return queueAttachment},
@@ -3134,17 +3168,38 @@ async function initializeAuthorizedUser(user){
   currentUserId=user.uid;
   try{firebaseIdToken=await user.getIdToken()}catch{firebaseIdToken=null}
   $("#current-user").textContent=user.displayName||user.email||"Authenticating…";
-  await loadCurrentProfile(user);
+  /* The profile only fills in a name and initials already shown as a
+     placeholder, so it must not hold the launch screen up. */
+  const profileReady=loadCurrentProfile(user);
   try{await initializeStream(user)}catch(error){toast(error.message);finishSpaceLoading("Stream connection unavailable");return}
   /* Show the cached sidebar immediately; the fetch below replaces it. */
   hydrateFromCache();
   startPresenceHeartbeat();
-  await Promise.all([hydrateConversations(),loadMeetings()]);
+  /* Meetings feed the calendar, which is not on screen when Space opens.
+     Awaiting it here added a Supabase round-trip to every launch. */
+  const meetingsReady=loadMeetings();
+  /* ensureStreamUsers inside hydrateConversations publishes display names and
+     reads currentAppUser, so the profile has to have landed by then - without
+     this the viewer was upserted under the placeholder name. It still runs in
+     parallel with initializeStream above, so it costs no extra wait. */
+  await profileReady;
+  await hydrateConversations();
   /* Open the most recent chat and land on the newest message. The cache
      may already have set `active`, so this must not be skipped - that is
      what left the view sitting at the top of the day on refresh. */
   const openId=active?.id||conversations[0]?.id;
-  if(openId)await switchChat(openId);
+  /* The launch screen comes down once the conversation list is painted and
+     the opened chat has whatever the cache holds. switchChat then refreshes
+     that chat from the server behind the app, rather than in front of it -
+     waiting for a full message fetch was most of the wait, and it discarded
+     the point of hydrateFromCache above. */
+  const opened=openId?switchChat(openId):Promise.resolve();
+  /* Only wait when there is nothing cached to show. With a cache the chat is
+     already painted, so the refresh finishes behind the app. */
+  if(openId&&!conversations.find(c=>String(c.id)===String(openId))?.messagesLoaded)await opened;
+  /* These finish after the launch screen lifts; without a catch a failed one
+     would surface as an unhandled rejection. */
+  [meetingsReady,opened].forEach(p=>p?.catch?.(()=>{}));
   if(syncTimer)clearInterval(syncTimer);
   syncTimer=setInterval(()=>{
     /* Stream's WebSocket delivers messages instantly. Presence is the only
