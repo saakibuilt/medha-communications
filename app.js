@@ -396,12 +396,12 @@ function renderList(){
         </div>
       </div>
     </div>`}).join("")
-    :`<p class="empty">${chatFilter==="unread"?"No unread conversations."
-       :chatFilter==="archived"?"No archived conversations. Long-press or right-click a chat to archive it."
-       :chatFilter==="pinned"?"No pinned conversations. Long-press or right-click a chat to pin it."
-       :chatFilter==="favorites"?"No favorite conversations yet. Add a chat to favorites from Chat Details."
-       :q?(people.length?"":"No conversations or people match that search.")
-       :"No conversations yet. Select + to start a chat."}</p>`;
+    :`<p class="empty">${chatFilter==="unread"?"No unread conversations found"
+       :chatFilter==="archived"?"No archived conversations found"
+       :chatFilter==="pinned"?"No pinned conversations found"
+       :chatFilter==="favorites"?"No favorites found"
+       :q?(people.length?"":"No conversations found")
+       :"No conversations found"}</p>`;
   if(people.length){
     const heading=document.createElement("p");heading.className="search-result-heading";heading.textContent="People";$("#chat-list").prepend(heading);
     $("#chat-list").insertAdjacentHTML("beforeend",people.map(person=>{const state=presenceFor(person.id);return `<div class="chat-item search-person" data-person-id="${esc(person.id)}"><div class="avatar-stack"><span class="person-avatar blue">${esc(initialsFor(person.full_name))}</span>${state==="hidden"?"":`<i class="presence-dot ${state}"></i>`}</div><div class="chat-copy"><div class="chat-line"><strong>${esc(person.full_name)}</strong><time>Start chat</time></div></div></div>`}).join(""));

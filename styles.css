@@ -427,6 +427,8 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
 .conversation-search-result:hover{transform:translateY(-1px);box-shadow:0 7px 18px #88133712}
 @keyframes conversation-search-in{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.conversation-search-dialog,.conversation-search-result{animation:none;transition:none}}
+.chat-list>.empty{display:flex;align-items:center;justify-content:center;min-height:150px;margin:0;padding:28px 18px;text-align:center;color:#8b98a8;font-size:12px;letter-spacing:.01em}
+.chat-list>.empty::before{content:"";width:5px;height:5px;margin-right:9px;border-radius:50%;background:#d9a8b5;box-shadow:0 0 0 5px #fff1f2;flex:none}
 
 /* Settings is intentionally fluid: it must remain readable without creating
    a second horizontal scroll area at any viewport size. */
