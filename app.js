@@ -397,6 +397,7 @@ function renderList(){
     :`<p class="empty">${chatFilter==="unread"?"No unread conversations."
        :chatFilter==="archived"?"No archived conversations. Long-press or right-click a chat to archive it."
        :chatFilter==="pinned"?"No pinned conversations. Long-press or right-click a chat to pin it."
+       :chatFilter==="favorites"?"No favorite conversations yet. Add a chat to favorites from Chat Details."
        :q?(people.length?"":"No conversations or people match that search.")
        :"No conversations yet. Select + to start a chat."}</p>`;
   if(people.length){
@@ -2245,6 +2246,7 @@ const eventInvitees=new Set(),eventInviteeSearch=$("#event-invitees"),eventInvit
 
 function setWorkspaceView(viewName){
   document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.classList.toggle("active",item.dataset.view===viewName));
+  document.querySelectorAll(".rail-item[data-rail-filter]").forEach(item=>item.classList.remove("active"));
   document.querySelectorAll(".view").forEach(view=>{
     const activeView=view.id===`${viewName}-view`;
     view.classList.toggle("active-view",activeView);
@@ -2283,6 +2285,13 @@ $("#setting-presence")?.addEventListener("change",async event=>{
   if($("#settings-note"))$("#settings-note").textContent=enabled?"Your status is visible to teammates":"Your status is hidden from teammates";
 });
 document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.onclick=()=>setWorkspaceView(item.dataset.view));
+document.querySelectorAll(".rail-item[data-rail-filter]").forEach(item=>item.onclick=()=>{
+  setWorkspaceView("chat");
+  document.querySelectorAll(".sidebar-tabs .tab").forEach(tab=>tab.classList.remove("active"));
+  chatFilter=item.dataset.railFilter;
+  item.classList.add("active");
+  renderList();
+});
 setWorkspaceView("chat");
 renderCalendar();
 
