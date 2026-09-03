@@ -261,6 +261,12 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
 .chat-item.selected::before{content:"";position:absolute;left:0;top:14px;bottom:14px;
   width:3px;border-radius:0 3px 3px 0;background:var(--brand)}
 
+/* Chat filters stay on one compact, touch-scrollable row in the menu. */
+.sidebar-tabs{display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
+  scrollbar-width:none;white-space:nowrap}
+.sidebar-tabs::-webkit-scrollbar{display:none}
+.sidebar-tabs .tab{flex:0 0 auto;white-space:nowrap}
+
 .avatar-stack{position:relative;flex:0 0 auto}
 .chat-item .person-avatar{width:42px;height:42px;font-size:13px;font-weight:700}
 
@@ -342,6 +348,7 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
   }
   body.sidebar-open .rail,
   body.sidebar-open .chat-sidebar{transform:translateX(0)}
+  body.chat-open:not(.sidebar-open) .chat-sidebar{transform:translateX(-120%)}
   body.sidebar-open .sidebar-scrim{display:block;opacity:1;left:0}
 
   .main-area{grid-column:1;grid-row:1;min-width:0;min-height:0;height:100%}
@@ -1207,6 +1214,11 @@ button.attach-thumb:hover{transform:scale(1.05)}
    justify-content:space-between then shoved the title to the far right
    (548px from the left edge on an iPad). Keep the button first and let the
    heading sit next to it, still aligned with the card below. */
-#settings-view .page-head,#calendar-view .page-head{justify-content:flex-start;gap:12px}
-#settings-view .page-head>div,#calendar-view .page-head>div{flex:1;min-width:0}
-#settings-view .page-head .mobile-view-menu,#calendar-view .page-head .mobile-view-menu{flex:none;order:-1}
+/* Stacked, not side by side: with the button inline the heading can never
+   line up with the card edge below it - it is always pushed over by the
+   button's width. Its own row keeps both the tap target and the alignment. */
+#settings-view .page-head,#calendar-view .page-head{flex-direction:column;align-items:stretch;
+  justify-content:flex-start;gap:12px}
+#settings-view .page-head>div,#calendar-view .page-head>div{min-width:0}
+#settings-view .page-head .mobile-view-menu,#calendar-view .page-head .mobile-view-menu{
+  flex:none;order:-1;align-self:flex-start}
