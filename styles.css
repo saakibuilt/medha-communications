@@ -1222,3 +1222,28 @@ button.attach-thumb:hover{transform:scale(1.05)}
 #settings-view .page-head>div,#calendar-view .page-head>div{min-width:0}
 #settings-view .page-head .mobile-view-menu,#calendar-view .page-head .mobile-view-menu{
   flex:none;order:-1;align-self:flex-start}
+
+/* ---------- on-screen keyboard ----------
+   iOS/iPadOS Safari does not shrink the layout viewport when the keyboard
+   opens - it scrolls the page underneath it. Setting only a height left the
+   shell anchored to the document top, which is why the type box travelled to
+   the top of the screen instead of sitting on the keyboard. Pinning the shell
+   to the visual viewport's own top keeps the composer directly above it. */
+body.keyboard-open{position:fixed;inset:0;width:100%;overflow:hidden}
+/* top:0, not the viewport offset: a position:fixed element is already
+   placed against the visual viewport, so adding offsetTop again pushed the
+   shell down by a whole keyboard height and hid the composer behind it. */
+body.keyboard-open .app-shell{
+  position:fixed;left:0;right:0;top:0;
+  height:var(--keyboard-viewport-height,100dvh)!important;
+  max-height:var(--keyboard-viewport-height,100dvh)}
+/* The safe-area inset belongs to the home indicator, which the keyboard
+   covers - keeping it would float the composer above the keys. */
+body.keyboard-open .composer{margin-bottom:8px}
+body.keyboard-open .message-area{overscroll-behavior:contain}
+/* The thread sheet gets the same treatment so its reply box stays reachable. */
+body.keyboard-open .thread-panel{
+  top:0;
+  height:var(--keyboard-viewport-height,100dvh);
+  max-height:var(--keyboard-viewport-height,100dvh)}
+body.keyboard-open .thread-composer{padding-bottom:10px}
