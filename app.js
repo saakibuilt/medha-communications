@@ -69,7 +69,7 @@ async function setupWebPush(user,requestPermission=false){
 async function initializeStream(user){
   const localDev=!user&&location.hostname==="localhost";
   const token=localDev?null:await user.getIdToken();
-  const response=await fetch("/api/stream-token",{method:"POST",headers:localDev?{"Content-Type":"application/json","X-Local-Stream-Dev":"true"}:{Authorization:`Bearer ${token}`},body:localDev?JSON.stringify({}):undefined});
+  const response=await fetchWithTimeout("/api/stream-token",{method:"POST",headers:localDev?{"Content-Type":"application/json","X-Local-Stream-Dev":"true"}:{Authorization:`Bearer ${token}`},body:localDev?JSON.stringify({}):undefined},10000);
   const body=await response.json();
   if(!response.ok)throw Error(body.error||"Could not connect to Stream");
   /* Stream's default request timeout is 3s; cold starts and mobile networks
@@ -249,9 +249,15 @@ function isMine(senderId){const me=viewerId();return me!==null&&String(senderId)
    start being enforced per user. Until then the token is sent as a separate
    header that PostgREST ignores, so nothing breaks. */
 const USE_FIREBASE_JWT=false;
+async function fetchWithTimeout(url,options={},timeoutMs=8000){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{return await fetch(url,{...options,signal:options.signal||controller.signal})}
+  finally{clearTimeout(timer)}
+}
 async function db(path,options={}){
   const authHeader=USE_FIREBASE_JWT&&firebaseIdToken?{Authorization:`Bearer ${firebaseIdToken}`}:{};
-  const r=await fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...options,headers:{...headers,...authHeader,"Content-Type":"application/json",...(options.headers||{})}});
+  const r=await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${path}`,{...options,headers:{...headers,...authHeader,"Content-Type":"application/json",...(options.headers||{})}});
   if(!r.ok){let detail="";try{detail=(await r.text()).slice(0,300)}catch{}throw Error(`Supabase ${r.status}${detail?`: ${detail}`:""}`)}
   if(r.status===204)return null;const t=await r.text();return t?JSON.parse(t):null}
 
