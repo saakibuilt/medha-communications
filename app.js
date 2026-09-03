@@ -1211,6 +1211,10 @@ function syncKeyboardViewport(){
   const keyboard=composerField&&viewport
     ?Math.max(0,window.innerHeight-viewport.height)
     :0;
+  if(keyboard>80&&viewport)
+    document.documentElement.style.setProperty("--keyboard-viewport-height",`${Math.round(viewport.height)}px`);
+  else
+    document.documentElement.style.removeProperty("--keyboard-viewport-height");
   document.documentElement.style.setProperty("--keyboard-height",`${Math.round(keyboard)}px`);
   document.body.classList.toggle("keyboard-open",keyboard>80);
 }
