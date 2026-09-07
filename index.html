@@ -82,12 +82,34 @@
   <dialog id="poll-dialog"><form method="dialog" id="poll-form"><div class="dialog-head"><div><p class="eyebrow">Stream poll</p><h2>Create a poll</h2></div><button value="cancel" formnovalidate class="close-dialog">×</button></div><label>Question<input id="poll-question" required maxlength="180" placeholder="What should we decide?"></label><label>Options<textarea id="poll-options" required placeholder="One option per line"></textarea></label><div class="dialog-actions"><button value="cancel" formnovalidate class="secondary-button">Cancel</button><button value="default" class="primary-button">Post poll</button></div></form></dialog>
   <dialog id="call-dialog"><div class="call-shell"><div class="dialog-head"><div><p class="eyebrow">Medha call</p><h2 id="call-title">Call</h2></div><button type="button" class="close-dialog" id="minimize-call" title="Minimize incoming call" aria-label="Minimize call">⌃</button><button type="button" class="close-dialog" id="close-call" title="Close call" aria-label="Close call">×</button></div><div id="incoming-call-actions" class="incoming-call-actions" hidden><button type="button" id="ignore-call" class="secondary-button">Ignore</button><button type="button" id="decline-call" class="secondary-button">Decline</button><button type="button" id="accept-call" class="primary-button">Accept call</button></div><div id="call-participants" class="call-participants"></div><div class="call-controls"><button type="button" id="toggle-call-mic" class="call-icon-button" title="Mute microphone"><span class="call-icon">🎙</span><i></i><b>Mic</b></button><button type="button" id="toggle-call-camera" class="call-icon-button" title="Turn camera off"><span class="call-icon">▣</span><i></i><b>Camera</b></button><button type="button" id="leave-call" class="primary-button">End call</button></div></div></dialog><div id="call-minimized" class="call-minimized" hidden><span>☎ Incoming call</span><button type="button" id="restore-call">Open</button><button type="button" id="ignore-minimized-call" aria-label="Ignore incoming call">×</button></div>
   <script>
+    /* app.js is a module: a syntax error or a failed top-level import (Firebase,
+       Stream, or a blocked/broken esm.sh CDN dependency) aborts the WHOLE file
+       before a single line runs. Nothing inside app.js can catch that - there
+       is no app.js execution to catch it - so the launch gate is left showing
+       its generic "requires an authenticated launch" text with no clue why,
+       even when a valid token came through and everything else worked. */
+    window.addEventListener("error", event => {
+      if (!/app\.js/.test(event.filename || "")) return;
+      showBootFailure(`Space failed to load: ${event.message}`);
+    });
+    window.addEventListener("unhandledrejection", event => {
+      showBootFailure(`Space failed to start: ${event.reason?.message || event.reason}`);
+    });
+    function showBootFailure(message) {
+      document.body.classList.remove("space-booting");
+      const loaderStatus = document.querySelector("#space-loader-status");
+      if (loaderStatus) loaderStatus.textContent = message;
+      const gate = document.querySelector("#launch-gate");
+      if (gate) {
+        gate.hidden = false;
+        const p = gate.querySelector("p");
+        if (p) p.textContent = message;
+      }
+    }
     /* Keep a failed module/CDN/API load from leaving the launch screen forever. */
     window.setTimeout(() => {
       if (!document.body.classList.contains("space-booting")) return;
-      const status = document.querySelector("#space-loader-status");
-      if (status) status.textContent = "Space could not connect. Check the local server and refresh.";
-      document.body.classList.remove("space-booting");
+      showBootFailure("Space could not connect. Check the local server and refresh.");
     }, 15000);
   </script>
   <script type="module" src="app.js?v=boot-fix-1"></script>
