@@ -448,7 +448,7 @@ function hydrateFromCache(){
       hasMore:true,
       fromCache:true};
   });
-  active=conversations.find(c=>c.id===(active?.id||cached.activeId))||conversations[0]||null;
+  active=conversations.find(c=>c.id===(active?.id||cached?.activeId))||conversations[0]||null;
   renderList();
   if(active){renderMessages();scrollMessagesToEnd()}
   return true;
