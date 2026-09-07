@@ -9,7 +9,20 @@ const firebaseApp=initializeApp({apiKey:"AIzaSyDhyDoFRrCXXEkoQ3i6wpqmNd8Po6p_KIw
 const auth=getAuth(firebaseApp); let currentUserId=null; let currentAppUser=null; let launchAuthorized=false;
 const $=s=>document.querySelector(s); const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const launchStorageKey="medha-communications-hub-token";
-const launchToken=new URLSearchParams(location.hash.slice(1)).get("token")||sessionStorage.getItem(launchStorageKey);
+/* Read at call time, never once at module load. The Hub reuses a named window
+   (medha_app_communications), so a second launch only changes the hash - the
+   page does NOT reload and a module-level constant would keep a stale/absent
+   token. readLaunchToken() also strips the hash immediately so the credential
+   never lingers in the address bar or in history. */
+function readLaunchToken(){
+  const fromHash=new URLSearchParams(location.hash.slice(1)).get("token");
+  if(fromHash){
+    try{sessionStorage.setItem(launchStorageKey,fromHash)}catch{}
+    history.replaceState(null,"",location.pathname+location.search);
+    return fromHash;
+  }
+  try{return sessionStorage.getItem(launchStorageKey)}catch{return null}
+}
 const launchGate=$("#launch-gate");
 const SUPABASE_URL="https://nnvyfeckimnjvmeneiro.supabase.co";
 const SUPABASE_ANON_KEY="sb_publishable_H-o5HRFu3lCq5E9Hf1s3uA_Hi_LaMnY";
@@ -3228,6 +3241,7 @@ async function initializeAuthorizedUser(user){
 }
 
 async function authorizeHubLaunch(){
+  const launchToken=readLaunchToken();
   if(!launchToken){
     if(location.hostname==="localhost"){
       try{
@@ -3253,13 +3267,11 @@ async function authorizeHubLaunch(){
       if(!r.ok)throw Error();
       customToken=(await r.json()).customToken;
     }
-    sessionStorage.setItem(launchStorageKey,launchToken);
     launchAuthorized=true;
     const signedIn=await signInWithCustomToken(auth,customToken);
     await initializeAuthorizedUser(signedIn.user);
     finishSpaceLoading("Your conversations are ready");
     launchGate.hidden=true;
-    history.replaceState(null,"",location.pathname+location.search);
   }catch{
     sessionStorage.removeItem(launchStorageKey);
     launchAuthorized=false;
@@ -3319,4 +3331,9 @@ document.addEventListener("click",async event=>{
 renderList();
 renderMessages();
 authorizeHubLaunch();
+/* A relaunch from the Hub into this already-open named window arrives as a bare
+   hash change with no reload, so re-run the handshake with the fresh token. */
+window.addEventListener("hashchange",()=>{
+  if(new URLSearchParams(location.hash.slice(1)).get("token"))authorizeHubLaunch();
+});
 loadSuggestions();
