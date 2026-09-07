@@ -9,13 +9,25 @@ const firebaseApp=initializeApp({apiKey:"AIzaSyDhyDoFRrCXXEkoQ3i6wpqmNd8Po6p_KIw
 const auth=getAuth(firebaseApp); let currentUserId=null; let currentAppUser=null; let launchAuthorized=false;
 const $=s=>document.querySelector(s); const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const launchStorageKey="medha-communications-hub-token";
-/* Only the Hub may hand this app a launch token. The Hub is served from
-   several Firebase hosting sites (medha-hub, oventra, oventra-hub) plus their
-   firebaseapp.com aliases, so allow that set rather than one hardcoded host -
-   a missed origin would silently drop the token and show the launch gate. */
-const HUB_ORIGINS=new Set(["medha-hub","oventra","oventra-hub"].flatMap(site=>
-  [`https://${site}.web.app`,`https://${site}.firebaseapp.com`]));
-const isHubOrigin=origin=>HUB_ORIGINS.has(origin)||/^http:\/\/localhost(:\d+)?$/.test(origin);
+/* Space signs into Firebase, and that session already persists across reloads
+   and tab closes. What used to gate the app was launchAuthorized: it reset to
+   false on every load and only a fresh #token= could flip it, so returning to
+   Space without a brand-new Hub launch showed the gate even though Firebase
+   was still signed in. Mirror medha-activities and remember the verified
+   launch for 24h in localStorage (sessionStorage dies with the tab, and the
+   raw Firebase ID token it held expired after ~1h anyway). */
+const launchSessionKey="medha-communications-hub-session";
+const LAUNCH_SESSION_DURATION_MS=24*60*60*1000;
+function rememberLaunch(){
+  try{localStorage.setItem(launchSessionKey,JSON.stringify({expiresAt:Date.now()+LAUNCH_SESSION_DURATION_MS}))}catch{}
+}
+function hasRememberedLaunch(){
+  try{
+    const cached=JSON.parse(localStorage.getItem(launchSessionKey)||"null");
+    return !!cached&&cached.expiresAt>Date.now();
+  }catch{return false}
+}
+function forgetLaunch(){try{localStorage.removeItem(launchSessionKey)}catch{}}
 /* Read at call time, never once at module load. The Hub reuses a named window
    (medha_app_communications), so a second launch only changes the hash - the
    page does NOT reload and a module-level constant would keep a stale/absent
@@ -3264,6 +3276,23 @@ async function authorizeHubLaunch(){
         finishSpaceLoading("Local Stream workspace ready");launchGate.hidden=true;return;
       }catch(error){finishSpaceLoading(error.message||"Stream connection unavailable")}
     }
+    /* No token this time. If a recent Hub launch was verified and Firebase is
+       still signed in, resume instead of demanding a new launch - this is the
+       path every other Medha app takes. */
+    if(hasRememberedLaunch()){
+      const resumed=auth.currentUser||await new Promise(resolve=>{
+        const stop=onAuthStateChanged(auth,u=>{stop();resolve(u)});
+      });
+      if(resumed){
+        try{
+          launchAuthorized=true;
+          await initializeAuthorizedUser(resumed);
+          finishSpaceLoading("Your conversations are ready");
+          launchGate.hidden=true;
+          return;
+        }catch{launchAuthorized=false}
+      }
+    }
     launchGate.hidden=false;finishSpaceLoading("Waiting for a secure Hub launch");return
   }
   try{
@@ -3275,12 +3304,14 @@ async function authorizeHubLaunch(){
       customToken=(await r.json()).customToken;
     }
     launchAuthorized=true;
+    rememberLaunch();
     const signedIn=await signInWithCustomToken(auth,customToken);
     await initializeAuthorizedUser(signedIn.user);
     finishSpaceLoading("Your conversations are ready");
     launchGate.hidden=true;
   }catch{
     sessionStorage.removeItem(launchStorageKey);
+    forgetLaunch();
     launchAuthorized=false;
     finishSpaceLoading("Return to Medha Hub to open Space");
     launchGate.hidden=false;
@@ -3342,17 +3373,5 @@ authorizeHubLaunch();
    hash change with no reload, so re-run the handshake with the fresh token. */
 window.addEventListener("hashchange",()=>{
   if(new URLSearchParams(location.hash.slice(1)).get("token"))authorizeHubLaunch();
-});
-/* The Hub opens this window synchronously on click (spending an await first
-   would let the popup blocker kill it) and posts the freshly minted token
-   after. It retries until we acknowledge, since we may still be loading. */
-window.addEventListener("message",event=>{
-  if(!isHubOrigin(event.origin))return;
-  if(event.data?.type!=="medha-hub-token"||!event.data.token)return;
-  event.source?.postMessage({type:"medha-space-token-ack"},event.origin);
-  const known=(()=>{try{return sessionStorage.getItem(launchStorageKey)}catch{return null}})();
-  if(launchAuthorized&&known===event.data.token)return;
-  try{sessionStorage.setItem(launchStorageKey,event.data.token)}catch{}
-  authorizeHubLaunch();
 });
 loadSuggestions();
