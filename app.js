@@ -3335,11 +3335,24 @@ async function authorizeHubLaunch(){
     await initializeAuthorizedUser(signedIn.user);
     finishSpaceLoading("Your conversations are ready");
     launchGate.hidden=true;
-  }catch{
+  }catch(error){
     sessionStorage.removeItem(launchStorageKey);
     forgetLaunch();
     launchAuthorized=false;
-    finishSpaceLoading("Return to Medha Hub to open Space");
+    /* Firebase's own sign-in call goes straight to
+       identitytoolkit.googleapis.com/securetoken.googleapis.com - not our
+       API, not configurable via authDomain - and Brave Shields (and some
+       ad-block lists) can block that host outright. That failure looks
+       identical to "no token was ever sent" unless it is named here: without
+       this, a user with Shields on saw the exact same generic gate text as a
+       user who never launched from the Hub at all. */
+    const blocked=/network|blocked|failed to fetch/i.test(String(error?.message||error?.code||""));
+    const message=blocked
+      ?"Space could not reach Google's sign-in service. If you use Brave, turn Shields off for this site (or allow identitytoolkit.googleapis.com) and reopen Space from the Hub."
+      :"Return to Medha Hub to open Space.";
+    finishSpaceLoading(message);
+    const p=launchGate.querySelector("p");
+    if(p)p.textContent=message;
     launchGate.hidden=false;
     try{await signOut(auth)}catch{}
   }
