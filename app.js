@@ -3286,6 +3286,7 @@ async function authorizeHubLaunch(){
       if(resumed){
         try{
           launchAuthorized=true;
+          launchGate.hidden=true;
           await initializeAuthorizedUser(resumed);
           finishSpaceLoading("Your conversations are ready");
           launchGate.hidden=true;
@@ -3306,6 +3307,12 @@ async function authorizeHubLaunch(){
     launchAuthorized=true;
     rememberLaunch();
     const signedIn=await signInWithCustomToken(auth,customToken);
+    /* The gate means "this launch is not authorized", nothing more. The launch
+       IS authorized by here, so drop it now: initializeAuthorizedUser can bail
+       early when Stream is unreachable, and leaving the gate up made a working,
+       signed-in Space look like it had refused the launch. Downstream failures
+       report through the loader status instead. */
+    launchGate.hidden=true;
     await initializeAuthorizedUser(signedIn.user);
     finishSpaceLoading("Your conversations are ready");
     launchGate.hidden=true;
