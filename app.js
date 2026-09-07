@@ -9,6 +9,13 @@ const firebaseApp=initializeApp({apiKey:"AIzaSyDhyDoFRrCXXEkoQ3i6wpqmNd8Po6p_KIw
 const auth=getAuth(firebaseApp); let currentUserId=null; let currentAppUser=null; let launchAuthorized=false;
 const $=s=>document.querySelector(s); const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const launchStorageKey="medha-communications-hub-token";
+/* Only the Hub may hand this app a launch token. The Hub is served from
+   several Firebase hosting sites (medha-hub, oventra, oventra-hub) plus their
+   firebaseapp.com aliases, so allow that set rather than one hardcoded host -
+   a missed origin would silently drop the token and show the launch gate. */
+const HUB_ORIGINS=new Set(["medha-hub","oventra","oventra-hub"].flatMap(site=>
+  [`https://${site}.web.app`,`https://${site}.firebaseapp.com`]));
+const isHubOrigin=origin=>HUB_ORIGINS.has(origin)||/^http:\/\/localhost(:\d+)?$/.test(origin);
 /* Read at call time, never once at module load. The Hub reuses a named window
    (medha_app_communications), so a second launch only changes the hash - the
    page does NOT reload and a module-level constant would keep a stale/absent
@@ -3335,5 +3342,17 @@ authorizeHubLaunch();
    hash change with no reload, so re-run the handshake with the fresh token. */
 window.addEventListener("hashchange",()=>{
   if(new URLSearchParams(location.hash.slice(1)).get("token"))authorizeHubLaunch();
+});
+/* The Hub opens this window synchronously on click (spending an await first
+   would let the popup blocker kill it) and posts the freshly minted token
+   after. It retries until we acknowledge, since we may still be loading. */
+window.addEventListener("message",event=>{
+  if(!isHubOrigin(event.origin))return;
+  if(event.data?.type!=="medha-hub-token"||!event.data.token)return;
+  event.source?.postMessage({type:"medha-space-token-ack"},event.origin);
+  const known=(()=>{try{return sessionStorage.getItem(launchStorageKey)}catch{return null}})();
+  if(launchAuthorized&&known===event.data.token)return;
+  try{sessionStorage.setItem(launchStorageKey,event.data.token)}catch{}
+  authorizeHubLaunch();
 });
 loadSuggestions();
