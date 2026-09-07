@@ -34,11 +34,23 @@ function forgetLaunch(){try{localStorage.removeItem(launchSessionKey)}catch{}}
    token. readLaunchToken() also strips the hash immediately so the credential
    never lingers in the address bar or in history. */
 function readLaunchToken(){
+  /* Accept the token from the query string as well as the fragment. A
+     fragment does not survive every navigation - opening a blank window and
+     then assigning location.href across origins can drop it - and losing it
+     locked the user out behind the launch gate. The query string always
+     survives, and the credential is scrubbed from the URL either way below. */
   const fromHash=new URLSearchParams(location.hash.slice(1)).get("token");
-  if(fromHash){
-    try{sessionStorage.setItem(launchStorageKey,fromHash)}catch{}
-    history.replaceState(null,"",location.pathname+location.search);
-    return fromHash;
+  const fromQuery=new URLSearchParams(location.search).get("token");
+  const found=fromHash||fromQuery;
+  if(found){
+    try{sessionStorage.setItem(launchStorageKey,found)}catch{}
+    /* Drop the token from both places so it never lingers in the address bar
+       or in history, but keep any other query params (hubLaunch). */
+    const keep=new URLSearchParams(location.search);
+    keep.delete("token");
+    const q=keep.toString();
+    history.replaceState(null,"",location.pathname+(q?`?${q}`:""));
+    return found;
   }
   try{return sessionStorage.getItem(launchStorageKey)}catch{return null}
 }
@@ -3294,6 +3306,13 @@ async function authorizeHubLaunch(){
         }catch{launchAuthorized=false}
       }
     }
+    /* Say WHY the launch was refused instead of the generic gate text - a
+       silent gate is indistinguishable from a token that never arrived. */
+    const why=location.hash?"the Hub launch link carried no token"
+      :hasRememberedLaunch()?"the saved Medha Hub session could not be restored"
+      :"this tab was opened without a Medha Hub launch";
+    const detail=launchGate.querySelector("p");
+    if(detail)detail.textContent=`Open Space from the Medha Hub tile - ${why}.`;
     launchGate.hidden=false;finishSpaceLoading("Waiting for a secure Hub launch");return
   }
   try{
