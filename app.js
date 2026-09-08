@@ -1728,6 +1728,33 @@ document.addEventListener("click",e=>{
 ["#attach-file","#emoji-button","#gif-button"].forEach(sel=>
   $(sel)?.addEventListener("click",()=>closeComposerTools()));
 
+/* ---------- theme (light / dark) ----------
+   The head script has already applied the stored choice before first paint;
+   this only handles switching and keeping the two controls (header icon and
+   the Settings pair) in agreement. Following the OS is the default until the
+   user picks a side, after which their choice sticks. */
+const THEME_KEY="medhaSpaceTheme";
+function storedTheme(){try{const v=localStorage.getItem(THEME_KEY);return v==="light"||v==="dark"?v:null}catch{return null}}
+function currentTheme(){return document.documentElement.getAttribute("data-theme")==="dark"?"dark":"light"}
+function applyTheme(theme,persist){
+  const next=theme==="dark"?"dark":"light";
+  document.documentElement.setAttribute("data-theme",next);
+  if(persist){try{localStorage.setItem(THEME_KEY,next)}catch{}}
+  document.querySelectorAll("[data-theme-choice]").forEach(button=>
+    button.setAttribute("aria-pressed",String(button.dataset.themeChoice===next)));
+  $("#theme-toggle")?.setAttribute("title",next==="dark"?"Switch to light theme":"Switch to dark theme");
+}
+applyTheme(currentTheme(),false);
+$("#theme-toggle")?.addEventListener("click",()=>applyTheme(currentTheme()==="dark"?"light":"dark",true));
+document.addEventListener("click",e=>{
+  const choice=e.target.closest("[data-theme-choice]");
+  if(choice)applyTheme(choice.dataset.themeChoice,true);
+});
+/* Only track the OS while the user has not chosen for themselves. */
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",e=>{
+  if(!storedTheme())applyTheme(e.matches?"dark":"light",false);
+});
+
 /* ---------- AI reply draft ----------
    Answers everything that has come in since the viewer last sent something:
    if four messages arrived back to back, the draft addresses all four, not
@@ -2018,10 +2045,12 @@ $("#conversation-search-results")?.addEventListener("click",e=>{
   const message=$(".message[data-message-id=\""+CSS.escape(result.dataset.searchMessageId)+"\"]");
   if(message){message.scrollIntoView({behavior:"smooth",block:"center"});message.classList.add("search-hit");setTimeout(()=>message.classList.remove("search-hit"),1800)}
 });
-/* Clicking anywhere in the conversation header opens details. The mobile
-   navigation controls are the only exceptions. */
+/* Clicking the header opens details - but not when the click landed on one
+   of its own buttons. The action cluster (theme, audio, video) and the
+   mobile navigation controls each do their own job; without this, tapping
+   any of them also slid the details panel over the whole phone screen. */
 $(".conversation-header").addEventListener("click",e=>{
-  if(e.target.closest(".chat-menu-btn,.chat-back"))return;
+  if(e.target.closest(".chat-menu-btn,.chat-back,.header-actions"))return;
   openDetails();
 });
 $("#conversation-name").setAttribute("role","button");
