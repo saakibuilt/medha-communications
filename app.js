@@ -237,16 +237,26 @@ function messageStatusFor(chat,message){
   const allRead=others.every(id=>new Date(reads[id]?.last_read||0).getTime()>=sentAt);
   return allRead?STATUS_READ:STATUS_DELIVERED;
 }
-const STATUS_LABEL={[STATUS_SENT]:"Sending",[STATUS_DELIVERED]:"Delivered",[STATUS_READ]:"Read"};
+const STATUS_LABEL={[STATUS_SENT]:"Sent",[STATUS_DELIVERED]:"Delivered",[STATUS_READ]:"Seen"};
 function statusTickHtml(status){
   if(!status)return "";
-  /* One check for sent, two for delivered and read; read is distinguished by
-     colour, so the meaning survives for anyone who cannot see the tint. */
+  /* One check while it is in flight, two once the server has it, and an eye
+     once it has actually been opened - a tick that only changes colour is
+     easy to miss, and unreadable to anyone who cannot see the tint. The word
+     is spelled out beside it either way.
+     Rendered under the bubble, on the newest sent message only, the way a
+     chat app reports the state of the conversation rather than annotating
+     every line of it. */
   const single='<path d="M2.5 8.6 5.6 11.8 12.2 4.4"/>';
   const double=single+'<path class="tick-second" d="M8.2 11.6 9.4 12.9 16 5.5"/>';
-  return `<span class="msg-status msg-status--${status}" title="${STATUS_LABEL[status]}" aria-label="${STATUS_LABEL[status]}" role="img">`
-    +`<svg viewBox="0 0 18 16" aria-hidden="true">${status===STATUS_SENT?single:double}</svg></span>`;
+  const eye='<path class="eye-lid" d="M1.6 8S4.3 3.2 9 3.2 16.4 8 16.4 8 13.7 12.8 9 12.8 1.6 8 1.6 8Z"/>'
+    +'<circle class="eye-pupil" cx="9" cy="8" r="2.15"/>';
+  const glyph=status===STATUS_SENT?single:status===STATUS_DELIVERED?double:eye;
+  return `<div class="msg-status msg-status--${status}" role="status">`
+    +`<svg viewBox="0 0 18 16" aria-hidden="true">${glyph}</svg>`
+    +`<span>${STATUS_LABEL[status]}</span></div>`;
 }
+
 function applyIncomingStreamMessage(event){
   const message=event?.message;
   if(!message||String(message.user?.id)===String(viewerId()))return;
@@ -646,6 +656,9 @@ function pollHtml(poll,messageId){
 }
 
 const settledMessageIds=new Set();
+/* The id of the viewer's newest sent message in the list being painted. Only
+   that one shows a status, so the thread is not littered with ticks. */
+let statusMessageId=null;
 function messageHtml(m){
   const mine=m.who==="me";
   /* renderMessages() rewrites the whole list, and it runs on reactions, read
@@ -680,7 +693,7 @@ function messageHtml(m){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4.2-1L3 20l1.2-4.6A8.4 8.4 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>
       ${replyCount} ${replyCount===1?"reply":"replies"}
     </button>`:"";
-  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time>${mine?statusTickHtml(messageStatusFor(active,m)):""}</div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted?`<div class="bubble">${esc(displayText(m))}</div>`:""}${attachmentsHtml(links)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}</div></div>`;
+  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted?`<div class="bubble">${esc(displayText(m))}</div>`:""}${attachmentsHtml(links)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}${mine&&String(m.id)===String(statusMessageId)?statusTickHtml(messageStatusFor(active,m)):""}</div></div>`;
 }
 
 /* ---------- thread view (replies only) ----------
@@ -953,6 +966,9 @@ function renderMessages(){
   if(!active.messagesLoaded){area.innerHTML='<div class="directory-loading">Loading the latest messages…</div>';return}
   const msgs=active.messages||[];
   if(!msgs.length){area.innerHTML='<div class="empty-state"><strong>No messages yet</strong><p>Send the first message to start this conversation.</p></div>';return}
+  /* Only the newest message the viewer sent reports a status. Computed here,
+     once per repaint, rather than re-scanning the list for every bubble. */
+  statusMessageId=msgs.filter(m=>m.who==="me").at(-1)?.id??null;
   let html=active.hasMore?'<div class="load-more-hint">Scroll up to load earlier messages</div>':"";
   let lastDay="";
   msgs.forEach(m=>{

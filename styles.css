@@ -2031,12 +2031,19 @@ body,.rail,.chat-sidebar,.main-area,.details-panel,.calendar-sidebar,
    DELIVERY STATUS TICKS (own messages)
    sent = one check, delivered = two, read = two in the accent colour.
    ============================================================ */
-.msg-status{display:inline-flex;align-items:center;flex:0 0 auto;margin-left:2px;line-height:0}
-.msg-status svg{width:16px;height:14px;fill:none;stroke:currentColor;stroke-width:2.1;
-  stroke-linecap:round;stroke-linejoin:round;display:block;overflow:visible}
+/* Sits under the newest sent bubble, aligned to the same edge. */
+.msg-status{display:flex;align-items:center;justify-content:flex-end;gap:4px;
+  margin:5px 2px 0;font-size:10px;font-weight:700;letter-spacing:.02em;
+  animation:statusIn .24s ease both}
+.msg-status svg{width:14px;height:12px;fill:none;stroke:currentColor;stroke-width:2.2;
+  stroke-linecap:round;stroke-linejoin:round;display:block;overflow:visible;flex:0 0 auto}
+@keyframes statusIn{from{opacity:0;transform:translateY(-2px)}to{opacity:1;transform:none}}
 .msg-status--sent{color:#a2acb9}
 .msg-status--delivered{color:#8d99a8}
 .msg-status--read{color:#2563eb}
+/* The eye is drawn, not filled, so it reads at 14px; the pupil is solid. */
+.msg-status--read .eye-pupil{fill:currentColor;stroke:none}
+.msg-status--read svg{width:15px;height:13px}
 :root[data-theme="dark"] .msg-status--sent{color:#6f7a89}
 :root[data-theme="dark"] .msg-status--delivered{color:#8d99a8}
 :root[data-theme="dark"] .msg-status--read{color:#60a5fa}
@@ -2045,10 +2052,15 @@ body,.rail,.chat-sidebar,.main-area,.details-panel,.calendar-sidebar,
 @keyframes tickPending{50%{opacity:.35}}
 .is-pending .bubble{opacity:.72}
 /* The second check draws itself in when delivery is confirmed. */
-.msg-status--delivered .tick-second,
-.msg-status--read .tick-second{stroke-dasharray:14;animation:tickDraw .32s cubic-bezier(.2,.8,.3,1) both}
+.msg-status--delivered .tick-second{stroke-dasharray:14;animation:tickDraw .32s cubic-bezier(.2,.8,.3,1) both}
 @keyframes tickDraw{from{stroke-dashoffset:14}to{stroke-dashoffset:0}}
-.is-settled .msg-status .tick-second{animation:none}
+/* And the eye opens once, when the message is actually seen. */
+.msg-status--read .eye-lid{animation:eyeOpen .34s cubic-bezier(.2,.8,.3,1) both}
+.msg-status--read .eye-pupil{animation:pupilIn .34s cubic-bezier(.2,.8,.3,1) .06s both}
+@keyframes eyeOpen{from{transform:scaleY(.1);opacity:.4}to{transform:scaleY(1);opacity:1}}
+@keyframes pupilIn{from{transform:scale(0)}to{transform:scale(1)}}
+.msg-status--read .eye-lid,.msg-status--read .eye-pupil{transform-box:fill-box;transform-origin:center}
 @media(prefers-reduced-motion:reduce){
-  .is-pending .msg-status--sent,.msg-status .tick-second{animation:none}
+  .is-pending .msg-status--sent,.msg-status .tick-second,.msg-status,
+  .msg-status--read .eye-lid,.msg-status--read .eye-pupil{animation:none}
 }
