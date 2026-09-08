@@ -1375,7 +1375,25 @@ body.keyboard-open .thread-composer{padding-bottom:10px}
    it is a primary action, not one of the tools that fold behind the dots. */
 .ai-reply-btn{margin-left:auto;position:relative;color:var(--brand)}
 .ai-reply-btn:hover{background:var(--brand-soft);color:var(--brand)}
-.ai-reply-btn svg{fill:currentColor;fill-opacity:.14;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round}
+/* Full-colour gradient sparkle, always live: the three stars twinkle on
+   staggered cycles so the button reads as active without being noisy. */
+.ai-reply-btn svg{width:21px;height:21px;overflow:visible}
+.ai-spark path{fill:url(#aiSparkGrad);stroke:url(#aiSparkGrad);stroke-width:1.1;stroke-linejoin:round;stroke-linecap:round;transform-box:fill-box;transform-origin:center}
+.ai-spark-lg{animation:aiSparkLg 2.8s ease-in-out infinite}
+.ai-spark-sm{animation:aiSparkTwinkle 2.8s ease-in-out infinite .55s}
+.ai-spark-xs{animation:aiSparkTwinkle 2.8s ease-in-out infinite 1.3s}
+@keyframes aiSparkLg{
+  0%,100%{transform:scale(1) rotate(0deg);opacity:.9}
+  45%{transform:scale(1.14) rotate(18deg);opacity:1}
+}
+@keyframes aiSparkTwinkle{
+  0%,100%{transform:scale(.7);opacity:.35}
+  40%{transform:scale(1.15);opacity:1}
+  70%{transform:scale(.85);opacity:.6}
+}
+.ai-reply-btn:hover .ai-spark-lg,
+.ai-reply-btn:hover .ai-spark-sm,
+.ai-reply-btn:hover .ai-spark-xs{animation-duration:1.4s}
 .ai-reply-btn[disabled]{cursor:default;opacity:.55}
 /* Busy: the sparkle fades out and a ring spins in its place, so the button
    never changes size mid-request. */
@@ -1384,5 +1402,8 @@ body.keyboard-open .thread-composer{padding-bottom:10px}
 .ai-reply-btn.is-busy svg{opacity:0}
 .ai-reply-btn.is-busy .ai-reply-spinner{display:block}
 @keyframes aiSpin{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){.ai-reply-spinner{animation-duration:2s}}
+@media(prefers-reduced-motion:reduce){
+  .ai-reply-spinner{animation-duration:2s}
+  .ai-spark path{animation:none;opacity:1;transform:none}
+}
 @media(max-width:1024px){.ai-reply-btn{display:inline-grid}}
