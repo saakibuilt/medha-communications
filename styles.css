@@ -1930,6 +1930,9 @@ body,.rail,.chat-sidebar,.main-area,.details-panel,.calendar-sidebar,
 /* Messages arrive rather than appear, from the side they belong to. */
 .message{animation:msgIn .34s cubic-bezier(.2,.8,.3,1) both}
 .message.mine{animation-name:msgInMine}
+/* Already on screen: the list repaints on reactions and read receipts, and
+   replaying the entry animation each time would make the thread twitch. */
+.message.is-settled{animation:none}
 @keyframes msgIn{from{opacity:0;transform:translateY(8px) translateX(-6px)}to{opacity:1;transform:none}}
 @keyframes msgInMine{from{opacity:0;transform:translateY(8px) translateX(6px)}to{opacity:1;transform:none}}
 .bubble{transition:transform .18s ease,box-shadow .18s ease}
@@ -2023,3 +2026,29 @@ body,.rail,.chat-sidebar,.main-area,.details-panel,.calendar-sidebar,
 .ai-reply-btn{order:99}
 #poll-button{order:50;font-size:17px;line-height:1}
 :root[data-theme="dark"] #poll-button{color:#8b95a5}
+
+/* ============================================================
+   DELIVERY STATUS TICKS (own messages)
+   sent = one check, delivered = two, read = two in the accent colour.
+   ============================================================ */
+.msg-status{display:inline-flex;align-items:center;flex:0 0 auto;margin-left:2px;line-height:0}
+.msg-status svg{width:16px;height:14px;fill:none;stroke:currentColor;stroke-width:2.1;
+  stroke-linecap:round;stroke-linejoin:round;display:block;overflow:visible}
+.msg-status--sent{color:#a2acb9}
+.msg-status--delivered{color:#8d99a8}
+.msg-status--read{color:#2563eb}
+:root[data-theme="dark"] .msg-status--sent{color:#6f7a89}
+:root[data-theme="dark"] .msg-status--delivered{color:#8d99a8}
+:root[data-theme="dark"] .msg-status--read{color:#60a5fa}
+/* In flight: the single tick breathes so "sending" is visibly not finished. */
+.is-pending .msg-status--sent{animation:tickPending 1.1s ease-in-out infinite}
+@keyframes tickPending{50%{opacity:.35}}
+.is-pending .bubble{opacity:.72}
+/* The second check draws itself in when delivery is confirmed. */
+.msg-status--delivered .tick-second,
+.msg-status--read .tick-second{stroke-dasharray:14;animation:tickDraw .32s cubic-bezier(.2,.8,.3,1) both}
+@keyframes tickDraw{from{stroke-dashoffset:14}to{stroke-dashoffset:0}}
+.is-settled .msg-status .tick-second{animation:none}
+@media(prefers-reduced-motion:reduce){
+  .is-pending .msg-status--sent,.msg-status .tick-second{animation:none}
+}

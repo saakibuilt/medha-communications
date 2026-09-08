@@ -92,6 +92,29 @@ function preferencesKey(){return "medha-communications-preferences-"+(currentUse
 function readPreferences(){try{return {...JSON.parse(localStorage.getItem(preferencesKey())||"{}")}}catch{return {}}}
 function soundEnabled(){return readPreferences().sound!==false}
 function presenceEnabled(){return readPreferences().presence!==false}
+/* "Mark Read" is on by default. Turning it off is symmetric, the way every
+   chat app treats read receipts: this client stops telling the server the
+   viewer has read anything, AND stops showing read state on the viewer's own
+   messages - they stop at delivered. Nothing about opening a message is
+   tracked or looked up while it is off. */
+function readReceiptsEnabled(){return readPreferences().readReceipts!==false}
+/* With receipts off the server is never told what has been read, so the
+   unread badge needs a private cursor. It lives only in this browser and is
+   never sent anywhere. */
+function seenCursorKey(){return "medha-communications-seen-"+(currentUserId||"guest")}
+function readSeenCursors(){try{return JSON.parse(localStorage.getItem(seenCursorKey())||"{}")}catch{return {}}}
+function markSeenLocally(cid){
+  if(!cid)return;
+  const next={...readSeenCursors(),[String(cid)]:new Date().toISOString()};
+  try{localStorage.setItem(seenCursorKey(),JSON.stringify(next))}catch{}
+}
+function unreadFromLocalCursor(channel){
+  const seen=readSeenCursors()[String(channel?.cid||"")];
+  const last=channel?.state?.messages?.at(-1);
+  if(!last||String(last.user?.id)===String(viewerId()))return 0;
+  if(!seen)return channel.countUnread?.()||0;
+  return new Date(last.created_at||0)>new Date(seen)?1:0;
+}
 function savePreference(name,value){
   const next={...readPreferences(),[name]:!!value};
   try{localStorage.setItem(preferencesKey(),JSON.stringify(next))}catch{}
@@ -180,6 +203,50 @@ function reactionEmojiFor(type){
   try{return value.slice(6).split("_").map(code=>String.fromCodePoint(parseInt(code,16))).join("")}catch{return value}
 }
 function streamChannelFor(chat){return streamChannels.get(String(chat.cid||chat.id))||null}
+
+/* ---------- delivery status (own messages only) ----------
+   Three states the app can actually establish:
+     sent      - handed to the server, still in flight (single tick)
+     delivered - the server accepted and stored it, so it has gone out to
+                 every member's device (double tick)
+     read      - every other member's read cursor has passed it (blue double)
+   Stream Chat has no per-device delivery receipt, so server acceptance is
+   the delivery signal; that is the moment the recipient's watching client
+   is pushed the message.
+   With Mark Read off nothing here consults read state at all - the status
+   is capped at delivered and channel.state.read is never inspected. */
+const STATUS_SENT="sent",STATUS_DELIVERED="delivered",STATUS_READ="read";
+function messageStatusFor(chat,message){
+  if(!message||!isMine(message.senderId))return null;
+  if(message.pending)return STATUS_SENT;
+  if(!readReceiptsEnabled())return STATUS_DELIVERED;
+  const target=chat||active;
+  const channel=streamChannelFor(target);
+  const reads=channel?.state?.read||{};
+  const me=String(viewerId());
+  /* Count the members, not the read entries: a member who has never opened
+     the chat has no entry at all, and treating "no entry" as read would show
+     a group message as read the moment one person saw it. */
+  const others=(target?.participantIds?.length
+    ?target.participantIds
+    :Object.keys(channel?.state?.members||{})).map(String).filter(id=>id!==me);
+  if(!others.length)return STATUS_DELIVERED;
+  const sentAt=new Date(message.createdAt||0).getTime();
+  /* In a group it is only "read" once everyone else has got there; one
+     member opening the chat does not speak for the rest. */
+  const allRead=others.every(id=>new Date(reads[id]?.last_read||0).getTime()>=sentAt);
+  return allRead?STATUS_READ:STATUS_DELIVERED;
+}
+const STATUS_LABEL={[STATUS_SENT]:"Sending",[STATUS_DELIVERED]:"Delivered",[STATUS_READ]:"Read"};
+function statusTickHtml(status){
+  if(!status)return "";
+  /* One check for sent, two for delivered and read; read is distinguished by
+     colour, so the meaning survives for anyone who cannot see the tint. */
+  const single='<path d="M2.5 8.6 5.6 11.8 12.2 4.4"/>';
+  const double=single+'<path class="tick-second" d="M8.2 11.6 9.4 12.9 16 5.5"/>';
+  return `<span class="msg-status msg-status--${status}" title="${STATUS_LABEL[status]}" aria-label="${STATUS_LABEL[status]}" role="img">`
+    +`<svg viewBox="0 0 18 16" aria-hidden="true">${status===STATUS_SENT?single:double}</svg></span>`;
+}
 function applyIncomingStreamMessage(event){
   const message=event?.message;
   if(!message||String(message.user?.id)===String(viewerId()))return;
@@ -204,7 +271,8 @@ function applyIncomingStreamMessage(event){
     chat.messagesLoaded=true;
     renderMessages();
     scrollMessagesToEnd();
-    streamChannelFor(chat)?.markRead().catch(()=>{});
+    if(readReceiptsEnabled())streamChannelFor(chat)?.markRead().catch(()=>{});
+    else markSeenLocally(chat.cid);
   }else{
     /* Store the body, not just the badge. The message is already in hand from
        the websocket, so keeping it costs nothing - and without it a chat that
@@ -273,6 +341,14 @@ async function watchStreamChannel(chat){
           if(soundEnabled())playIncomingPing();
         }
       }));
+      /* Someone else's read cursor moving is what turns a delivered tick
+         into a read tick. Skipped entirely while Mark Read is off, so no
+         read state is even observed. */
+      channel.on("message.read",event=>{
+        if(!readReceiptsEnabled())return;
+        if(String(event.user?.id)===String(viewerId()))return;
+        if(active?.cid===channel.cid)renderMessages();
+      });
       channel.on("message.updated",event=>{
         const found=findMessageEverywhere(event.message?.id);
         if(!found)return;
@@ -569,8 +645,14 @@ function pollHtml(poll,messageId){
   </div>`;
 }
 
+const settledMessageIds=new Set();
 function messageHtml(m){
   const mine=m.who==="me";
+  /* renderMessages() rewrites the whole list, and it runs on reactions, read
+     receipts and edits too. Without this every bubble would replay its entry
+     animation each time one of those arrived. */
+  const settled=settledMessageIds.has(String(m.id));
+  settledMessageIds.add(String(m.id));
   const links=(m.attachments||[]).length?m.attachments:((m.text||"").match(/https?:\/\/[^\s]+/g)||[]).filter(u=>/\.gif(?:$|\?)/i.test(u)||/giphy\.com|tenor\.com/i.test(u)).map(url=>({kind:"gif",url,name:"GIF"}));
   const reply=m.parentId?active?.messages?.find(item=>String(item.id)===String(m.parentId)):null;
   /* The quoted message is rendered as its own block above the reply text
@@ -598,7 +680,7 @@ function messageHtml(m){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4.2-1L3 20l1.2-4.6A8.4 8.4 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>
       ${replyCount} ${replyCount===1?"reply":"replies"}
     </button>`:"";
-  return `<div class="message ${mine?"mine":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted?`<div class="bubble">${esc(displayText(m))}</div>`:""}${attachmentsHtml(links)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}</div></div>`;
+  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time>${mine?statusTickHtml(messageStatusFor(active,m)):""}</div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted?`<div class="bubble">${esc(displayText(m))}</div>`:""}${attachmentsHtml(links)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}</div></div>`;
 }
 
 /* ---------- thread view (replies only) ----------
@@ -1124,7 +1206,7 @@ async function hydrateConversations(){
         const participantIds=Object.keys(channel.state?.members||channel.data?.members||{});
         const kind=participantIds.length>2?"group":"direct";
         return {cid:channel.cid,id:channel.id,name,participantId:other,participantIds,createdById:channel.data?.created_by?.id||channel.data?.created_by_id||channel.created_by?.id||"",createdByName:channel.data?.created_by?.name||channel.created_by?.name||"",kind,initials:initialsFor(name),color:kind==="group"?"purple":"blue",team:kind==="group"?"Group chat":"",
-          preview:last?.text||"",updatedAt:channel.data?.last_message_at||channel.data?.updated_at||new Date().toISOString(),time:"",unread:channel.countUnread?.()||0,
+          preview:last?.text||"",updatedAt:channel.data?.last_message_at||channel.data?.updated_at||new Date().toISOString(),time:"",unread:readReceiptsEnabled()?(channel.countUnread?.()||0):unreadFromLocalCursor(channel),
           /* Stream tracks mentions against the read state it already holds
              from queryChannels, so this is a local read, not a request. */
           mentions:channel.countUnreadMentions?.()||0,
@@ -1201,11 +1283,17 @@ async function switchChat(id){
 }
 
 /* ---------- starting a chat ---------- */
-/* Records that this person has read the thread, for every device. */
+/* Records that this person has read the thread, for every device - unless
+   Mark Read is off, in which case the read is kept private to this browser
+   and the server is never told. */
 async function markConversationRead(chat){
   if(!viewerId()||!chat?.cid)return;
   const channel=streamChannelFor(chat);
-  if(channel){chat.unread=0;await channel.markRead();writeCache()}
+  if(!channel)return;
+  chat.unread=0;
+  if(readReceiptsEnabled())await channel.markRead();
+  else markSeenLocally(chat.cid);
+  writeCache();
 }
 
 async function openDirectChat(person,openingText){
@@ -1690,18 +1778,35 @@ $("#composer").addEventListener("submit",async e=>{
   if(!text&&!attachments.length)return;
   sending=true;
   const sendButton=$(".send-button");sendButton.disabled=true;
+  /* Painted before the request so the bubble appears instantly and carries a
+     real "sent" tick while it is in flight; the server's copy replaces it on
+     acknowledgement, which is what turns the tick into "delivered". */
+  const chat=active;
+  const pending={id:"pending-"+crypto.randomUUID(),senderId:viewerId(),who:"me",pending:true,
+    senderName:currentAppUser?.full_name||currentAppUser?.name||"You",text,
+    parentId:replyTarget?.id||null,attachments:attachments.map(a=>({...a})),reactions:{},
+    createdAt:new Date().toISOString(),time:new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
+  chat.messages=[...(chat.messages||[]),pending];chat.messagesLoaded=true;
+  const clearPending=()=>{chat.messages=(chat.messages||[]).filter(m=>m.id!==pending.id)};
+  messageInput.value="";setReplyTarget(null);pendingAttachments=[];renderPending();autosizeComposer();
+  if(active===chat){renderMessages();scrollMessagesToEnd()}
   try{
     /* show_in_channel keeps a reply in the main message list. Without it
        Stream files a parent_id message inside its thread only, so the reply
        disappeared from the conversation after a refresh - channel.query()
        returns main-channel messages, not thread replies. */
-    const saved=await persistMessage(active,text,attachments,
-      replyTarget?{parent_id:replyTarget.id,show_in_channel:true}:{});
-    messageInput.value="";setReplyTarget(null);pendingAttachments=[];renderPending();autosizeComposer();
-    stopTypingNow(active);
-    if(saved&&!active.messages.some(m=>m.id===saved.id)){active.messages.push(saved);active.messagesLoaded=true}
-    renderList();renderMessages();scrollMessagesToEnd();
-  }catch(error){toast(error.message)}
+    const saved=await persistMessage(chat,text,attachments,
+      pending.parentId?{parent_id:pending.parentId,show_in_channel:true}:{});
+    stopTypingNow(chat);
+    clearPending();
+    if(saved&&!chat.messages.some(m=>m.id===saved.id))chat.messages.push(saved);
+    renderList();if(active===chat){renderMessages();scrollMessagesToEnd()}
+  }catch(error){
+    clearPending();
+    if(active===chat)renderMessages();
+    messageInput.value=text;autosizeComposer();
+    toast(error.message);
+  }
   finally{sending=false;sendButton.disabled=false;messageInput.focus()}
 });
 
@@ -3006,10 +3111,24 @@ function renderSettings(){
   if($("#settings-email"))$("#settings-email").textContent=email||"No email available";
   if($("#setting-sound"))$("#setting-sound").checked=soundEnabled();
   if($("#setting-presence"))$("#setting-presence").checked=presenceEnabled();
+  if($("#setting-read-receipts"))$("#setting-read-receipts").checked=readReceiptsEnabled();
 }
 $("#setting-sound")?.addEventListener("change",event=>{
   savePreference("sound",event.target.checked);
   if($("#settings-note"))$("#settings-note").textContent=event.target.checked?"Notification sounds enabled":"Notification sounds disabled";
+});
+$("#setting-read-receipts")?.addEventListener("change",event=>{
+  const enabled=event.target.checked;
+  savePreference("readReceipts",enabled);
+  /* Turning it back on tells the server about the chat that is open now;
+     turning it off stops at delivered and leaves every cursor where it is,
+     so nothing already private is retroactively disclosed. */
+  if(enabled&&active)markConversationRead(active).catch(()=>{});
+  else if(active)markSeenLocally(active.cid);
+  renderMessages();
+  if($("#settings-note"))$("#settings-note").textContent=enabled
+    ?"Read receipts on - you will see when your messages are read"
+    :"Read receipts off - messages stop at delivered and reads are not tracked";
 });
 $("#setting-presence")?.addEventListener("change",async event=>{
   const enabled=event.target.checked;
@@ -3198,6 +3317,9 @@ window.__space={get presenceFor(){return presenceFor},get writeCache(){return wr
   get messageHtml(){return messageHtml},get findMessageEverywhere(){return findMessageEverywhere},
   get directory(){return directory},set directory(v){directory=v},
   get streamChannels(){return streamChannels},
+  get markConversationRead(){return markConversationRead},
+  get messageStatusFor(){return messageStatusFor},
+  get readReceiptsEnabled(){return readReceiptsEnabled},
   get watchStreamChannel(){return watchStreamChannel},
   get showBanner(){return showBanner},get dismissBanner(){return dismissBanner},
   get renderPending(){return renderPending},get openAttachmentPreview(){return openAttachmentPreview},
