@@ -163,6 +163,80 @@ async function initializeStream(user){
    baked into Stream. Suppress it at render time so history looks right too:
    the picture already IS the message, so the word is noise above it. Any
    real caption the sender typed is left alone. */
+/* ---------- shared links ----------
+   A pasted Drive/Docs/Dropbox link is a shared file, not a sentence. It is
+   lifted out of the message text and rendered as a card with preview and
+   download actions, so the raw URL is never shown next to a card describing
+   the same thing. Everything else stays inline as a plain hyperlink. */
+const URL_PATTERN=/https?:\/\/[^\s<>"']+/g;
+/* Trailing punctuation belongs to the sentence, not the URL. */
+function trimUrl(url){return String(url).replace(/[.,;:!?)\]}'"]+$/,"")}
+const GOOGLE_DOC_KINDS={document:{label:"Google Doc",glyph:"\u{1F4C4}",export:"export?format=pdf"},
+  spreadsheets:{label:"Google Sheet",glyph:"\u{1F4CA}",export:"export?format=xlsx"},
+  presentation:{label:"Google Slides",glyph:"\u{1F4FD}",export:"export/pdf"}};
+const FILE_EXTENSION=/\.(pdf|docx?|xlsx?|pptx?|csv|txt|rtf|zip|rar|7z|png|jpe?g|gif|webp|svg|avif|heic|mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac)(?:$|[?#])/i;
+function describeLink(raw){
+  const url=trimUrl(raw);
+  let host="";
+  try{host=new URL(url).hostname.replace(/^www\./,"")}catch{return null}
+  const google=url.match(/docs\.google\.com\/(document|spreadsheets|presentation)\/d\/([\w-]+)/);
+  if(google){
+    const kind=GOOGLE_DOC_KINDS[google[1]];
+    const base=`https://docs.google.com/${google[1]}/d/${google[2]}`;
+    return {kind:"file",service:"Google Drive",glyph:kind.glyph,name:kind.label,
+      openUrl:url,embedUrl:`${base}/preview`,downloadUrl:`${base}/${kind.export}`};
+  }
+  const driveFile=url.match(/drive\.google\.com\/file\/d\/([\w-]+)/)
+    ||url.match(/drive\.google\.com\/open\?id=([\w-]+)/)
+    ||url.match(/drive\.google\.com\/uc\?[^\s]*id=([\w-]+)/);
+  if(driveFile)return {kind:"file",service:"Google Drive",glyph:"\u{1F4C1}",name:"Drive file",
+    openUrl:url,embedUrl:`https://drive.google.com/file/d/${driveFile[1]}/preview`,
+    downloadUrl:`https://drive.google.com/uc?export=download&id=${driveFile[1]}`};
+  const driveFolder=url.match(/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([\w-]+)/);
+  if(driveFolder)return {kind:"folder",service:"Google Drive",glyph:"\u{1F5C2}",name:"Drive folder",
+    openUrl:url,embedUrl:`https://drive.google.com/embeddedfolderview?id=${driveFolder[1]}#grid`,
+    downloadUrl:""};
+  if(/^(www\.)?dropbox\.com$/.test(host)||host==="dl.dropboxusercontent.com"){
+    const clean=url.replace(/[?&]dl=\d/,"").replace(/[?&]raw=\d/,"");
+    const join=clean.includes("?")?"&":"?";
+    const folder=/\/(scl\/fo|sh)\//.test(url);
+    return {kind:folder?"folder":"file",service:"Dropbox",glyph:folder?"\u{1F5C2}":"\u{1F4E6}",
+      name:folder?"Dropbox folder":"Dropbox file",openUrl:url,embedUrl:"",
+      downloadUrl:folder?"":`${clean}${join}dl=1`};
+  }
+  if(/(^|\.)(sharepoint\.com|onedrive\.live\.com)$/.test(host)||host==="1drv.ms")
+    return {kind:"file",service:"OneDrive",glyph:"\u{2601}",name:"OneDrive item",
+      openUrl:url,embedUrl:"",downloadUrl:""};
+  const named=url.match(FILE_EXTENSION);
+  if(named){
+    let name="File";
+    try{name=decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop()||"File")}catch{}
+    return {kind:"file",service:host,glyph:fileGlyph(name,"file"),name,
+      openUrl:url,embedUrl:url,downloadUrl:url};
+  }
+  return null;
+}
+/* URLs the message text carries that are shared files or folders. */
+function sharedLinksIn(text){
+  const seen=new Set();const out=[];
+  for(const raw of String(text||"").match(URL_PATTERN)||[]){
+    const url=trimUrl(raw);
+    if(seen.has(url))continue;
+    const described=describeLink(url);
+    if(!described)continue;
+    seen.add(url);out.push({...described,raw:url});
+  }
+  return out;
+}
+/* Escape first, then hyperlink - never the other way round. */
+function linkifyHtml(text){
+  return esc(String(text||"")).replace(/https?:\/\/[^\s<>"'&]+(?:&amp;[^\s<>"'&]*)*/g,match=>{
+    const url=trimUrl(match.replace(/&amp;/g,"&"));
+    const tail=match.slice(esc(url).length);
+    const label=url.length>62?url.slice(0,59)+"\u2026":url;
+    return `<a class="message-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>${tail}`;
+  });
+}
 function isVisualOnly(m){
   const attachments=m?.attachments||[];
   return attachments.length>0&&attachments.every(a=>a.kind==="gif"||a.kind==="image");
@@ -173,7 +247,13 @@ function displayText(m){
      a file card already names the file - so the placeholder is noise either
      way. Only the stock words are dropped; a real caption is left alone. */
   if((m?.attachments||[]).length&&/^(attachment|gif)$/i.test(text.trim()))return "";
-  return text;
+  /* A shared file link renders as a card below, so leaving the raw URL in
+     the sentence would show the same thing twice. Only the URL is removed;
+     anything the sender wrote around it stays. */
+  let body=text;
+  for(const link of sharedLinksIn(text))body=body.split(link.raw).join(" ");
+  body=body.replace(/[ \t]{2,}/g," ").replace(/\n{3,}/g,"\n\n").trim();
+  return body;
 }
 function streamMessageToApp(message){
   const rawSenderId=String(message.user?.id||"");
@@ -186,7 +266,14 @@ function streamMessageToApp(message){
     /* Stream returns a GIF as type "image", so the kind has to be recovered
        from the url or the giphy marker - otherwise a sent GIF comes back as a
        still image and stops playing in the bubble. */
-    attachments:(message.attachments||[]).map(a=>({kind:(()=>{
+    /* Stream enriches a pasted URL into an attachment of its own. We render
+       shared links from the message text instead, so keeping it produced a
+       second card for the same link ("Loading Google Sheets" beside the raw
+       URL). Only scrape-only attachments are dropped - anything with a real
+       uploaded file or image behind it is kept. */
+    attachments:(message.attachments||[]).filter(a=>
+      a.image_url||a.asset_url||a.file_url||a.type==="image"||a.type==="giphy"||a.giphy
+    ).map(a=>({kind:(()=>{
       const u=a.image_url||a.asset_url||a.thumb_url||"";
       if(a.type==="giphy"||a.giphy||/\.gif(?:$|[?#])/i.test(u)||/giphy\.com|media\d*\.giphy/i.test(u))return "gif";
       return a.type==="image"?"image":"file";
@@ -667,6 +754,9 @@ function messageHtml(m){
   const settled=settledMessageIds.has(String(m.id));
   settledMessageIds.add(String(m.id));
   const links=(m.attachments||[]).length?m.attachments:((m.text||"").match(/https?:\/\/[^\s]+/g)||[]).filter(u=>/\.gif(?:$|\?)/i.test(u)||/giphy\.com|tenor\.com/i.test(u)).map(url=>({kind:"gif",url,name:"GIF"}));
+  /* A GIF url is already playing in the bubble; it must not also appear as a
+     file card underneath. */
+  const shared=sharedLinksIn(m.text).filter(l=>!links.some(a=>String(a.url)===l.raw));
   const reply=m.parentId?active?.messages?.find(item=>String(item.id)===String(m.parentId)):null;
   /* The quoted message is rendered as its own block above the reply text
      rather than being prepended into m.text - editing the stored text meant
@@ -693,7 +783,7 @@ function messageHtml(m){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4.2-1L3 20l1.2-4.6A8.4 8.4 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>
       ${replyCount} ${replyCount===1?"reply":"replies"}
     </button>`:"";
-  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${esc(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted?`<div class="bubble">${esc(displayText(m))}</div>`:""}${attachmentsHtml(links)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}${mine&&String(m.id)===String(statusMessageId)?statusTickHtml(messageStatusFor(active,m)):""}</div></div>`;
+  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${linkifyHtml(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted?`<div class="bubble">${linkifyHtml(displayText(m))}</div>`:""}${attachmentsHtml(links)}${sharedLinksHtml(shared)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}${mine&&String(m.id)===String(statusMessageId)?statusTickHtml(messageStatusFor(active,m)):""}</div></div>`;
 }
 
 /* ---------- thread view (replies only) ----------
@@ -795,6 +885,30 @@ $("#thread-composer").addEventListener("submit",async e=>{
 /* Sent attachments. Images go in a grid that adapts to how many there are
    (one large, two side by side, three or more in a tight grid), files get a
    row with a glyph, name and size. Both open the same preview lightbox. */
+/* A shared Drive/Dropbox/direct-file link, as a card with its own actions.
+   Preview opens in the app's lightbox; download goes straight to the
+   provider's export URL. A folder has no download, so that action is left
+   out rather than shown dead. */
+function sharedLinksHtml(links){
+  if(!links?.length)return "";
+  return links.map(link=>`<div class="shared-link" data-link-kind="${esc(link.kind)}">
+      <a class="shared-link-main" href="${esc(link.openUrl)}" target="_blank" rel="noopener noreferrer">
+        <span class="shared-link-glyph">${link.glyph}</span>
+        <span class="shared-link-copy"><strong>${esc(link.name)}</strong><small>${esc(link.service)}</small></span>
+      </a>
+      <span class="shared-link-actions">
+        ${link.embedUrl?`<button type="button" class="shared-link-btn" data-link-preview="${esc(link.embedUrl)}" data-link-name="${esc(link.name)}" data-link-open="${esc(link.openUrl)}" title="Preview" aria-label="Preview ${esc(link.name)}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.4 10-6.4S22 12 22 12s-3.6 6.4-10 6.4S2 12 2 12Z"/><circle cx="12" cy="12" r="2.9"/></svg>
+        </button>`:""}
+        ${link.downloadUrl?`<a class="shared-link-btn" href="${esc(link.downloadUrl)}" target="_blank" rel="noopener noreferrer" title="Download" aria-label="Download ${esc(link.name)}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11"/><path d="m7.6 10.4 4.4 4.4 4.4-4.4"/><path d="M4.5 19.5h15"/></svg>
+        </a>`:""}
+        <a class="shared-link-btn" href="${esc(link.openUrl)}" target="_blank" rel="noopener noreferrer" title="Open in a new tab" aria-label="Open ${esc(link.name)}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4.5h5.5V10"/><path d="M19.5 4.5 11 13"/><path d="M18.5 14v4.5a1.5 1.5 0 0 1-1.5 1.5H6a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 6 5.5h4.5"/></svg>
+        </a>
+      </span>
+    </div>`).join("");
+}
 function attachmentsHtml(list){
   const items=(list||[]).filter(a=>a?.url);
   if(!items.length)return "";
@@ -821,6 +935,13 @@ function attachmentsHtml(list){
 }
 /* Opening a sent attachment uses the same lightbox as a pending one. */
 $("#message-area").addEventListener("click",e=>{
+  const preview=e.target.closest("[data-link-preview]");
+  if(preview){
+    e.preventDefault();
+    openAttachmentPreview({kind:"link",url:preview.dataset.linkPreview,
+      name:preview.dataset.linkName,openUrl:preview.dataset.linkOpen});
+    return;
+  }
   const button=e.target.closest("[data-open-attachment]");
   if(!button)return;
   e.preventDefault();
@@ -1641,9 +1762,21 @@ attachmentPreview.addEventListener("click",e=>{if(e.target===attachmentPreview)a
 function openAttachmentPreview(attachment){
   if(!attachment?.url){toast("This attachment is still uploading");return}
   const name=attachment.name||"Attachment";
+  /* A shared link previews in an iframe - Drive and Docs serve an embeddable
+     /preview view, so the file is readable without leaving the chat. */
+  if(attachment.kind==="link"){
+    $("#preview-name").textContent=name;
+    const openLink=$("#preview-download");
+    openLink.href=attachment.openUrl||attachment.url;
+    openLink.removeAttribute("download");
+    openLink.textContent="Open original";
+    $("#preview-body").innerHTML=`<iframe class="preview-frame" src="${esc(attachment.url)}" title="${esc(name)}" loading="lazy" referrerpolicy="no-referrer" allow="autoplay"></iframe>`;
+    attachmentPreview.showModal();
+    return;
+  }
   $("#preview-name").textContent=name;
   const link=$("#preview-download");
-  link.href=attachment.url;link.setAttribute("download",name);
+  link.href=attachment.url;link.setAttribute("download",name);link.textContent="Download";
   const ext=String(name).split(".").pop().toLowerCase();
   const isImage=attachment.kind==="image"||attachment.kind==="gif"
     ||["png","jpg","jpeg","gif","webp","svg","avif","heic"].includes(ext);
@@ -3333,6 +3466,8 @@ window.__space={get presenceFor(){return presenceFor},get writeCache(){return wr
   get messageHtml(){return messageHtml},get findMessageEverywhere(){return findMessageEverywhere},
   get directory(){return directory},set directory(v){directory=v},
   get streamChannels(){return streamChannels},
+  get streamMessageToApp(){return streamMessageToApp},
+  get describeLink(){return describeLink},get sharedLinksIn(){return sharedLinksIn},
   get markConversationRead(){return markConversationRead},
   get messageStatusFor(){return messageStatusFor},
   get readReceiptsEnabled(){return readReceiptsEnabled},

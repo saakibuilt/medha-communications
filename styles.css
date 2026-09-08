@@ -2064,3 +2064,65 @@ body,.rail,.chat-sidebar,.main-area,.details-panel,.calendar-sidebar,
   .is-pending .msg-status--sent,.msg-status .tick-second,.msg-status,
   .msg-status--read .eye-lid,.msg-status--read .eye-pupil{animation:none}
 }
+
+/* ============================================================
+   SHARED LINK CARDS
+   A pasted Drive/Dropbox/file link renders as a card with preview,
+   download and open actions instead of a bare URL beside a duplicate
+   scrape card.
+   ============================================================ */
+.message-link{color:var(--brand);text-decoration:underline;text-underline-offset:2px;
+  overflow-wrap:anywhere;transition:opacity .15s ease}
+.message-link:hover{opacity:.75}
+.mine .message-link{color:#fff}
+:root[data-theme="dark"] .message-link{color:#fda4af}
+:root[data-theme="dark"] .mine .message-link{color:#fff}
+
+.shared-link{display:flex;align-items:center;gap:8px;max-width:100%;margin-top:6px;
+  padding:9px 10px;border:1px solid var(--line);border-radius:11px;background:var(--panel);
+  transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease}
+.shared-link:hover{border-color:#d4b5be;transform:translateY(-1px);box-shadow:var(--shadow)}
+.mine .shared-link{margin-left:auto}
+.shared-link-main{display:flex;align-items:center;gap:9px;min-width:0;flex:1;
+  text-decoration:none;color:inherit}
+.shared-link-glyph{display:grid;place-items:center;width:34px;height:34px;flex:0 0 auto;
+  border-radius:9px;background:var(--brand-soft);font-size:17px;line-height:1}
+.shared-link-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
+.shared-link-copy strong{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shared-link-copy small{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shared-link-actions{display:flex;gap:2px;flex:0 0 auto}
+.shared-link-btn{display:grid;place-items:center;width:32px;height:32px;flex:0 0 auto;
+  border:0;border-radius:8px;background:none;color:var(--muted);cursor:pointer;
+  text-decoration:none;transition:background-color .16s ease,color .16s ease,transform .16s ease}
+.shared-link-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round;display:block}
+.shared-link-btn:hover{background:var(--brand-soft);color:var(--brand);transform:translateY(-1px)}
+.shared-link-btn:active{transform:scale(.92)}
+:root[data-theme="dark"] .shared-link{background:#14171d;border-color:#2a2e37}
+:root[data-theme="dark"] .shared-link:hover{border-color:#5a2130}
+:root[data-theme="dark"] .shared-link-glyph{background:#20242c}
+:root[data-theme="dark"] .shared-link-btn:hover{background:#241016;color:#fb7185}
+/* The card belongs to the sender's side, so it stays readable on the red
+   bubble column without inheriting the bubble's own colours. */
+.mine .shared-link{color:var(--ink)}
+:root[data-theme="dark"] .mine .shared-link{color:var(--ink)}
+
+/* Link preview inside the existing attachment lightbox. The frame fills the
+   dialog rather than sizing itself against the viewport - the dialog is
+   already capped, and measuring against the viewport made it overflow. */
+.preview-frame{width:100%;height:min(72dvh,720px);border:0;border-radius:10px;
+  background:#fff;display:block}
+.preview-body:has(.preview-frame){padding:12px;place-items:stretch}
+:root[data-theme="dark"] .preview-frame{background:#fff}
+
+@media(max-width:520px){
+  .shared-link{padding:8px;gap:7px}
+  .shared-link-glyph{width:30px;height:30px;font-size:15px}
+  .shared-link-btn{width:36px;height:36px}
+  .preview-frame{height:calc(100dvh - 96px)}
+}
+@media(pointer:coarse){.shared-link-btn{width:40px;height:40px}}
+@media(prefers-reduced-motion:reduce){
+  .shared-link,.shared-link-btn,.message-link{transition:none}
+  .shared-link:hover,.shared-link-btn:hover{transform:none}
+}
