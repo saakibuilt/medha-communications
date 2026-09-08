@@ -1727,6 +1727,65 @@ document.addEventListener("click",e=>{
 /* Picking a tool closes the menu. */
 ["#attach-file","#emoji-button","#gif-button"].forEach(sel=>
   $(sel)?.addEventListener("click",()=>closeComposerTools()));
+
+/* ---------- AI reply draft ----------
+   Answers everything that has come in since the viewer last sent something:
+   if four messages arrived back to back, the draft addresses all four, not
+   just the newest. Cloudflare Workers AI does the writing behind a Supabase
+   edge function, so the CF token stays off the client (same account and
+   token as the Medha Hub email summaries). */
+const AI_REPLY_ENDPOINT=`${SUPABASE_URL}/functions/v1/ai-reply`;
+const aiReplyButton=$("#ai-reply");
+
+/* The trailing run of received messages after the viewer's last sent one.
+   With no sent message in the loaded page, everything received is pending. */
+function pendingIncoming(chat){
+  const msgs=(chat?.messages||[]).filter(m=>(m.text||"").trim());
+  let start=msgs.length;
+  while(start>0&&msgs[start-1].who==="them")start--;
+  return {pending:msgs.slice(start),context:msgs.slice(Math.max(0,start-8),start)};
+}
+
+function setAiReplyBusy(busy){
+  if(!aiReplyButton)return;
+  aiReplyButton.classList.toggle("is-busy",busy);
+  aiReplyButton.disabled=busy;
+  aiReplyButton.setAttribute("aria-busy",busy?"true":"false");
+}
+
+async function draftAiReply(){
+  if(!active){toast("Open a conversation first.");return}
+  if(!active.messagesLoaded){toast("Messages are still loading.");return}
+  const {pending,context}=pendingIncoming(active);
+  if(!pending.length){toast("No new messages to reply to.");return}
+  setAiReplyBusy(true);
+  try{
+    const response=await fetch(AI_REPLY_ENDPOINT,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        me:currentAppUser?.full_name||"",
+        them:pending[0].senderName||active.name||"",
+        pending:pending.map(m=>({from:m.senderName||active.name||"Them",text:m.text})),
+        context:context.map(m=>({from:m.who==="me"?"Me":(m.senderName||active.name||"Them"),text:m.text})),
+      }),
+    });
+    const data=await response.json().catch(()=>({}));
+    if(!data.reply){toast(data.error||"A reply could not be drafted right now.");return}
+    /* Replace rather than append: this is a draft of the whole reply, and
+       anything half-typed would otherwise run into it mid-sentence. */
+    messageInput.value=data.reply;
+    autosizeComposer();
+    messageInput.focus();
+    messageInput.setSelectionRange(messageInput.value.length,messageInput.value.length);
+    toast(data.pendingCount>1?`Draft replies to the last ${data.pendingCount} messages — edit before sending.`:"Draft ready — edit before sending.");
+  }catch{
+    toast("The AI service could not be reached.");
+  }finally{
+    setAiReplyBusy(false);
+  }
+}
+aiReplyButton?.addEventListener("click",()=>{closeComposerTools();draftAiReply()});
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeComposerTools()});
 
 /* ---------- chat list interaction ---------- */

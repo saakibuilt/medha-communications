@@ -1369,3 +1369,20 @@ body.keyboard-open .thread-composer{padding-bottom:10px}
 .forward-group-label{padding:10px 4px 5px;color:#9aa6b5;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 .forward-group-label:first-child{padding-top:2px}
 .employee-option .employee-copy small{display:block;color:#8a98a9;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* --- AI reply button (composer, right corner) ---
+   Sits opposite the attach/emoji/GIF cluster and stays visible on phones:
+   it is a primary action, not one of the tools that fold behind the dots. */
+.ai-reply-btn{margin-left:auto;position:relative;color:var(--brand)}
+.ai-reply-btn:hover{background:var(--brand-soft);color:var(--brand)}
+.ai-reply-btn svg{fill:currentColor;fill-opacity:.14;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round}
+.ai-reply-btn[disabled]{cursor:default;opacity:.55}
+/* Busy: the sparkle fades out and a ring spins in its place, so the button
+   never changes size mid-request. */
+.ai-reply-spinner{display:none;position:absolute;width:18px;height:18px;border:2px solid #88133733;border-top-color:var(--brand);border-radius:50%;animation:aiSpin .7s linear infinite}
+.ai-reply-btn.is-busy{opacity:1}
+.ai-reply-btn.is-busy svg{opacity:0}
+.ai-reply-btn.is-busy .ai-reply-spinner{display:block}
+@keyframes aiSpin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.ai-reply-spinner{animation-duration:2s}}
+@media(max-width:1024px){.ai-reply-btn{display:inline-grid}}
