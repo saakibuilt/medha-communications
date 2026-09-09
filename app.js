@@ -971,6 +971,13 @@ function dayLabel(date){
 function detailRow(label,value){
   return value?`<div class="detail-fact"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`:"";
 }
+function memberUsername(member,id){
+  /* The communications directory currently exposes email, not a separate
+     handle. Prefer a real username when one becomes available, otherwise use
+     the email's local part—the familiar Teams-style username for that member. */
+  const email=member?.email||(String(id)===String(viewerId())?currentAppUser?.email:"")||"";
+  return String(member?.username||member?.user_name||email.split("@")[0]||id||"unknown").replace(/^@/,"");
+}
 function favoriteIds(){
   try{return JSON.parse(sessionStorage.getItem("medha-favorites-"+(viewerId()||"guest"))||"[]").map(String)}catch{return []}
 }
@@ -1004,12 +1011,19 @@ function renderDetailsPanel(){
   const membersList=$("#group-members-list");
   if(membersSection)membersSection.hidden=!isGroup;
   if(membersList&&isGroup){
-    const members=(active.participantIds||[]).map(id=>{
+    const memberIds=[...new Set((active.participantIds||[]).filter(Boolean).map(String))];
+    const count=memberIds.length;
+    const members=memberIds.map(id=>{
       const member=directory.find(p=>String(p.id)===String(id));
       const name=member?.full_name||(String(id)===String(viewerId())?currentAppUser?.full_name:"")||"Unknown user";
-      return '<div class="group-member"><span class="person-avatar blue small">'+esc(initialsFor(name))+'</span><strong>'+esc(name)+'</strong>'+(String(id)===creatorId?'<span class="group-owner">Creator</span>':"")+'</div>';
+      const username=memberUsername(member,id);
+      return '<div class="group-member"><span class="person-avatar blue small">'+esc(initialsFor(name))+'</span><span class="group-member-copy"><strong>'+esc(name)+'</strong><small>@'+esc(username)+'</small></span>'+(String(id)===creatorId?'<span class="group-owner">Creator</span>':"")+'</div>';
     });
     membersList.innerHTML=members.join("")||'<div class="directory-empty">No members found</div>';
+    const countLabel=count===1?"1 member":`${count} members`;
+    const membersTitle=$("#group-members-title"),membersCount=$("#group-members-count");
+    if(membersTitle)membersTitle.textContent=`Members (${count})`;
+    if(membersCount)membersCount.textContent=countLabel;
   }
   const presence=$(".details-person .presence");
   if(presence&&isGroup){presence.textContent="";presence.hidden=true}
@@ -1060,8 +1074,9 @@ function openConversationSearch(){
   const dialog=$("#conversation-search-dialog"),input=$("#conversation-search-input");
   input.value="";renderConversationSearch();dialog.showModal();requestAnimationFrame(()=>input.focus());
 }
-function openDetails(){
+async function openDetails(){
   if(!active){toast("Select a conversation first");return}
+  if(active.kind==="group")await ensureDirectory();
   renderDetailsPanel();
   if(isMobile())document.body.classList.add("details-page");
   $("#details-panel").classList.add("open");

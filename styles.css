@@ -899,10 +899,16 @@ body:not(.thread-open) .thread-panel{display:none!important}
 .banner-body{font-size:11.5px;color:#7d8a9b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .banner-kind{flex:none;font-size:13px;opacity:.5}
 @media (prefers-reduced-motion:reduce){.banner{transition:opacity .2s ease}}
-.group-members-list{display:grid;gap:8px}
-.group-member{display:flex;align-items:center;gap:9px;min-width:0;padding:5px 0}
+.group-members-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px}
+.group-members-head h4{margin:0}
+.group-members-count{color:var(--muted);font-size:11px;white-space:nowrap}
+.group-members-list{display:grid;gap:4px}
+.group-member{display:flex;align-items:center;gap:9px;min-width:0;padding:8px 7px;border-radius:8px}
+.group-member:hover{background:var(--brand-soft)}
+.group-member-copy{display:grid;gap:2px;min-width:0}
 .group-member strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.group-owner{margin-left:auto;color:#9aa6b5;font-size:10px;white-space:nowrap}
+.group-member small{color:var(--muted);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.group-owner{margin-left:auto;color:var(--muted);font-size:10px;white-space:nowrap}
 
 /* ---------- communications loader ---------- */
 .space-launch-loader{background:linear-gradient(135deg,#fff7f8 0%,#fff 48%,#f1f6ff 100%);color:#17202b}

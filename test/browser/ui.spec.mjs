@@ -36,6 +36,20 @@ r=await page.evaluate(()=>({active:window.__space.active?.id,gone:!document.quer
 ok("tapping the banner opens that chat",r.active==="g1",r);
 ok("banner dismisses after tap",r.gone,r);
 
+/* Group details mirrors Teams: a count and a readable username for every
+   member, including the signed-in user. */
+await page.click("#conversation-name");
+await page.waitForTimeout(350);
+r=await page.evaluate(()=>({
+  open:document.body.classList.contains("details-open"),
+  title:document.querySelector("#group-members-title")?.textContent,
+  count:document.querySelector("#group-members-count")?.textContent,
+  members:[...document.querySelectorAll("#group-members-list .group-member")].map(row=>row.textContent.replace(/\s+/g," ").trim())
+}));
+ok("group details shows the full member count",r.open&&r.title==="Members (3)"&&r.count==="3 members",r);
+ok("group details lists member usernames",r.members.length===3&&r.members.some(x=>/Saksham Nirula@s/.test(x))&&r.members.some(x=>/Kavya Sharma@k/.test(x))&&r.members.some(x=>/Anil Rao@a/.test(x)),r);
+await page.click("#close-details");
+
 /* no banner for the chat already on screen */
 await page.evaluate(()=>{const s=window.__space;s.active=s.conversations.find(c=>c.id==="c1");s.renderMessages()});
 await page.evaluate(()=>{
