@@ -1,5 +1,28 @@
 import { StreamChat } from "stream-chat";
+/* Medha Hub calls this from its own origin to open the same chat session in
+   its side panel, so the endpoint has to answer a cross-origin preflight.
+   The allowlist is explicit - this mints a Stream token, so it must not be
+   callable from anywhere. */
+const ALLOWED_ORIGINS=new Set([
+  "https://medha-hub.web.app",
+  "https://medha-hub.firebaseapp.com",
+  "https://medha-communications.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:4173",
+  "http://localhost:5000",
+]);
+function applyCors(req,res){
+  const origin=req.headers.origin;
+  if(origin&&ALLOWED_ORIGINS.has(origin)){
+    res.setHeader("Access-Control-Allow-Origin",origin);
+    res.setHeader("Vary","Origin");
+  }
+  res.setHeader("Access-Control-Allow-Headers","authorization, content-type");
+  res.setHeader("Access-Control-Allow-Methods","POST, OPTIONS");
+}
 export default async function handler(req,res){
+  applyCors(req,res);
+  if(req.method==="OPTIONS")return res.status(204).end();
   if(req.method!=="POST")return res.status(405).json({error:"POST required"});
   const apiKey=process.env.STREAM_API_KEY,secret=process.env.STREAM_API_SECRET;
   if(!apiKey||!secret)return res.status(503).json({error:"Stream is not configured"});
