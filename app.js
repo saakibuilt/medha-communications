@@ -1081,10 +1081,14 @@ function toggleDetails(){
 function renderMessages(){
   const area=$("#message-area");
   if(!active){
-    $("#conversation-name").textContent="No conversation selected";
+    $("#conversation-name").textContent=embedMode?"Loading…":"No conversation selected";
     $("#details-name").textContent="No conversation selected";
     $("#conversation-status").textContent="";
-    area.innerHTML='<div class="empty-state"><strong>No conversation selected</strong><p>Your conversations appear here once you start or receive a chat.</p></div>';
+    /* Embedded in the Hub the popup was opened at one conversation, so the
+       app's "pick a chat" state is not the truth - it is still loading. */
+    area.innerHTML=embedMode
+      ? '<div class="embed-loading"><span class="embed-loading-spin"></span><strong>Loading conversation…</strong></div>'
+      : '<div class="empty-state"><strong>No conversation selected</strong><p>Your conversations appear here once you start or receive a chat.</p></div>';
     return;
   }
   $("#conversation-name").textContent=active.name;
@@ -1187,6 +1191,9 @@ async function loadChatPage(chat,offset=0){
     chat.hasMore=page.hasMore;
     chat.messagesLoaded=true;
     if(active?.id===chat.id)renderMessages();
+    /* Messages are on screen now, which is the moment the Hub can drop its
+       loading state over the frame. */
+    if(embedMode&&active?.id===chat.id)announceEmbedReady();
     writeCache();
   }finally{chat.loadingMessages=false}
 }
@@ -1421,7 +1428,22 @@ function openEmbedChat(){
   const chat=conversations.find(item=>String(item.cid)===String(embedChatCid)||String(item.id)===String(embedChatCid));
   if(!chat)return;
   embedChatOpened=true;
-  switchChat(chat.id).catch(()=>{});
+  switchChat(chat.id).then(()=>announceEmbedReady()).catch(()=>announceEmbedReady("error"));
+}
+/* The Hub holds its own loading state over this frame until the conversation
+   is genuinely on screen. Loading the HTML is not the same as having the
+   messages, which is why readiness is announced rather than inferred. */
+const EMBED_READY_MESSAGES=10;
+let embedReadyAnnounced=false;
+function announceEmbedReady(status="ready"){
+  if(embedReadyAnnounced)return;
+  const loaded=(active?.messages||[]).length;
+  /* Wait for a screenful - the ten most recent - unless the whole
+     conversation is shorter than that, or something failed. */
+  if(status==="ready"&&active&&!active.messagesLoaded)return;
+  if(status==="ready"&&active&&loaded<EMBED_READY_MESSAGES&&active.hasMore)return;
+  embedReadyAnnounced=true;
+  try{parent.postMessage({source:"medha-space",type:"chat-ready",status,messages:loaded},"*")}catch{}
 }
 async function switchChat(id){
   const chat=conversations.find(c=>String(c.id)===String(id));

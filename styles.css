@@ -2155,3 +2155,10 @@ body.embed-chat .conversation-header { padding: 10px 14px; min-height: 52px; }
 body.embed-chat .conversation-header .person-avatar { display: none; }
 body.embed-chat #conversation-name { font-size: 13px; }
 body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
+/* Embedded: a loading state instead of the app's "pick a chat" empty state. */
+.embed-loading{display:grid;place-items:center;gap:10px;padding:48px 20px;text-align:center;color:var(--muted)}
+.embed-loading strong{font-size:13.5px;color:var(--ink)}
+.embed-loading-spin{width:24px;height:24px;border-radius:50%;
+  border:2px solid var(--line);border-top-color:var(--brand);animation:embedSpin .75s linear infinite}
+@keyframes embedSpin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.embed-loading-spin{animation:none}}
