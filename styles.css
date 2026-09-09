@@ -2126,3 +2126,32 @@ body,.rail,.chat-sidebar,.main-area,.details-panel,.calendar-sidebar,
   .shared-link,.shared-link-btn,.message-link{transition:none}
   .shared-link:hover,.shared-link-btn:hover{transform:none}
 }
+
+/* ============================================================
+   EMBEDDED MODE
+   Space rendered inside Medha Hub's chat popup: the conversation only.
+   The app's own chrome (rail, chat list, details, calendar) belongs to the
+   full app, not to a popup that was opened at one conversation.
+   ============================================================ */
+body.embed-chat .rail,
+body.embed-chat .chat-sidebar,
+body.embed-chat .calendar-sidebar,
+body.embed-chat .details-panel,
+body.embed-chat .sidebar-scrim,
+body.embed-chat .chat-menu-btn,
+body.embed-chat .mobile-view-menu,
+body.embed-chat .chat-back,
+body.embed-chat #space-launch-loader { display: none !important; }
+body.embed-chat .app-shell,
+body.embed-chat .app-shell.calendar-mode {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  height: 100dvh;
+}
+body.embed-chat .main-area { grid-column: 1; grid-row: 1; min-width: 0; }
+/* The Hub's popup already carries the person's name and a close button, so
+   the header here would be a second title bar. The call buttons stay. */
+body.embed-chat .conversation-header { padding: 10px 14px; min-height: 52px; }
+body.embed-chat .conversation-header .person-avatar { display: none; }
+body.embed-chat #conversation-name { font-size: 13px; }
+body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }

@@ -9,6 +9,10 @@ const firebaseApp=initializeApp({apiKey:"AIzaSyDhyDoFRrCXXEkoQ3i6wpqmNd8Po6p_KIw
 const auth=getAuth(firebaseApp); let currentUserId=null; let currentAppUser=null; let launchAuthorized=false;
 const $=s=>document.querySelector(s); const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const launchStorageKey="medha-communications-hub-token";
+/* Embedded mode: Space rendered inside Medha Hub's chat popup. Only the
+   conversation column shows, and the named chat opens on load. */
+let embedMode=false;
+let embedChatCid="";
 /* Space signs into Firebase, and that session already persists across reloads
    and tab closes. What used to gate the app was launchAuthorized: it reset to
    false on every load and only a fresh #token= could flip it, so returning to
@@ -39,8 +43,16 @@ function readLaunchToken(){
      then assigning location.href across origins can drop it - and losing it
      locked the user out behind the launch gate. The query string always
      survives, and the credential is scrubbed from the URL either way below. */
-  const fromHash=new URLSearchParams(location.hash.slice(1)).get("token");
-  const fromQuery=new URLSearchParams(location.search).get("token");
+  const hashParams=new URLSearchParams(location.hash.slice(1));
+  const queryParams=new URLSearchParams(location.search);
+  /* Read the embed flags before the URL is scrubbed below - Medha Hub opens
+     Space inside its chat popup with ?embed=1&chat=<cid>, and the replaceState
+     further down drops the hash entirely. */
+  embedMode=(hashParams.get("embed")||queryParams.get("embed"))==="1";
+  embedChatCid=hashParams.get("chat")||queryParams.get("chat")||"";
+  if(embedMode)document.body.classList.add("embed-chat");
+  const fromHash=hashParams.get("token");
+  const fromQuery=queryParams.get("token");
   const found=fromHash||fromQuery;
   if(found){
     try{sessionStorage.setItem(launchStorageKey,found)}catch{}
@@ -1352,7 +1364,9 @@ async function hydrateConversations(){
       });
       const previousCid=active?.cid;conversations=loaded;active=conversations.find(c=>c.cid===previousCid)||null;
       writeCache();
-      renderList();renderMessages();return;
+      renderList();renderMessages();
+      openEmbedChat();
+      return;
     }catch(error){toast(`Stream unavailable: ${error.message}`);return}})();
     try{await streamConversationsLoadPromise}finally{streamConversationsLoadPromise=null}
     return;
@@ -1399,6 +1413,16 @@ async function hydrateConversations(){
   }
 }
 
+/* Hub opens Space at one conversation. Runs once - after that the user is
+   just using Space normally inside the popup. */
+let embedChatOpened=false;
+function openEmbedChat(){
+  if(!embedMode||embedChatOpened||!embedChatCid)return;
+  const chat=conversations.find(item=>String(item.cid)===String(embedChatCid)||String(item.id)===String(embedChatCid));
+  if(!chat)return;
+  embedChatOpened=true;
+  switchChat(chat.id).catch(()=>{});
+}
 async function switchChat(id){
   const chat=conversations.find(c=>String(c.id)===String(id));
   if(!chat)return;
