@@ -2247,7 +2247,10 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
     background:linear-gradient(145deg,#a51f48,#7f1233);box-shadow:0 3px 10px #88133745;
     color:transparent;font-size:0
   }
-  #chat-view.active-view .send-button::before{content:"↑";color:#fff;font-size:22px;font-weight:500;line-height:1;transform:translateY(-1px)}
+  /* Draw the arrow as a geometric glyph rather than a font character: font
+     ascenders vary by device and made the symbol look off-centre in iOS. */
+  #chat-view.active-view .send-button::before{content:none}
+  #chat-view.active-view .send-button::after{content:"";position:absolute;inset:11px;width:14px;height:14px;background:#fff;clip-path:polygon(50% 0,100% 48%,68% 48%,68% 100%,32% 100%,32% 48%,0 48%)}
   #chat-view.active-view .send-button span{display:none}
   #chat-view.active-view .send-button:disabled{opacity:.48}
 }
