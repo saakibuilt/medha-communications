@@ -528,8 +528,32 @@ function applyIncomingStreamMessage(event){
       body:message.text||"Sent an attachment",
       initials:initialsFor(incoming.senderName||chat.name),color:chat.color});
   }
+  /* Poll messages sometimes arrive with poll_id before Stream has expanded
+     the poll object in the message event. Fetch that one object immediately
+     so every watching client renders the interactive card, not plain text. */
+  if(incoming.pollId&&!incoming.poll)void hydratePollMessage(chat,incoming);
   renderList();
   writeCache();
+}
+const pendingPollHydrations=new Map();
+async function hydratePollMessage(chat,message){
+  const pollId=message?.pollId;
+  if(!chat||!pollId||message.poll||!streamClient)return;
+  const key=`${chat.cid}:${message.id}:${pollId}`;
+  if(pendingPollHydrations.has(key))return pendingPollHydrations.get(key);
+  const request=(async()=>{
+    try{
+      const result=await streamClient.getPoll(pollId,viewerId());
+      const poll=result?.poll||result;
+      if(!poll?.id)return;
+      const current=(chat.messages||[]).find(item=>String(item.id)===String(message.id));
+      if(current)current.poll=poll;
+      if(active?.cid===chat.cid)renderMessages();
+    }catch{/* The message text remains visible; the next poll event retries it. */}
+    finally{pendingPollHydrations.delete(key)}
+  })();
+  pendingPollHydrations.set(key,request);
+  return request;
 }
 async function ensureStreamUsers(){
   if(!streamClient||!directory.length)return;
@@ -594,7 +618,10 @@ async function watchStreamChannel(chat){
         const found=findMessageEverywhere(event.message?.id);
         if(!found)return;
         found.message.text=event.message.text||"";
+        found.message.pollId=event.message.poll_id||found.message.pollId||null;
+        found.message.poll=event.message.poll||found.message.poll||null;
         found.message._decorated=false;
+        if(found.message.pollId&&!found.message.poll)void hydratePollMessage(found.chat,found.message);
         if(active?.cid===found.chat.cid)renderMessages();
       });
       channel.on("message.deleted",event=>{
@@ -619,10 +646,10 @@ async function watchStreamChannel(chat){
         .forEach(name=>channel.on(name,event=>{
           const poll=event.poll;
           if(!poll?.id)return;
-          const message=active?.messages?.find(m=>String(m.pollId)===String(poll.id));
-          if(message)message.poll=poll;
-          const card=$(`.poll-card[data-poll-card="${CSS.escape(String(poll.id))}"]`);
-          if(card)card.outerHTML=pollHtml(poll,message?.id||"");
+          const found=conversations.map(chat=>({chat,message:(chat.messages||[]).find(m=>String(m.pollId)===String(poll.id))})).find(item=>item.message);
+          if(!found)return;
+          found.message.poll=poll;
+          if(active?.cid===found.chat.cid)renderMessages();
         }));
       return channel;
     })().catch(error=>{streamChannelWatchPromises.delete(key);throw error});
@@ -1376,6 +1403,8 @@ async function loadChatPage(chat,offset=0){
     chat.messageOffset=chat.messages.length;
     chat.hasMore=page.hasMore;
     chat.messagesLoaded=true;
+    chat.messages.filter(message=>message.pollId&&!message.poll)
+      .forEach(message=>void hydratePollMessage(chat,message));
     if(active?.id===chat.id)renderMessages();
     /* Messages are on screen now, which is the moment the Hub can drop its
        loading state over the frame. */
@@ -3133,9 +3162,36 @@ $("#message-actions").addEventListener("click",async e=>{
 });
 const pollButton=document.createElement("button");pollButton.type="button";pollButton.id="poll-button";pollButton.className="tool-btn";pollButton.title="Create poll";pollButton.textContent="◉";$(".composer-tools")?.append(pollButton);
 pollButton.addEventListener("click",()=>{if(active?.kind!=="group"){toast("Polls are available in group chats");return}$("#poll-dialog").showModal()});
+let pollPosting=false;
 $("#poll-form").addEventListener("submit",async e=>{
   if(e.submitter?.value==="cancel")return;e.preventDefault();
-  try{const question=$("#poll-question").value.trim(),options=$("#poll-options").value.split("\n").map(item=>item.trim()).filter(Boolean).map(text=>({text}));if(options.length<2){toast("Add at least two options");return}const poll=await streamClient.createPoll({name:question,options,allow_answers:false,allow_user_suggested_options:false,enforce_unique_vote:true,max_votes_allowed:1},viewerId());await streamChannelFor(active).sendMessage({text:question,poll_id:poll.poll?.id||poll.id});$("#poll-dialog").close();e.target.reset();toast("Poll posted")}catch(error){toast(error.message)}});
+  /* A second tap or an Enter key while the first request is in flight used
+     to create a second Stream poll. Lock before the first await so one user
+     action can produce exactly one poll and one poll message. */
+  if(pollPosting)return;
+  const question=$("#poll-question").value.trim(),options=$("#poll-options").value.split("\n").map(item=>item.trim()).filter(Boolean).map(text=>({text}));
+  const chat=active;
+  if(!chat||chat.kind!=="group"||!streamClient)return;
+  if(!question||options.length<2){toast("Add a question and at least two options");return}
+  pollPosting=true;
+  const submit=e.target.querySelector('button[value="default"]');if(submit)submit.disabled=true;
+  try{
+    const created=await streamClient.createPoll({name:question,options,allow_answers:false,allow_user_suggested_options:false,enforce_unique_vote:true,max_votes_allowed:1},viewerId());
+    const poll=created?.poll||created,pollId=poll?.id;
+    if(!pollId)throw Error("Could not create the poll");
+    const sent=await streamChannelFor(chat).sendMessage({text:question,poll_id:pollId});
+    /* Stream does not echo the sender's own message.new event to this
+       renderer. Paint the returned message once, keyed by its server id. */
+    const local=streamMessageToApp(sent?.message||{id:`poll-${pollId}`,text:question,poll_id:pollId,user:{id:viewerId()},created_at:new Date().toISOString()});
+    local.poll=poll;local.pollId=pollId;
+    chat.messages=[...(chat.messages||[]).filter(message=>String(message.id)!==String(local.id)),local];
+    chat.messagesLoaded=true;chat.preview=question;chat.updatedAt=local.createdAt||new Date().toISOString();
+    if(active===chat){renderMessages();scrollMessagesToEnd()}
+    renderList();writeCache();
+    $("#poll-dialog").close();e.target.reset();toast("Poll posted");
+  }catch(error){toast(error.message||"Could not post poll")}
+  finally{pollPosting=false;if(submit)submit.disabled=false}
+});
 
 /* ---------- reactions ---------- */
 const reactionMenu=document.createElement("div");
