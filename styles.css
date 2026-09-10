@@ -2343,6 +2343,12 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
 .group-profile-actions{display:flex;justify-content:flex-end;gap:9px;padding-top:4px}.group-profile-actions button{min-height:38px}
 :root[data-theme="dark"] .details-group-edit,:root[data-theme="dark"] .group-profile-close{border-color:#3a4250;background:#20242d;color:#d7dee9}:root[data-theme="dark"] .details-group-edit:hover,:root[data-theme="dark"] .details-group-edit:focus-visible{border-color:#7d3c51;background:#2a1720;color:#fda4af}:root[data-theme="dark"] .group-profile-dialog{border-color:#343b48;background:#171a21;color:#eef2f7}:root[data-theme="dark"] .group-profile-dialog .group-profile-form input{border-color:#3a4250;background:#20242d;color:#eef2f7}
 
+/* Message lifecycle feedback: a poll arrives with a calm lift, while an
+   unsent item contracts away before its hard-delete is reflected on screen. */
+.message.poll-entering{animation:poll-message-in .42s cubic-bezier(.2,.86,.25,1) both}.message.poll-entering .poll-card{animation:poll-card-in .5s .04s cubic-bezier(.2,.86,.25,1) both}.message.is-unsending{pointer-events:none;overflow:hidden;animation:message-unsend .28s cubic-bezier(.45,0,.7,.2) forwards}
+@keyframes poll-message-in{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes poll-card-in{from{filter:blur(2px);transform:scale(.96)}to{filter:blur(0);transform:scale(1)}}@keyframes message-unsend{0%{opacity:1;transform:translateX(0) scale(1);max-height:620px;margin-top:20px;margin-bottom:20px}65%{opacity:.35;transform:translateX(14px) scale(.98)}100%{opacity:0;transform:translateX(22px) scale(.94);max-height:0;margin-top:0;margin-bottom:0}}
+@media(prefers-reduced-motion:reduce){.message.poll-entering,.message.poll-entering .poll-card,.message.is-unsending{animation-duration:.01ms!important}}
+
 /* A shared task is fetched when the chat opens, so the card has a resting
    state before the row arrives, and a state for a task that is gone. */
 .tcm-loading .tcm-head{border-bottom:0}

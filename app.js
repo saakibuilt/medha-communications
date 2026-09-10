@@ -250,6 +250,11 @@ const FILE_EXTENSION=/\.(pdf|docx?|xlsx?|pptx?|csv|txt|rtf|zip|rar|7z|png|jpe?g|
 const MEDHA_APP_HOSTS={
   "medha-warehouse.vercel.app":{service:"Medha Warehouse",glyph:"\u{1F4E6}",label:"Warehouse entry"},
 };
+function isMedhaAppUrl(raw){
+  if(!raw)return false;
+  try{return Object.prototype.hasOwnProperty.call(MEDHA_APP_HOSTS,new URL(String(raw)).hostname.replace(/^www\./,""))}
+  catch{return false}
+}
 function describeMedhaAppLink(url,host){
   const app=MEDHA_APP_HOSTS[host];
   if(!app)return null;
@@ -467,7 +472,14 @@ function streamMessageToApp(message){
        second card for the same link ("Loading Google Sheets" beside the raw
        URL). Only scrape-only attachments are dropped - anything with a real
        uploaded file or image behind it is kept. */
+    /* Stream scrapes any URL it sees and attaches the page's og:title and
+       og:image. For a link into Medha's own apps that is noise on top of the
+       card we already render - and it leaks the app's page title ("Medha
+       Transportation - Warehouse") plus a screenshot into the conversation.
+       Those scrapes are dropped; a real uploaded file is untouched. */
     attachments:(message.attachments||[]).filter(a=>
+      !(isMedhaAppUrl(a.og_scrape_url||a.title_link||a.image_url||a.asset_url)&&!a.file_url&&a.type!=="image"&&a.type!=="giphy"&&!a.giphy)
+    ).filter(a=>
       a.image_url||a.asset_url||a.file_url||a.type==="image"||a.type==="giphy"||a.giphy
     ).map(a=>({kind:(()=>{
       const u=a.image_url||a.asset_url||a.thumb_url||"";
@@ -540,6 +552,28 @@ function statusTickHtml(status){
     +`<span>${STATUS_LABEL[status]}</span></div>`;
 }
 
+const animatedPollMessageIds=new Set();
+const messageRemovalAnimations=new Map();
+function markPollForEntrance(id){
+  const key=String(id||"");if(!key)return;
+  animatedPollMessageIds.add(key);
+  setTimeout(()=>{if(animatedPollMessageIds.delete(key)&&active?.messagesLoaded)renderMessages()},520);
+}
+function removeMessageWithTransition(chat,id){
+  const key=`${chat?.cid||chat?.id}:${id}`;
+  if(messageRemovalAnimations.has(key))return messageRemovalAnimations.get(key);
+  const finish=()=>{
+    chat.messages=(chat.messages||[]).filter(message=>String(message.id)!==String(id));
+    messageRemovalAnimations.delete(key);writeCache();
+    if(active?.cid===chat.cid){renderMessages();if(document.body.classList.contains("details-open"))renderDetailsPanel()}
+  };
+  const node=active?.cid===chat?.cid?$(".message[data-message-id=\""+CSS.escape(String(id))+"\"]"):null;
+  const pending=node?new Promise(resolve=>{
+    node.classList.add("is-unsending");
+    setTimeout(()=>{finish();resolve()},280);
+  }):Promise.resolve().then(finish);
+  messageRemovalAnimations.set(key,pending);return pending;
+}
 function applyIncomingStreamMessage(event){
   const message=event?.message;
   if(!message||String(message.user?.id)===String(viewerId()))return;
@@ -553,6 +587,7 @@ function applyIncomingStreamMessage(event){
     if(handledStreamMessageIds.size>2000)handledStreamMessageIds.delete(handledStreamMessageIds.values().next().value);
   }
   const incoming=streamMessageToApp(message);
+  if(incoming.pollId)markPollForEntrance(incoming.id);
   /* Stream unarchives a channel on new activity; mirror that locally so the
      chat does not stay hidden with an unread badge nobody can reach. */
   if(chat.archived)chat.archived=false;
@@ -690,9 +725,7 @@ async function watchStreamChannel(chat){
         const id=String(event.message?.id||"");
         const found=findMessageEverywhere(id);
         if(!found)return;
-        found.chat.messages=(found.chat.messages||[]).filter(m=>String(m.id)!==id);
-        if(active?.cid===found.chat.cid)renderMessages();
-        writeCache();
+        void removeMessageWithTransition(found.chat,id);
       });
       /* Typing is a transient websocket event - nothing is stored and no
          query is made, so the indicator is free. */
@@ -1024,7 +1057,7 @@ function messageHtml(m){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4.2-1L3 20l1.2-4.6A8.4 8.4 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>
       ${replyCount} ${replyCount===1?"reply":"replies"}
     </button>`:"";
-  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${taskCardHtml(m)}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${linkifyHtml(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted&&!m.taskCard&&!m.taskId?`<div class="bubble">${linkifyHtml(displayText(m))}</div>`:""}${attachmentsHtml(links)}${sharedLinksHtml(shared)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}${mine&&String(m.id)===String(statusMessageId)?statusTickHtml(messageStatusFor(active,m)):""}</div></div>`;
+  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}${m.poll&&animatedPollMessageIds.has(String(m.id))?" poll-entering":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${taskCardHtml(m)}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${linkifyHtml(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted&&!m.taskCard&&!m.taskId?`<div class="bubble">${linkifyHtml(displayText(m))}</div>`:""}${attachmentsHtml(links)}${sharedLinksHtml(shared)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}${mine&&String(m.id)===String(statusMessageId)?statusTickHtml(messageStatusFor(active,m)):""}</div></div>`;
 }
 
 /* ---------- thread view (replies only) ----------
@@ -3282,9 +3315,7 @@ $("#message-actions").addEventListener("click",async e=>{
       await removeUnsentPoll(message);
       await removeUnsentAttachments(channel,message);
       await streamClient.deleteMessage(message.id,{hardDelete:true});
-      active.messages=active.messages.filter(item=>item.id!==message.id);
-      writeCache();renderMessages();
-      if(document.body.classList.contains("details-open"))renderDetailsPanel();
+      await removeMessageWithTransition(active,message.id);
       toast("Message unsent for everyone");
     }
     else if(button.dataset.messageAction==="pin"){
@@ -3326,6 +3357,7 @@ $("#poll-form").addEventListener("submit",async e=>{
     const local=streamMessageToApp(sent?.message||{id:`poll-${pollId}`,text:question,poll_id:pollId,user:{id:viewerId()},created_at:new Date().toISOString()});
     local.poll=poll;local.pollId=pollId;
     chat.messages=[...(chat.messages||[]).filter(message=>String(message.id)!==String(local.id)),local];
+    markPollForEntrance(local.id);
     chat.messagesLoaded=true;chat.preview=question;chat.updatedAt=local.createdAt||new Date().toISOString();
     if(active===chat){renderMessages();scrollMessagesToEnd()}
     renderList();writeCache();
