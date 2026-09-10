@@ -2952,20 +2952,26 @@ $("#message-area").addEventListener("click",e=>{
   setTimeout(()=>target.classList.remove("message-flash"),1600);
 });
 
-/* Voting happens on the bars themselves. Clicking your current choice
-   removes it, so a vote can be changed or withdrawn. */
+/* Voting happens on the bars themselves. The tally changes in this frame;
+   Stream persistence and the authoritative refresh continue in background. */
 $("#message-area").addEventListener("click",async e=>{
   const option=e.target.closest(".poll-option");
   if(!option||option.disabled)return;
   e.preventDefault();e.stopPropagation();
   const messageId=option.dataset.messageId,pollId=option.dataset.pollId,optionId=option.dataset.optionId;
   if(!messageId||!pollId||!optionId||!streamClient)return;
+  const requestKey=`${messageId}:${viewerId()}`;
+  if(pendingPollVotes.has(requestKey))return;
+  const message=active?.messages?.find(m=>String(m.id)===String(messageId));
+  const removing=option.classList.contains("chosen");
+  const before=applyOptimisticPollVote(message,optionId,removing);
+  if(!before)return;
+  pendingPollVotes.add(requestKey);renderMessages();
   const card=option.closest(".poll-card");
   card?.classList.add("poll-busy");
   try{
-    const message=active?.messages?.find(m=>String(m.id)===String(messageId));
-    const ownVotes=message?.poll?.own_votes||[];
-    if(option.classList.contains("chosen")){
+    const ownVotes=before.own_votes||[];
+    if(removing){
       /* Clicking your current choice withdraws it. */
       const own=ownVotes.find(v=>String(v.option_id)===String(optionId));
       if(own?.id)await streamClient.removePollVote(messageId,pollId,own.id,viewerId());
@@ -2978,9 +2984,10 @@ $("#message-area").addEventListener("click",async e=>{
       }
       await streamClient.castPollVote(messageId,pollId,{option_id:optionId},viewerId());
     }
-    await refreshPoll(messageId,pollId);
-  }catch(error){toast(error.message||"Could not record your vote")}
-  finally{card?.classList.remove("poll-busy")}
+    void refreshPoll(messageId,pollId);
+  }catch(error){
+    message.poll=before;renderMessages();toast(error.message||"Could not record your vote");
+  }finally{pendingPollVotes.delete(requestKey);card?.classList.remove("poll-busy")}
 });
 
 /* Pulls the latest tallies for one poll and repaints just that card. */
