@@ -847,10 +847,9 @@ function renderList(){
     if(chatFilter==="favorites")return favorites.includes(String(c.id));
     return true;
   });
-  /* On the landing screen Space is also a people directory, so everyone is
-     visible before a conversation has been chosen. Once one is open, retain
-     the compact conversation list and only show directory results on search. */
-  const people=(q||!active)?directory.filter(person=>String(person.id)!==String(viewerId())&&(!q||`${person.full_name} ${person.email||""} ${person.department||""}`.toLowerCase().includes(q))&&!shown.some(chat=>String(chat.participantId)===String(person.id))):[];
+  /* Chats stay limited to people the user has actually messaged. The wider
+     directory is available only while searching for someone to start with. */
+  const people=q?directory.filter(person=>String(person.id)!==String(viewerId())&&`${person.full_name} ${person.email||""} ${person.department||""}`.toLowerCase().includes(q)&&!shown.some(chat=>String(chat.participantId)===String(person.id))):[];
   if(workspaceView==="favorites"){
     const favoriteChats=ordered.filter(c=>favorites.includes(String(c.id)));
     $("#chat-list").innerHTML=favoriteChats.length?favoriteChats.map(c=>`<div class="favorite-card" data-id="${esc(c.id)}" tabindex="0" role="button" aria-label="Open chat with ${esc(c.name)}">
