@@ -2327,3 +2327,18 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
   .tcm-meta{grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;padding:10px}
   .tcm-files{padding:0 10px 10px}
 }
+
+/* The group identity stays compact; editing lives behind the pencil instead
+   of taking permanent space in the chat details panel. */
+.details-person{position:relative}
+.details-group-edit{position:absolute;top:16px;right:0;display:grid;place-items:center;width:38px;height:38px;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:#64748b;cursor:pointer;transition:.18s ease}
+.details-group-edit svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.details-group-edit:hover,.details-group-edit:focus-visible{border-color:#c88a9d;background:var(--brand-soft);color:var(--brand);outline:0}
+.group-profile-dialog{width:min(430px,calc(100% - 28px));border:1px solid var(--line);border-radius:18px;background:var(--panel);color:var(--ink)}
+.group-profile-dialog::backdrop{background:#17202b80;backdrop-filter:blur(3px)}
+.group-profile-dialog .group-profile-form{gap:16px;padding:20px}
+.group-profile-dialog-head{display:flex;align-items:flex-start;justify-content:space-between}.group-profile-dialog-head .eyebrow{margin:0 0 4px}.group-profile-dialog-head h2{margin:0;font-size:20px;letter-spacing:-.03em}
+.group-profile-close{display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--muted);font-size:22px;line-height:1;cursor:pointer}
+.group-profile-dialog .group-profile-form>label{display:grid;gap:6px;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}.group-profile-dialog .group-profile-form input{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px;background:var(--panel);color:var(--ink);font:inherit;font-size:13px;text-transform:none;letter-spacing:0}.group-profile-dialog .group-profile-form input:focus{outline:0;border-color:var(--blue);box-shadow:0 0 0 3px #2563eb18}
+.group-profile-actions{display:flex;justify-content:flex-end;gap:9px;padding-top:4px}.group-profile-actions button{min-height:38px}
+:root[data-theme="dark"] .details-group-edit,:root[data-theme="dark"] .group-profile-close{border-color:#3a4250;background:#20242d;color:#d7dee9}:root[data-theme="dark"] .details-group-edit:hover,:root[data-theme="dark"] .details-group-edit:focus-visible{border-color:#7d3c51;background:#2a1720;color:#fda4af}:root[data-theme="dark"] .group-profile-dialog{border-color:#343b48;background:#171a21;color:#eef2f7}:root[data-theme="dark"] .group-profile-dialog .group-profile-form input{border-color:#3a4250;background:#20242d;color:#eef2f7}

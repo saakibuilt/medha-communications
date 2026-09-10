@@ -1158,9 +1158,24 @@ function toggleFavorite(chat){
   if(active?.id===chat.id)renderDetailsPanel();
   toast(next.includes(id)?"Added to favorites":"Removed from favorites");
 }
-function groupProfileMarkup(chat){
-  const image=chat.image?`<img id="group-image-preview" src="${esc(chat.image)}" alt="Current group icon">`:`<span id="group-image-preview" class="group-image-placeholder" aria-hidden="true">${esc(initialsFor(chat.name))}</span>`;
-  return `<section class="details-section group-profile-section" id="group-profile-section"><div class="group-profile-head"><h4>Group profile</h4><button type="button" class="group-profile-edit" data-group-profile-edit aria-label="Edit group name and icon" title="Edit group profile"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16.8-.8 4 4-.8L18.6 8.6a2.6 2.6 0 0 0-3.7-3.7L3.5 16.3Z"/><path d="m13.8 6 4.2 4.2"/></svg></button></div><form id="group-profile-form" class="group-profile-form"><label>Group name<input id="group-profile-name" maxlength="80" required value="${esc(chat.name)}"></label><div class="group-image-control"><div class="group-image-preview">${image}</div><label class="group-image-picker" for="group-profile-image">Change icon<input id="group-profile-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label></div><button class="secondary-button group-profile-save" type="submit">Save changes</button></form></section>`;
+function openGroupProfileDialog(){
+  if(!active||active.kind!=="group")return;
+  $("#group-profile-dialog")?.remove();
+  const image=active.image?`<img id="group-image-preview" src="${esc(active.image)}" alt="Current group icon">`:`<span id="group-image-preview" class="group-image-placeholder" aria-hidden="true">${esc(initialsFor(active.name))}</span>`;
+  document.body.insertAdjacentHTML("beforeend",`<dialog id="group-profile-dialog" class="group-profile-dialog"><form id="group-profile-form" class="group-profile-form"><header class="group-profile-dialog-head"><div><p class="eyebrow">Group</p><h2>Edit profile</h2></div><button type="button" class="group-profile-close" aria-label="Close">×</button></header><label>Group name<input id="group-profile-name" maxlength="80" required value="${esc(active.name)}"></label><div class="group-image-control"><div class="group-image-preview">${image}</div><label class="group-image-picker" for="group-profile-image">Change icon<input id="group-profile-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label></div><footer class="group-profile-actions"><button type="button" class="secondary-button group-profile-cancel">Cancel</button><button class="primary-button group-profile-save" type="submit">Save changes</button></footer></form></dialog>`);
+  const dialog=$("#group-profile-dialog"),form=$("#group-profile-form");
+  const close=()=>dialog?.close();
+  dialog?.addEventListener("close",()=>dialog.remove());
+  dialog?.querySelector(".group-profile-close")?.addEventListener("click",close);
+  dialog?.querySelector(".group-profile-cancel")?.addEventListener("click",close);
+  form?.addEventListener("submit",event=>{event.preventDefault();saveGroupProfile(form)});
+  form?.querySelector("#group-profile-image")?.addEventListener("change",event=>{
+    const file=event.target.files?.[0];if(!file)return;
+    const preview=$("#group-image-preview");
+    if(preview){const image=document.createElement("img");image.id="group-image-preview";image.alt="Selected group icon";image.src=URL.createObjectURL(file);preview.replaceWith(image)}
+  });
+  dialog?.showModal();
+  setTimeout(()=>{const input=$("#group-profile-name");input?.focus();input?.select()},50);
 }
 async function saveGroupProfile(form){
   if(!active||active.kind!=="group")return;
@@ -1175,7 +1190,7 @@ async function saveGroupProfile(form){
     if(imageFile)image=(await uploadFile(imageFile)).url;
     await channel.update({name,image});
     active.name=name;active.initials=initialsFor(name);active.image=image;
-    writeCache();renderList();renderMessages();toast("Group profile updated");
+    writeCache();renderList();renderMessages();$("#group-profile-dialog")?.close();toast("Group profile updated");
   }catch(error){toast(error.message||"Could not update the group profile")}
   finally{if(saveButton){saveButton.disabled=false;saveButton.textContent="Save changes"}}
 }
@@ -1183,6 +1198,16 @@ function renderDetailsPanel(){
   if(!active)return;
   const person=directory.find(p=>String(p.id)===String(active.participantId));
   const isGroup=active.kind==="group";
+  const detailsPerson=$("#details-panel .details-person");
+  let groupEdit=detailsPerson?.querySelector(".details-group-edit");
+  if(isGroup&&detailsPerson){
+    if(!groupEdit){
+      groupEdit=document.createElement("button");groupEdit.type="button";groupEdit.className="details-group-edit";
+      groupEdit.dataset.groupProfileEdit="";groupEdit.title="Edit group profile";groupEdit.setAttribute("aria-label","Edit group name and icon");
+      groupEdit.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16.8-.8 4 4-.8L18.6 8.6a2.6 2.6 0 0 0-3.7-3.7L3.5 16.3Z"/><path d="m13.8 6 4.2 4.2"/></svg>';
+      detailsPerson.append(groupEdit);
+    }
+  }else groupEdit?.remove();
   const isSelf=String(active.participantId)===String(viewerId());
   const status=$("#conversation-status").textContent||"";
   const media=(active.messages||[]).flatMap(m=>m.attachments||[]);
@@ -1190,7 +1215,7 @@ function renderDetailsPanel(){
   const creator=directory.find(p=>String(p.id)===creatorId);
   const creatorName=creator?.full_name||(creatorId===String(viewerId())?currentAppUser?.full_name:"")||active.createdByName||"Unknown";
   const facts=isGroup
-    ?`<button type="button" class="group-details-edit" data-group-profile-edit aria-label="Edit group profile"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16.8-.8 4 4-.8L18.6 8.6a2.6 2.6 0 0 0-3.7-3.7L3.5 16.3Z"/><path d="m13.8 6 4.2 4.2"/></svg><span>Edit group profile</span></button>`+[detailRow("Name",active.name),detailRow("Created by",creatorName),detailRow("Members",String((active.participantIds||[]).length))].filter(Boolean).join("")
+    ?[detailRow("Name",active.name),detailRow("Created by",creatorName),detailRow("Members",String((active.participantIds||[]).length))].filter(Boolean).join("")
     :[detailRow("Name",active.name),detailRow("Status",isSelf?"This is you":status),detailRow("Email",person?.email)].filter(Boolean).join("");
   const facts_el=$("#details-facts");
   if(facts_el)facts_el.innerHTML=facts||'<div class="directory-empty">No details available</div>';
@@ -1199,11 +1224,7 @@ function renderDetailsPanel(){
   const membersSection=$("#group-members-section");
   const membersList=$("#group-members-list");
   if(membersSection)membersSection.hidden=!isGroup;
-  let groupProfile=$("#group-profile-section");
-  if(isGroup&&membersSection){
-    if(!groupProfile){membersSection.insertAdjacentHTML("beforebegin",groupProfileMarkup(active));groupProfile=$("#group-profile-section")}
-    else groupProfile.outerHTML=groupProfileMarkup(active);
-  }else if(groupProfile)groupProfile.remove();
+  $("#group-profile-section")?.remove();
   if(membersList&&isGroup){
     const memberIds=[...new Set((active.participantIds||[]).filter(Boolean).map(String))];
     const count=memberIds.length;
@@ -2604,24 +2625,7 @@ $("#details-search")?.addEventListener("click",openConversationSearch);
 $("#details-panel")?.addEventListener("click",event=>{
   const edit=event.target.closest("[data-group-profile-edit]");
   if(!edit)return;
-  const profile=$("#group-profile-section");
-  profile?.scrollIntoView({behavior:"smooth",block:"start"});
-  profile?.classList.add("group-profile-highlight");
-  setTimeout(()=>profile?.classList.remove("group-profile-highlight"),1200);
-  const input=$("#group-profile-name");
-  setTimeout(()=>{input?.focus();input?.select()},180);
-});
-$("#details-panel")?.addEventListener("submit",event=>{
-  const form=event.target.closest("#group-profile-form");
-  if(!form)return;
-  event.preventDefault();saveGroupProfile(form);
-});
-$("#details-panel")?.addEventListener("change",event=>{
-  const input=event.target.closest("#group-profile-image");
-  const file=input?.files?.[0];
-  if(!file)return;
-  const preview=$("#group-image-preview");
-  if(preview){const image=document.createElement("img");image.id="group-image-preview";image.alt="Selected group icon";image.src=URL.createObjectURL(file);preview.replaceWith(image)}
+  openGroupProfileDialog();
 });
 $("#conversation-search-input")?.addEventListener("input",e=>renderConversationSearch(e.target.value));
 $("#conversation-search-results")?.addEventListener("click",e=>{
