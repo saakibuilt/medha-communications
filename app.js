@@ -67,6 +67,51 @@ function readLaunchToken(){
   try{return sessionStorage.getItem(launchStorageKey)}catch{return null}
 }
 const launchGate=$("#launch-gate");
+const WORKSPACE_APPS=Object.freeze({
+  tasks:"https://medha-activities.vercel.app/",
+  warehouse:"https://medha-warehouse.vercel.app/",
+  mail:"https://medha-hub.web.app/mail?v=4"
+});
+const WORKSPACE_WINDOWS=Object.freeze({tasks:"medha_app_tasks",warehouse:"medha_app_warehouse",mail:"medha_app_mailbox"});
+const MAIL_ACCOUNT_URL="https://medha-activities.vercel.app/api/mail-account";
+const workspaceLauncher=$("#workspace-launcher"),workspaceMenu=$("#workspace-menu"),workspaceMail=$("#workspace-mail");
+function setWorkspaceMenu(open){
+  if(!workspaceMenu||!workspaceLauncher)return;
+  workspaceMenu.hidden=!open;
+  workspaceLauncher.setAttribute("aria-expanded",String(open));
+}
+async function refreshWorkspaceMailAvailability(user){
+  if(!workspaceMail)return;
+  workspaceMail.hidden=true;
+  if(!user)return;
+  try{
+    const token=await user.getIdToken();
+    const response=await fetch(MAIL_ACCOUNT_URL,{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
+    const status=response.ok?await response.json():null;
+    workspaceMail.hidden=status?.connected!==true;
+  }catch{workspaceMail.hidden=true}
+}
+function openWorkspaceApp(app){
+  const user=auth.currentUser;
+  if(!user){toast("Sign in to Medha Hub to open an app");return}
+  setWorkspaceMenu(false);
+  /* Open synchronously to preserve the click's popup permission. The fresh
+     Firebase token is then added before Tasks/Warehouse navigate. */
+  const popup=window.open("about:blank",WORKSPACE_WINDOWS[app],"popup,width=1260,height=860");
+  if(!popup){toast("Your browser blocked the app window");return}
+  if(app==="mail"){popup.location.replace(WORKSPACE_APPS.mail);return}
+  user.getIdToken().then(token=>{
+    const url=app==="tasks"?`${WORKSPACE_APPS.tasks}#token=${encodeURIComponent(token)}`:`${WORKSPACE_APPS.warehouse}?token=${encodeURIComponent(token)}`;
+    popup.location.replace(url);
+  }).catch(()=>{popup.close();toast("Could not verify your Medha session")});
+}
+workspaceLauncher?.addEventListener("click",event=>{event.stopPropagation();setWorkspaceMenu(workspaceMenu?.hidden)});
+workspaceMenu?.addEventListener("click",event=>{
+  const button=event.target.closest("[data-workspace-app]");
+  if(button)openWorkspaceApp(button.dataset.workspaceApp);
+});
+document.addEventListener("click",event=>{if(workspaceMenu&&!workspaceMenu.hidden&&!workspaceMenu.contains(event.target)&&event.target!==workspaceLauncher&&!workspaceLauncher?.contains(event.target))setWorkspaceMenu(false)});
+document.addEventListener("keydown",event=>{if(event.key==="Escape")setWorkspaceMenu(false)});
 const SUPABASE_URL="https://nnvyfeckimnjvmeneiro.supabase.co";
 const SUPABASE_ANON_KEY="sb_publishable_H-o5HRFu3lCq5E9Hf1s3uA_Hi_LaMnY";
 const headers={apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`};
@@ -3633,6 +3678,7 @@ async function initializeAuthorizedUser(user){
   if(!user)return;
   currentUserId=user.uid;
   try{firebaseIdToken=await user.getIdToken()}catch{firebaseIdToken=null}
+  void refreshWorkspaceMailAvailability(user);
   $("#current-user").textContent=user.displayName||user.email||"Authenticating…";
   /* The profile only fills in a name and initials already shown as a
      placeholder, so it must not hold the launch screen up. */
