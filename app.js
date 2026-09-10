@@ -72,9 +72,9 @@ const WORKSPACE_APPS=Object.freeze({
   warehouse:"https://medha-warehouse.vercel.app/",
   mail:"https://medha-hub.web.app/mail?v=4"
 });
-const WORKSPACE_WINDOWS=Object.freeze({tasks:"medha_app_tasks",warehouse:"medha_app_warehouse",mail:"medha_app_mailbox"});
 const MAIL_ACCOUNT_URL="https://medha-activities.vercel.app/api/mail-account";
 const workspaceLauncher=$("#workspace-launcher"),workspaceMenu=$("#workspace-menu"),workspaceMail=$("#workspace-mail");
+const workspaceAppDialog=$("#workspace-app-dialog"),workspaceAppFrame=$("#workspace-app-frame"),workspaceAppTitle=$("#workspace-app-title"),workspaceAppLoading=$("#workspace-app-loading");
 function setWorkspaceMenu(open){
   if(!workspaceMenu||!workspaceLauncher)return;
   workspaceMenu.hidden=!open;
@@ -95,16 +95,22 @@ function openWorkspaceApp(app){
   const user=auth.currentUser;
   if(!user){toast("Sign in to Medha Hub to open an app");return}
   setWorkspaceMenu(false);
-  /* Open synchronously to preserve the click's popup permission. The fresh
-     Firebase token is then added before Tasks/Warehouse navigate. */
-  const popup=window.open("about:blank",WORKSPACE_WINDOWS[app],"popup,width=1260,height=860");
-  if(!popup){toast("Your browser blocked the app window");return}
-  if(app==="mail"){popup.location.replace(WORKSPACE_APPS.mail);return}
+  const title={tasks:"Tasks",warehouse:"Warehouse",mail:"Mail"}[app]||"Medha app";
+  if(!workspaceAppDialog||!workspaceAppFrame)return;
+  workspaceAppTitle.textContent=title;
+  workspaceAppFrame.title=`Medha ${title}`;
+  workspaceAppFrame.removeAttribute("src");
+  workspaceAppLoading.hidden=false;
+  if(!workspaceAppDialog.open)workspaceAppDialog.showModal();
+  if(app==="mail"){workspaceAppFrame.src=WORKSPACE_APPS.mail;return}
   user.getIdToken().then(token=>{
     const url=app==="tasks"?`${WORKSPACE_APPS.tasks}#token=${encodeURIComponent(token)}`:`${WORKSPACE_APPS.warehouse}?token=${encodeURIComponent(token)}`;
-    popup.location.replace(url);
-  }).catch(()=>{popup.close();toast("Could not verify your Medha session")});
+    workspaceAppFrame.src=url;
+  }).catch(()=>{workspaceAppDialog.close();toast("Could not verify your Medha session")});
 }
+workspaceAppFrame?.addEventListener("load",()=>{if(workspaceAppLoading)workspaceAppLoading.hidden=true});
+$("#workspace-app-close")?.addEventListener("click",()=>workspaceAppDialog?.close());
+workspaceAppDialog?.addEventListener("close",()=>{workspaceAppFrame?.removeAttribute("src");if(workspaceAppLoading)workspaceAppLoading.hidden=false});
 workspaceLauncher?.addEventListener("click",event=>{event.stopPropagation();setWorkspaceMenu(workspaceMenu?.hidden)});
 workspaceMenu?.addEventListener("click",event=>{
   const button=event.target.closest("[data-workspace-app]");

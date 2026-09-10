@@ -2169,3 +2169,32 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
   border:2px solid var(--line);border-top-color:var(--brand);animation:embedSpin .75s linear infinite}
 @keyframes embedSpin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.embed-loading-spin{animation:none}}
+
+/* ---------- Medha app switcher ---------- */
+.sidebar-top{position:relative}
+.workspace-launcher{display:grid;place-items:center;background:linear-gradient(135deg,#172554,#2563eb);box-shadow:0 7px 16px #1d4ed833}
+.workspace-launcher svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8}
+.workspace-launcher:hover{background:linear-gradient(135deg,#1e3a8a,#3b82f6)}
+.workspace-menu{position:absolute;z-index:30;top:67px;right:14px;width:264px;padding:8px;border:1px solid #e3e8f1;border-radius:17px;background:color-mix(in srgb,#fff 92%,transparent);box-shadow:0 20px 45px #17255424;backdrop-filter:blur(18px)}
+.workspace-menu[hidden]{display:none}
+.workspace-menu button{display:grid;grid-template-columns:40px minmax(0,1fr) 18px;align-items:center;column-gap:11px;width:100%;min-height:62px;padding:9px 10px;border:1px solid transparent;border-radius:12px;background:transparent;color:var(--ink);text-align:left;cursor:pointer;font:inherit}
+.workspace-menu button:hover,.workspace-menu button:focus-visible{outline:0;border-color:#dbe6fa;background:linear-gradient(135deg,#f7faff,#edf4ff)}
+.workspace-menu button:active{transform:scale(.985)}
+.workspace-menu-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;box-shadow:inset 0 1px #ffffff99}
+.workspace-menu-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.workspace-menu-icon--tasks{background:linear-gradient(135deg,#eee9ff,#ddd4fe);color:#6d28d9}.workspace-menu-icon--warehouse{background:linear-gradient(135deg,#fff5db,#fde8b4);color:#b45309}.workspace-menu-icon--mail{background:linear-gradient(135deg,#e2efff,#c8e0ff);color:#2563eb}
+.workspace-menu button>span:nth-child(2){display:grid;gap:3px;min-width:0}.workspace-menu strong{font-size:12.5px;line-height:1.1;letter-spacing:-.01em}.workspace-menu small{overflow:hidden;color:#718096;font-size:10.5px;line-height:1.2;text-overflow:ellipsis;white-space:nowrap}.workspace-menu i{justify-self:end;color:#8c9aad;font-size:16px;font-style:normal;line-height:1;transition:transform .18s ease,color .18s ease}.workspace-menu button:hover i,.workspace-menu button:focus-visible i{color:#2563eb;transform:translate(2px,-2px)}
+:root[data-theme="dark"] .workspace-menu{background:color-mix(in srgb,#171b24 94%,transparent);border-color:#363d4c;box-shadow:0 20px 45px #00000072}:root[data-theme="dark"] .workspace-menu button{color:#eef2f7}:root[data-theme="dark"] .workspace-menu button:hover,:root[data-theme="dark"] .workspace-menu button:focus-visible{border-color:#344968;background:linear-gradient(135deg,#202a39,#1c2635)}:root[data-theme="dark"] .workspace-menu small{color:#aab5c5}:root[data-theme="dark"] .workspace-menu-icon{box-shadow:inset 0 1px #ffffff1a}:root[data-theme="dark"] .workspace-menu-icon--tasks{background:linear-gradient(135deg,#302354,#241a43);color:#c4b5fd}:root[data-theme="dark"] .workspace-menu-icon--warehouse{background:linear-gradient(135deg,#46321a,#352512);color:#fcd58a}:root[data-theme="dark"] .workspace-menu-icon--mail{background:linear-gradient(135deg,#18365b,#122945);color:#9cc9ff}:root[data-theme="dark"] .workspace-menu button:hover i,:root[data-theme="dark"] .workspace-menu button:focus-visible i{color:#8fc2ff}
+
+/* ---------- Embedded workspace applications ---------- */
+.workspace-app-dialog{width:min(1420px,calc(100vw - 34px));height:min(900px,calc(100dvh - 34px));max-width:none;max-height:none;border:0;border-radius:20px;padding:0;background:transparent;box-shadow:0 28px 100px #0f172a73;overflow:hidden}
+.workspace-app-dialog::backdrop{background:#0f172a88;backdrop-filter:blur(5px)}
+.workspace-app-shell{display:grid;grid-template-rows:auto minmax(0,1fr);height:100%;background:var(--panel)}
+.workspace-app-header{display:flex;align-items:center;justify-content:space-between;min-height:68px;padding:13px 18px 13px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#fff,#f7faff)}
+.workspace-app-header .eyebrow{margin-bottom:3px}.workspace-app-header h2{margin:0;font-size:16px;letter-spacing:-.02em}
+.workspace-app-close{display:grid;place-items:center;width:36px;height:36px;border:1px solid #dce4ef;border-radius:11px;background:#fff;color:#64748b;font-size:25px;line-height:1;cursor:pointer}.workspace-app-close:hover{border-color:#b9c8dc;background:#f1f5f9;color:#172554}
+.workspace-app-shell iframe{display:block;width:100%;height:100%;border:0;background:#fff}
+.workspace-app-loading{position:absolute;z-index:1;display:grid;place-content:center;justify-items:center;gap:10px;inset:68px 0 0;background:var(--panel);color:var(--muted);font-size:12px}.workspace-app-loading[hidden]{display:none}.workspace-app-loading span{width:28px;height:28px;border:3px solid #dbeafe;border-top-color:#2563eb;border-radius:50%;animation:workspaceAppSpin .72s linear infinite}@keyframes workspaceAppSpin{to{transform:rotate(360deg)}}
+:root[data-theme="dark"] .workspace-app-shell,:root[data-theme="dark"] .workspace-app-loading{background:#171a21}:root[data-theme="dark"] .workspace-app-header{border-color:#303641;background:linear-gradient(135deg,#1d222c,#171a21)}:root[data-theme="dark"] .workspace-app-close{border-color:#3a4250;background:#252a34;color:#cbd5e1}:root[data-theme="dark"] .workspace-app-close:hover{background:#303744;color:#fff}:root[data-theme="dark"] .workspace-app-shell iframe{background:#171a21}
+@media(max-width:720px){.workspace-app-dialog{width:100vw;height:100dvh;border-radius:0}.workspace-app-header{min-height:60px;padding:10px 14px}.workspace-app-loading{inset:60px 0 0}}
+@media(prefers-reduced-motion:reduce){.workspace-app-loading span{animation:none}}
