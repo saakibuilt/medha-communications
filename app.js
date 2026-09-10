@@ -1190,7 +1190,7 @@ function renderDetailsPanel(){
   const creator=directory.find(p=>String(p.id)===creatorId);
   const creatorName=creator?.full_name||(creatorId===String(viewerId())?currentAppUser?.full_name:"")||active.createdByName||"Unknown";
   const facts=isGroup
-    ?[detailRow("Name",active.name),detailRow("Created by",creatorName),detailRow("Members",String((active.participantIds||[]).length))].filter(Boolean).join("")
+    ?`<button type="button" class="group-details-edit" data-group-profile-edit aria-label="Edit group profile"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16.8-.8 4 4-.8L18.6 8.6a2.6 2.6 0 0 0-3.7-3.7L3.5 16.3Z"/><path d="m13.8 6 4.2 4.2"/></svg><span>Edit group profile</span></button>`+[detailRow("Name",active.name),detailRow("Created by",creatorName),detailRow("Members",String((active.participantIds||[]).length))].filter(Boolean).join("")
     :[detailRow("Name",active.name),detailRow("Status",isSelf?"This is you":status),detailRow("Email",person?.email)].filter(Boolean).join("");
   const facts_el=$("#details-facts");
   if(facts_el)facts_el.innerHTML=facts||'<div class="directory-empty">No details available</div>';
@@ -2604,8 +2604,12 @@ $("#details-search")?.addEventListener("click",openConversationSearch);
 $("#details-panel")?.addEventListener("click",event=>{
   const edit=event.target.closest("[data-group-profile-edit]");
   if(!edit)return;
+  const profile=$("#group-profile-section");
+  profile?.scrollIntoView({behavior:"smooth",block:"start"});
+  profile?.classList.add("group-profile-highlight");
+  setTimeout(()=>profile?.classList.remove("group-profile-highlight"),1200);
   const input=$("#group-profile-name");
-  input?.focus();input?.select();
+  setTimeout(()=>{input?.focus();input?.select()},180);
 });
 $("#details-panel")?.addEventListener("submit",event=>{
   const form=event.target.closest("#group-profile-form");
