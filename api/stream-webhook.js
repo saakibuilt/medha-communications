@@ -3,6 +3,7 @@ import { gunzipSync } from "node:zlib";
 
 const PUSH_ENDPOINT="https://medha-activities.vercel.app/api/space-push";
 const HUB_URL="https://medha-hub.web.app/";
+const hubChatUrl=cid=>`${HUB_URL}?open_chat=${encodeURIComponent(cid)}`;
 
 function readRawBody(request){
   /* Stream signs the exact JSON bytes. On Vercel, reading request.body first
@@ -75,7 +76,8 @@ export default async function handler(request,response){
       const message=event.message||{};
       const sender=message.user?.name||event.user?.name||"New message";
       const recipients=messageRecipients(event);
-      const result=await forwardPush(recipients,{title:sender,body:message.text||"Sent an attachment",url:HUB_URL,tag:`stream-message-${message.id||Date.now()}`});
+      const cid=event.channel?.cid||message.channel_cid||"";
+      const result=await forwardPush(recipients,{title:sender,body:message.text||"Sent an attachment",url:cid?hubChatUrl(cid):HUB_URL,tag:`stream-message-${message.id||Date.now()}`});
       console.info("Stream message push result",{recipients:recipients.length,delivered:result.delivered||0,skipped:result.skipped||null});
       return response.status(200).json({ok:true,type,result});
     }
