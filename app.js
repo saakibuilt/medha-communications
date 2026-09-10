@@ -102,9 +102,9 @@ function openWorkspaceApp(app){
   workspaceAppFrame.removeAttribute("src");
   workspaceAppLoading.hidden=false;
   if(!workspaceAppDialog.open)workspaceAppDialog.showModal();
-  if(app==="mail"){workspaceAppFrame.src=WORKSPACE_APPS.mail;return}
   user.getIdToken().then(token=>{
-    const url=app==="tasks"?`${WORKSPACE_APPS.tasks}#token=${encodeURIComponent(token)}`:`${WORKSPACE_APPS.warehouse}?token=${encodeURIComponent(token)}`;
+    const encodedToken=encodeURIComponent(token);
+    const url=app==="tasks"?`${WORKSPACE_APPS.tasks}#token=${encodedToken}`:app==="mail"?`${WORKSPACE_APPS.mail}#token=${encodedToken}`:`${WORKSPACE_APPS.warehouse}?token=${encodedToken}`;
     workspaceAppFrame.src=url;
   }).catch(()=>{workspaceAppDialog.close();toast("Could not verify your Medha session")});
 }
