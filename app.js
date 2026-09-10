@@ -102,9 +102,15 @@ function openWorkspaceApp(app){
   workspaceAppFrame.removeAttribute("src");
   workspaceAppLoading.hidden=false;
   if(!workspaceAppDialog.open)workspaceAppDialog.showModal();
-  user.getIdToken().then(token=>{
+  user.getIdToken().then(async token=>{
     const encodedToken=encodeURIComponent(token);
-    const url=app==="tasks"?`${WORKSPACE_APPS.tasks}#token=${encodedToken}`:app==="mail"?`${WORKSPACE_APPS.mail}#token=${encodedToken}`:`${WORKSPACE_APPS.warehouse}?token=${encodedToken}`;
+    let url;
+    if(app==="mail"){
+      const response=await fetch("/api/hub-session",{method:"POST",headers:{Authorization:`Bearer ${token}`}});
+      const session=await response.json().catch(()=>({}));
+      if(!response.ok||!session.customToken)throw Error("Could not start your Medha mailbox session");
+      url=`${WORKSPACE_APPS.mail}#workspace_token=${encodeURIComponent(session.customToken)}`;
+    }else url=app==="tasks"?`${WORKSPACE_APPS.tasks}#token=${encodedToken}`:`${WORKSPACE_APPS.warehouse}?token=${encodedToken}`;
     workspaceAppFrame.src=url;
   }).catch(()=>{workspaceAppDialog.close();toast("Could not verify your Medha session")});
 }
@@ -238,10 +244,41 @@ const GOOGLE_DOC_KINDS={document:{label:"Google Doc",glyph:"\u{1F4C4}",export:"e
   spreadsheets:{label:"Google Sheet",glyph:"\u{1F4CA}",export:"export?format=xlsx"},
   presentation:{label:"Google Slides",glyph:"\u{1F4FD}",export:"export/pdf"}};
 const FILE_EXTENSION=/\.(pdf|docx?|xlsx?|pptx?|csv|txt|rtf|zip|rar|7z|png|jpe?g|gif|webp|svg|avif|heic|mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac)(?:$|[?#])/i;
+/* Links back into Medha's own apps. These render as an internal card and
+   open inside Space rather than in a new tab, so a shared warehouse entry can
+   be read without leaving the conversation. */
+const MEDHA_APP_HOSTS={
+  "medha-warehouse.vercel.app":{service:"Medha Warehouse",glyph:"\u{1F4E6}",label:"Warehouse entry"},
+};
+function describeMedhaAppLink(url,host){
+  const app=MEDHA_APP_HOSTS[host];
+  if(!app)return null;
+  let name=app.label,detail=app.service,embedUrl="";
+  try{
+    const parsed=new URL(url);
+    /* The sender puts the human title in ?title= so the card can name the
+       entry without Space having to call the other app to find out. */
+    const title=parsed.searchParams.get("title");
+    if(title)name=title;
+    else{
+      const seg=parsed.pathname.split("/").filter(Boolean).pop();
+      if(seg&&seg!=="shipment")name=decodeURIComponent(seg).replace(/[-_]+/g," ").replace(/\b\w/g,c=>c.toUpperCase());
+    }
+    const sub=parsed.searchParams.get("subtitle");
+    if(sub)detail=`${app.service} \u00b7 ${sub}`;
+    const embed=new URL(url);
+    embed.searchParams.set("embed","1");
+    embedUrl=embed.toString();
+  }catch{}
+  return {kind:"medha",service:detail,glyph:app.glyph,name,
+    openUrl:url,embedUrl,downloadUrl:"",internal:true};
+}
 function describeLink(raw){
   const url=trimUrl(raw);
   let host="";
   try{host=new URL(url).hostname.replace(/^www\./,"")}catch{return null}
+  const medha=describeMedhaAppLink(url,host);
+  if(medha)return medha;
   const google=url.match(/docs\.google\.com\/(document|spreadsheets|presentation)\/d\/([\w-]+)/);
   if(google){
     const kind=GOOGLE_DOC_KINDS[google[1]];
@@ -318,6 +355,37 @@ function displayText(m){
   body=body.replace(/[ \t]{2,}/g," ").replace(/\n{3,}/g,"\n\n").trim();
   return body;
 }
+/* ---------- shared task scorecard ----------
+   The Activities app puts a `medha_task` object on the message; the text stays
+   as a plain-language fallback for previews and notifications. Everything here
+   is rendered from that object - Space never calls back to Activities. */
+function taskCardHtml(m){
+  const card=m?.taskCard;
+  if(!card||typeof card!=="object")return "";
+  const priority=String(card.priority||"none").toLowerCase();
+  const status=String(card.status||"").toLowerCase();
+  const rows=[
+    ["Due",card.due||"Not set"],
+    ["Assigned by",card.assignedBy||""],
+    ["Assigned to",card.assignedTo||""],
+    ["Recurring",card.recurring||""]
+  ].filter(([,value])=>value);
+  const files=(Array.isArray(card.attachments)?card.attachments:[])
+    .filter(file=>file&&/^https?:\/\//i.test(String(file.url||"")));
+  return `<article class="task-card-message">
+    <header class="tcm-head">
+      <span class="tcm-eyebrow">Task</span>
+      ${status?`<span class="tcm-status tcm-status-${esc(status.replace(/\s+/g,"-"))}">${esc(status)}</span>`:""}
+      <span class="tcm-priority tcm-priority-${esc(priority.replace(/\s+/g,"-"))}">${esc(priority)}</span>
+    </header>
+    <h4 class="tcm-title">${esc(card.title||"Untitled task")}</h4>
+    ${card.details?`<p class="tcm-details">${esc(card.details)}</p>`:""}
+    ${rows.length?`<dl class="tcm-meta">${rows.map(([label,value])=>
+      `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>`:""}
+    ${files.length?`<div class="tcm-files">${files.map(file=>
+      `<a href="${esc(file.url)}" target="_blank" rel="noopener">${esc(file.name||"Attachment")}</a>`).join("")}</div>`:""}
+  </article>`;
+}
 function streamMessageToApp(message){
   const rawSenderId=String(message.user?.id||"");
   /* Older local development messages used a placeholder ID. Treat those as
@@ -325,6 +393,9 @@ function streamMessageToApp(message){
   const senderId=(location.hostname==="localhost"&&(rawSenderId==="medha-local-user"||message.user?.name==="Local Medha User"))?viewerId():rawSenderId;
   const profile=directory.find(person=>String(person.id)===senderId);
   return {id:String(message.id),senderId,who:isMine(senderId)?"me":"them",parentId:message.parent_id||null,pinned:!!message.pinned,callId:message.call_id||null,pollId:message.poll_id||null,poll:message.poll||null,
+    /* Custom top-level field set by the Activities app when a task is shared
+       into a chat. Stream preserves unknown fields verbatim. */
+    taskCard:(message.medha_task&&typeof message.medha_task==="object")?message.medha_task:null,
     senderName:isMine(senderId)?(currentAppUser?.full_name||currentAppUser?.name||"You"):(profile?.full_name||message.user?.name||active?.name||"Unknown user"),text:message.text||"",
     /* Stream returns a GIF as type "image", so the kind has to be recovered
        from the url or the giphy marker - otherwise a sent GIF comes back as a
@@ -662,7 +733,7 @@ function writeCache(){
       messages:(c.messages||[]).slice(-10).map(m=>({
         id:m.id,senderId:m.senderId,who:m.who,senderName:m.senderName,
         text:String(m.text||"").slice(0,600),parentId:m.parentId||null,
-        pinned:!!m.pinned,pollId:m.pollId||null,
+        pinned:!!m.pinned,pollId:m.pollId||null,taskCard:m.taskCard||null,
         attachments:(m.attachments||[]).slice(0,6),
         reactions:m.reactions||{},createdAt:m.createdAt,time:m.time}))
     }))));
@@ -858,7 +929,7 @@ function messageHtml(m){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4.2-1L3 20l1.2-4.6A8.4 8.4 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>
       ${replyCount} ${replyCount===1?"reply":"replies"}
     </button>`:"";
-  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${linkifyHtml(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted?`<div class="bubble">${linkifyHtml(displayText(m))}</div>`:""}${attachmentsHtml(links)}${sharedLinksHtml(shared)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}${mine&&String(m.id)===String(statusMessageId)?statusTickHtml(messageStatusFor(active,m)):""}</div></div>`;
+  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${taskCardHtml(m)}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${linkifyHtml(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted&&!m.taskCard?`<div class="bubble">${linkifyHtml(displayText(m))}</div>`:""}${attachmentsHtml(links)}${sharedLinksHtml(shared)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}${mine&&String(m.id)===String(statusMessageId)?statusTickHtml(messageStatusFor(active,m)):""}</div></div>`;
 }
 
 /* ---------- thread view (replies only) ----------
@@ -967,7 +1038,7 @@ $("#thread-composer").addEventListener("submit",async e=>{
 function sharedLinksHtml(links){
   if(!links?.length)return "";
   return links.map(link=>`<div class="shared-link" data-link-kind="${esc(link.kind)}">
-      <a class="shared-link-main" href="${esc(link.openUrl)}" target="_blank" rel="noopener noreferrer">
+      <a class="shared-link-main"${link.internal&&link.embedUrl?` data-link-preview="${esc(link.embedUrl)}" data-link-name="${esc(link.name)}" data-link-open="${esc(link.openUrl)}" data-link-internal="1"`:""} href="${esc(link.openUrl)}" target="_blank" rel="noopener noreferrer">
         <span class="shared-link-glyph">${link.glyph}</span>
         <span class="shared-link-copy"><strong>${esc(link.name)}</strong><small>${esc(link.service)}</small></span>
       </a>
@@ -1014,7 +1085,8 @@ $("#message-area").addEventListener("click",e=>{
   if(preview){
     e.preventDefault();
     openAttachmentPreview({kind:"link",url:preview.dataset.linkPreview,
-      name:preview.dataset.linkName,openUrl:preview.dataset.linkOpen});
+      name:preview.dataset.linkName,openUrl:preview.dataset.linkOpen,
+      internal:preview.dataset.linkInternal==="1"});
     return;
   }
   const button=e.target.closest("[data-open-attachment]");
@@ -1909,6 +1981,15 @@ document.body.append(attachmentPreview);
 attachmentPreview.querySelector("#preview-close").addEventListener("click",()=>attachmentPreview.close());
 /* Clicking the backdrop closes, matching how every other lightbox behaves. */
 attachmentPreview.addEventListener("click",e=>{if(e.target===attachmentPreview)attachmentPreview.close()});
+/* Stamps the viewer's own Firebase ID token onto a Medha app URL so the
+   embedded page can authenticate. Never stored, never sent to the channel. */
+async function medhaEmbedUrl(raw){
+  const user=auth.currentUser;
+  if(!user)throw Error("Sign in to open this");
+  const url=new URL(raw);
+  url.searchParams.set("token",await user.getIdToken());
+  return url.toString();
+}
 function openAttachmentPreview(attachment){
   if(!attachment?.url){toast("This attachment is still uploading");return}
   const name=attachment.name||"Attachment";
@@ -1920,6 +2001,20 @@ function openAttachmentPreview(attachment){
     openLink.href=attachment.openUrl||attachment.url;
     openLink.removeAttribute("download");
     openLink.textContent="Open original";
+    if(attachment.internal){
+      /* Another Medha app gates on a Hub launch token. The token is minted
+         here, for THIS viewer, at click time - it is never part of the shared
+         message, so a conversation never carries anyone's credential. */
+      $("#preview-body").innerHTML=`<div class="preview-fallback"><strong>Opening\u2026</strong></div>`;
+      attachmentPreview.showModal();
+      medhaEmbedUrl(attachment.url).then(src=>{
+        $("#preview-body").innerHTML=`<iframe class="preview-frame" src="${esc(src)}" title="${esc(name)}" loading="lazy" allow="autoplay"></iframe>`;
+      }).catch(()=>{
+        $("#preview-body").innerHTML=`<div class="preview-fallback"><strong>${esc(name)}</strong>
+          <p>Could not open this here. Use "Open original" to view it in Medha.</p></div>`;
+      });
+      return;
+    }
     $("#preview-body").innerHTML=`<iframe class="preview-frame" src="${esc(attachment.url)}" title="${esc(name)}" loading="lazy" referrerpolicy="no-referrer" allow="autoplay"></iframe>`;
     attachmentPreview.showModal();
     return;
