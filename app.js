@@ -1211,7 +1211,7 @@ function renderDetailsPanel(){
       const member=directory.find(p=>String(p.id)===String(id));
       const name=member?.full_name||(String(id)===String(viewerId())?currentAppUser?.full_name:"")||"Unknown user";
       const username=memberUsername(member,id);
-      return '<div class="group-member"><span class="person-avatar blue small">'+esc(initialsFor(name))+'</span><span class="group-member-copy"><strong>'+esc(name)+'</strong><small>@'+esc(username)+'</small></span>'+(String(id)===creatorId?'<span class="group-owner">Creator</span>':"")+'</div>';
+      return '<button type="button" class="group-member" data-group-member-id="'+esc(id)+'" data-group-member-name="'+esc(name)+'" aria-label="Open '+esc(name)+' profile"><span class="person-avatar blue small">'+esc(initialsFor(name))+'</span><span class="group-member-copy"><strong>'+esc(name)+'</strong><small>@'+esc(username)+'</small></span>'+(String(id)===creatorId?'<span class="group-owner">Creator</span>':"")+'<span class="group-member-go" aria-hidden="true">›</span></button>';
     });
     membersList.innerHTML=members.join("")||'<div class="directory-empty">No members found</div>';
     const countLabel=count===1?"1 member":`${count} members`;
@@ -1733,6 +1733,33 @@ async function openDirectChat(person,openingText){
   return chat;
 }
 
+
+/* Group Details opens a focused member sheet, then reuses the standard
+   direct-conversation and Stream audio-call flows. */
+const groupMemberDialog=document.createElement("dialog");
+groupMemberDialog.id="group-member-dialog";groupMemberDialog.className="group-member-dialog";
+groupMemberDialog.innerHTML=`<section class="member-profile-sheet"><button type="button" class="member-profile-close" aria-label="Close member profile">×</button><span class="member-profile-avatar" id="member-profile-avatar">?</span><p class="eyebrow">Group member</p><h2 id="member-profile-name">Member</h2><p class="member-profile-handle" id="member-profile-handle"></p><div class="member-profile-actions"><button type="button" class="member-profile-action" data-member-profile-action="message" aria-label="Message member"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.5c0 4.1-3.8 7.4-8.5 7.4-1 0-2-.2-2.9-.5L4 20l1.4-4A6.9 6.9 0 0 1 3.5 11.5C3.5 7.4 7.3 4.1 12 4.1s8.5 3.3 8.5 7.4Z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg><span>Message</span></button><button type="button" class="member-profile-action" data-member-profile-action="call" aria-label="Start audio call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 3.5 9 3l2 5-2.2 1.8a14.5 14.5 0 0 0 5.4 5.4L16 13l5 2 .5 2.4a2 2 0 0 1-2.2 2.3C11.5 19 5 12.5 4.3 4.7A2 2 0 0 1 6.6 3.5Z"/></svg><span>Audio call</span></button></div></section>`;
+document.body.append(groupMemberDialog);
+let selectedGroupMember=null;
+function openGroupMemberProfile(id,name){
+  const person=directory.find(item=>String(item.id)===String(id))||{id:String(id),full_name:name||"Medha user"};
+  selectedGroupMember=person;
+  const fullName=person.full_name||name||"Medha user",self=String(person.id)===String(viewerId());
+  $("#member-profile-avatar").textContent=initialsFor(fullName);$("#member-profile-name").textContent=fullName;
+  $("#member-profile-handle").textContent="@"+memberUsername(person,person.id);
+  groupMemberDialog.querySelectorAll("[data-member-profile-action]").forEach(button=>{button.disabled=self;button.title=self?"This is you":""});
+  if(!groupMemberDialog.open)groupMemberDialog.showModal();
+}
+$("#group-members-list")?.addEventListener("click",event=>{const member=event.target.closest("[data-group-member-id]");if(member)openGroupMemberProfile(member.dataset.groupMemberId,member.dataset.groupMemberName)});
+groupMemberDialog.querySelector(".member-profile-close")?.addEventListener("click",()=>groupMemberDialog.close());
+groupMemberDialog.addEventListener("click",event=>{if(event.target===groupMemberDialog)groupMemberDialog.close()});
+groupMemberDialog.addEventListener("click",async event=>{
+  const action=event.target.closest("[data-member-profile-action]")?.dataset.memberProfileAction;
+  if(!action||!selectedGroupMember)return;
+  const button=event.target.closest("button");if(button?.disabled)return;
+  groupMemberDialog.close();
+  try{await openDirectChat(selectedGroupMember,"");if(action==="call")await startStreamCall("audio")}catch(error){toast(error.message||"Could not open this member")}
+});
 
 /* ---------- responsive: chat list drawer on small screens ---------- */
 /* Must match the CSS drawer breakpoint below, or the menu button and
