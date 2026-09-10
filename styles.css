@@ -2233,6 +2233,25 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
 @media(max-width:1024px){.rail{position:fixed}}
 @media(prefers-reduced-motion:reduce){.rail .workspace-menu,.rail .workspace-menu[hidden]{transition:none}}
 
+/* iPhone-style message action: the arrow is a floating control inside the
+   writing field. The textarea reserves its entire right edge, so wrapped
+   text can never pass underneath the send button. */
+@media(max-width:760px){
+  #chat-view.active-view .composer{position:relative;overflow:visible}
+  #chat-view.active-view .composer textarea{padding:9px 64px 9px 14px;min-height:46px;line-height:1.45}
+  #chat-view.active-view .composer-bottom{position:static;height:0;min-height:0;padding:0;overflow:visible}
+  #chat-view.active-view .composer-bottom>span{display:none}
+  #chat-view.active-view .send-button{
+    position:absolute;right:9px;bottom:9px;z-index:3;display:grid;place-items:center;
+    width:36px;height:36px;min-width:36px;padding:0;border-radius:50%;
+    background:linear-gradient(145deg,#a51f48,#7f1233);box-shadow:0 3px 10px #88133745;
+    color:transparent;font-size:0
+  }
+  #chat-view.active-view .send-button::before{content:"↑";color:#fff;font-size:22px;font-weight:500;line-height:1;transform:translateY(-1px)}
+  #chat-view.active-view .send-button span{display:none}
+  #chat-view.active-view .send-button:disabled{opacity:.48}
+}
+
 /* ---------- shared task scorecard ----------
    A task shared from Medha Activities renders as a card in place of the plain
    bubble: brand-tinted header strip, title, then a small label/value grid. It

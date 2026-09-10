@@ -767,7 +767,11 @@ function hydrateFromCache(){
       hasMore:true,
       fromCache:true};
   });
-  active=conversations.find(c=>c.id===(active?.id||cached?.activeId))||conversations[0]||null;
+  /* Space opens at the people list. A cached last conversation must never
+     silently reopen and mark a thread as read before the person chooses it. */
+  active=embedMode
+    ?conversations.find(c=>c.id===(active?.id||cached?.activeId))||null
+    :null;
   renderList();
   if(active){renderMessages();scrollMessagesToEnd()}
   return true;
@@ -816,7 +820,10 @@ function renderList(){
     if(chatFilter==="favorites")return favorites.includes(String(c.id));
     return true;
   });
-  const people=q?directory.filter(person=>String(person.id)!==String(viewerId())&&`${person.full_name} ${person.email||""} ${person.department||""}`.toLowerCase().includes(q)&&!shown.some(chat=>String(chat.participantId)===String(person.id))):[];
+  /* On the landing screen Space is also a people directory, so everyone is
+     visible before a conversation has been chosen. Once one is open, retain
+     the compact conversation list and only show directory results on search. */
+  const people=(q||!active)?directory.filter(person=>String(person.id)!==String(viewerId())&&(!q||`${person.full_name} ${person.email||""} ${person.department||""}`.toLowerCase().includes(q))&&!shown.some(chat=>String(chat.participantId)===String(person.id))):[];
   if(workspaceView==="favorites"){
     const favoriteChats=ordered.filter(c=>favorites.includes(String(c.id)));
     $("#chat-list").innerHTML=favoriteChats.length?favoriteChats.map(c=>`<div class="favorite-card" data-id="${esc(c.id)}" tabindex="0" role="button" aria-label="Open chat with ${esc(c.name)}">
@@ -1257,6 +1264,9 @@ function toggleDetails(){
 function renderMessages(){
   const area=$("#message-area");
   if(!active){
+    /* The first phone screen is the people list. Keep its drawer open until
+       a person is selected instead of showing an empty conversation pane. */
+    if(isMobile()&&!embedMode)openMobileSidebar();
     $("#conversation-name").textContent=embedMode?"Loading…":"No conversation selected";
     $("#details-name").textContent="No conversation selected";
     $("#conversation-status").textContent="";
@@ -3847,10 +3857,11 @@ async function initializeAuthorizedUser(user){
      parallel with initializeStream above, so it costs no extra wait. */
   await profileReady;
   await hydrateConversations();
-  /* Open the most recent chat and land on the newest message. The cache
-     may already have set `active`, so this must not be skipped - that is
-     what left the view sitting at the top of the day on refresh. */
-  const openId=active?.id||conversations[0]?.id;
+  /* A normal Space launch lands on the directory, not a previously opened
+     thread. Hub notification embeds are the one intentional exception. */
+  if(embedMode)openEmbedChat();
+  const requestedEmbed=conversations.find(chat=>String(chat.cid)===String(embedChatCid)||String(chat.id)===String(embedChatCid));
+  const openId=embedMode?(active?.id||requestedEmbed?.id):null;
   /* The launch screen comes down once the conversation list is painted and
      the opened chat has whatever the cache holds. switchChat then refreshes
      that chat from the server behind the app, rather than in front of it -
@@ -3903,7 +3914,7 @@ async function authorizeHubLaunch(){
         launchAuthorized=true;currentUserId=localUser.id;currentAppUser={id:localUser.id,full_name:localUser.name,email:""};
         $("#current-user").textContent=localUser.name;$("#current-user-initials").textContent=initialsFor(localUser.name);
         startPresenceHeartbeat();await Promise.all([hydrateConversations(),loadMeetings()]);
-        const openId=active?.id||conversations[0]?.id;if(openId)await switchChat(openId);
+        if(embedMode){openEmbedChat();const openId=active?.id||conversations.find(chat=>String(chat.cid)===String(embedChatCid)||String(chat.id)===String(embedChatCid))?.id;if(openId)await switchChat(openId)}
         finishSpaceLoading("Local Stream workspace ready");launchGate.hidden=true;return;
       }catch(error){finishSpaceLoading(error.message||"Stream connection unavailable")}
     }
