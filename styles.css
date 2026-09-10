@@ -2208,10 +2208,11 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
    composer. Keeping this as a grid prevents the composer from consuming the
    message row and appearing directly below the contact name. */
 @media(max-width:760px){
-  #chat-view.active-view{display:grid!important;grid-template-rows:auto minmax(0,1fr) auto;height:100%;min-height:0;overflow:hidden}
+  #chat-view.active-view{display:grid!important;grid-template-rows:auto minmax(0,1fr) auto auto;height:100%;min-height:0;overflow:hidden}
   #chat-view.active-view .conversation-header{grid-row:1;min-width:0}
   #chat-view.active-view .message-area{grid-row:2;display:block;min-height:0;height:auto;overflow-y:auto;overscroll-behavior:contain}
-  #chat-view.active-view .composer{grid-row:3;min-width:0;margin:6px 10px max(8px,env(safe-area-inset-bottom));align-self:end}
+  #chat-view.active-view .typing{grid-row:3;min-height:0;height:auto}
+  #chat-view.active-view .composer{grid-row:4;min-width:0;margin:6px 10px max(8px,env(safe-area-inset-bottom));align-self:end}
   body.keyboard-open #chat-view.active-view .composer{margin-bottom:6px}
 }
 
@@ -2226,6 +2227,10 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
 .rail .workspace-menu[hidden]{display:grid!important;opacity:0;transform:translateY(-8px) scale(.97);visibility:hidden;pointer-events:none;transition:opacity .16s ease,transform .16s ease,visibility 0s linear .16s}
 :root[data-theme="dark"] .rail .workspace-menu[hidden]{background:color-mix(in srgb,#171b24 94%,transparent)}
 @media(max-width:720px){.rail .workspace-menu{left:54px;width:min(264px,calc(100vw - 64px))}}
+/* Keep the launcher positioned in the rail without taking the rail out of the
+   responsive drawer layout.  A relative rail becomes a second implicit grid
+   row on phones, leaving the chat only part of the viewport tall. */
+@media(max-width:1024px){.rail{position:fixed}}
 @media(prefers-reduced-motion:reduce){.rail .workspace-menu,.rail .workspace-menu[hidden]{transition:none}}
 
 /* ---------- shared task scorecard ----------
