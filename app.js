@@ -70,7 +70,7 @@ const launchGate=$("#launch-gate");
 const WORKSPACE_APPS=Object.freeze({
   tasks:"https://medha-activities.vercel.app/",
   warehouse:"https://medha-warehouse.vercel.app/",
-  mail:"https://medha-hub.web.app/mail?v=4"
+  mail:"https://medha-hub.web.app/mailbox?v=4"
 });
 const MAIL_ACCOUNT_URL="https://medha-activities.vercel.app/api/mail-account";
 const workspaceLauncher=$("#workspace-launcher"),workspaceMenu=$("#workspace-menu"),workspaceMail=$("#workspace-mail");
