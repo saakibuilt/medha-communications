@@ -474,6 +474,16 @@ async function watchStreamChannel(chat){
   if(!watchPromise){
     watchPromise=(async()=>{
       await channel.watch();
+      channel.on("channel.updated",event=>{
+        const changed=conversations.find(chat=>chat.cid===channel.cid);
+        if(!changed)return;
+        const data=event.channel||channel.data||{};
+        changed.name=data.name||changed.name;
+        changed.image=data.image||"";
+        changed.initials=initialsFor(changed.name);
+        writeCache();renderList();
+        if(active?.cid===channel.cid)renderMessages();
+      });
       channel.on("message.new",event=>{
         if(event.message?.user?.id===viewerId())return;
         applyIncomingStreamMessage({...event,cid:channel.cid,channel:{cid:channel.cid}});
@@ -579,7 +589,9 @@ async function db(path,options={}){
    person's name and made group chats indistinguishable from direct ones. */
 function avatar(c,small=false){
   const group=c?.kind==="group";
-  const inner=group
+  const inner=group&&c?.image
+    ?`<img src="${esc(c.image)}" alt="" class="group-avatar-image">`
+    :group
     ?`<svg viewBox="0 0 24 24" aria-hidden="true" class="group-glyph"><circle cx="9" cy="9" r="3.2"/><path d="M3.4 18.2c0-2.7 2.5-4.4 5.6-4.4s5.6 1.7 5.6 4.4"/><circle cx="16.8" cy="10.2" r="2.4"/><path d="M16.8 14.6c2.4 0 4.2 1.4 4.2 3.6"/></svg>`
     :esc(c?.initials||"");
   return `<div class="person-avatar ${c?.color||"blue"}${small?" small":""}${group?" is-group":""}"${group?` title="Group chat"`:""}>${inner}</div>`;
@@ -1041,6 +1053,27 @@ function toggleFavorite(chat){
   if(active?.id===chat.id)renderDetailsPanel();
   toast(next.includes(id)?"Added to favorites":"Removed from favorites");
 }
+function groupProfileMarkup(chat){
+  const image=chat.image?`<img id="group-image-preview" src="${esc(chat.image)}" alt="Current group icon">`:`<span id="group-image-preview" class="group-image-placeholder" aria-hidden="true">${esc(initialsFor(chat.name))}</span>`;
+  return `<section class="details-section group-profile-section" id="group-profile-section"><h4>Group profile</h4><form id="group-profile-form" class="group-profile-form"><label>Group name<input id="group-profile-name" maxlength="80" required value="${esc(chat.name)}"></label><div class="group-image-control"><div class="group-image-preview">${image}</div><label class="group-image-picker" for="group-profile-image">Change icon<input id="group-profile-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label></div><button class="secondary-button group-profile-save" type="submit">Save changes</button></form></section>`;
+}
+async function saveGroupProfile(form){
+  if(!active||active.kind!=="group")return;
+  const name=$("#group-profile-name")?.value.trim(),imageFile=$("#group-profile-image")?.files?.[0];
+  if(!name){toast("Enter a group name");return}
+  if(imageFile&&imageFile.size>10*1024*1024){toast("Group icon must be smaller than 10 MB");return}
+  const saveButton=form.querySelector("button[type=submit]");
+  try{
+    if(saveButton){saveButton.disabled=true;saveButton.textContent="Saving…"}
+    const channel=await watchStreamChannel(active);
+    let image=active.image||"";
+    if(imageFile)image=(await uploadFile(imageFile)).url;
+    await channel.update({name,image});
+    active.name=name;active.initials=initialsFor(name);active.image=image;
+    writeCache();renderList();renderMessages();toast("Group profile updated");
+  }catch(error){toast(error.message||"Could not update the group profile")}
+  finally{if(saveButton){saveButton.disabled=false;saveButton.textContent="Save changes"}}
+}
 function renderDetailsPanel(){
   if(!active)return;
   const person=directory.find(p=>String(p.id)===String(active.participantId));
@@ -1061,6 +1094,11 @@ function renderDetailsPanel(){
   const membersSection=$("#group-members-section");
   const membersList=$("#group-members-list");
   if(membersSection)membersSection.hidden=!isGroup;
+  let groupProfile=$("#group-profile-section");
+  if(isGroup&&membersSection){
+    if(!groupProfile){membersSection.insertAdjacentHTML("beforebegin",groupProfileMarkup(active));groupProfile=$("#group-profile-section")}
+    else groupProfile.outerHTML=groupProfileMarkup(active);
+  }else if(groupProfile)groupProfile.remove();
   if(membersList&&isGroup){
     const memberIds=[...new Set((active.participantIds||[]).filter(Boolean).map(String))];
     const count=memberIds.length;
@@ -1426,8 +1464,8 @@ async function hydrateConversations(){
         const name=channel.data?.name||nameOf(other)||"Conversation";
         const last=channel.state?.messages?.at(-1);
         const participantIds=Object.keys(channel.state?.members||channel.data?.members||{});
-        const kind=participantIds.length>2?"group":"direct";
-        return {cid:channel.cid,id:channel.id,name,participantId:other,participantIds,createdById:channel.data?.created_by?.id||channel.data?.created_by_id||channel.created_by?.id||"",createdByName:channel.data?.created_by?.name||channel.created_by?.name||"",kind,initials:initialsFor(name),color:kind==="group"?"purple":"blue",team:kind==="group"?"Group chat":"",
+        const kind=channel.data?.is_group||participantIds.length>2?"group":"direct";
+        return {cid:channel.cid,id:channel.id,name,image:channel.data?.image||"",participantId:other,participantIds,createdById:channel.data?.created_by?.id||channel.data?.created_by_id||channel.created_by?.id||"",createdByName:channel.data?.created_by?.name||channel.created_by?.name||"",kind,initials:initialsFor(name),color:kind==="group"?"purple":"blue",team:kind==="group"?"Group chat":"",
           preview:last?.text||"",updatedAt:channel.data?.last_message_at||channel.data?.updated_at||new Date().toISOString(),time:"",unread:readReceiptsEnabled()?(channel.countUnread?.()||0):unreadFromLocalCursor(channel),
           /* Stream tracks mentions against the read state it already holds
              from queryChannels, so this is a local read, not a request. */
@@ -2392,7 +2430,7 @@ $("#group-chat-form").addEventListener("submit",async e=>{
   const name=$("#group-chat-name").value.trim(),members=[String(viewerId()),...selectedGroupMembers];
   try{
     await ensureStreamUsers();
-    const id="group-"+crypto.randomUUID(),channel=streamClient.channel("messaging",id,{name,members});
+    const id="group-"+crypto.randomUUID(),channel=streamClient.channel("messaging",id,{name,members,is_group:true});
     await channel.create();await channel.watch();streamChannels.set(channel.cid,channel);
       const chat={cid:channel.cid,id,name,participantId:selectedGroupMembers[0],participantIds:members,createdById:String(viewerId()),createdByName:currentAppUser?.full_name||"You",kind:"group",initials:initialsFor(name),color:"purple",team:"Group chat",preview:"",updatedAt:new Date().toISOString(),unread:0,messages:[],messagesLoaded:true,messageOffset:0,hasMore:false,streamChannel:channel};
     conversations.unshift(chat);active=chat;writeCache();$("#group-chat-dialog").close();renderList();renderMessages();toast("Group chat created");
@@ -2403,6 +2441,18 @@ $("#group-chat-form").addEventListener("submit",async e=>{
 $("#close-details").addEventListener("click",closeDetails);
 $("#details-favorite")?.addEventListener("click",()=>toggleFavorite(active));
 $("#details-search")?.addEventListener("click",openConversationSearch);
+$("#details-panel")?.addEventListener("submit",event=>{
+  const form=event.target.closest("#group-profile-form");
+  if(!form)return;
+  event.preventDefault();saveGroupProfile(form);
+});
+$("#details-panel")?.addEventListener("change",event=>{
+  const input=event.target.closest("#group-profile-image");
+  const file=input?.files?.[0];
+  if(!file)return;
+  const preview=$("#group-image-preview");
+  if(preview){const image=document.createElement("img");image.id="group-image-preview";image.alt="Selected group icon";image.src=URL.createObjectURL(file);preview.replaceWith(image)}
+});
 $("#conversation-search-input")?.addEventListener("input",e=>renderConversationSearch(e.target.value));
 $("#conversation-search-results")?.addEventListener("click",e=>{
   const result=e.target.closest("[data-search-message-id]");
