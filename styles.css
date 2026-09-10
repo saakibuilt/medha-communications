@@ -2342,3 +2342,17 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
 .group-profile-dialog .group-profile-form>label{display:grid;gap:6px;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}.group-profile-dialog .group-profile-form input{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px;background:var(--panel);color:var(--ink);font:inherit;font-size:13px;text-transform:none;letter-spacing:0}.group-profile-dialog .group-profile-form input:focus{outline:0;border-color:var(--blue);box-shadow:0 0 0 3px #2563eb18}
 .group-profile-actions{display:flex;justify-content:flex-end;gap:9px;padding-top:4px}.group-profile-actions button{min-height:38px}
 :root[data-theme="dark"] .details-group-edit,:root[data-theme="dark"] .group-profile-close{border-color:#3a4250;background:#20242d;color:#d7dee9}:root[data-theme="dark"] .details-group-edit:hover,:root[data-theme="dark"] .details-group-edit:focus-visible{border-color:#7d3c51;background:#2a1720;color:#fda4af}:root[data-theme="dark"] .group-profile-dialog{border-color:#343b48;background:#171a21;color:#eef2f7}:root[data-theme="dark"] .group-profile-dialog .group-profile-form input{border-color:#3a4250;background:#20242d;color:#eef2f7}
+
+/* A shared task is fetched when the chat opens, so the card has a resting
+   state before the row arrives, and a state for a task that is gone. */
+.tcm-loading .tcm-head{border-bottom:0}
+.tcm-skeleton{display:grid;gap:8px;padding:12px 13px 14px}
+.tcm-skeleton span{height:9px;border-radius:999px;background:linear-gradient(90deg,#eef1f5,#f7f9fb,#eef1f5);background-size:200% 100%;animation:tcm-shimmer 1.2s linear infinite}
+.tcm-skeleton span:first-child{width:70%;height:12px}
+.tcm-skeleton span:last-child{width:45%}
+@keyframes tcm-shimmer{to{background-position:-200% 0}}
+.tcm-unavailable{padding:12px 13px 14px}
+.tcm-unavailable .tcm-title{padding:0}
+.tcm-unavailable .tcm-details{padding:0;margin-top:4px}
+:root[data-theme="dark"] .tcm-skeleton span{background:linear-gradient(90deg,#20242d,#2a2f39,#20242d);background-size:200% 100%}
+@media(prefers-reduced-motion:reduce){.tcm-skeleton span{animation:none}}

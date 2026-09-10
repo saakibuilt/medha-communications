@@ -359,9 +359,43 @@ function displayText(m){
    The Activities app puts a `medha_task` object on the message; the text stays
    as a plain-language fallback for previews and notifications. Everything here
    is rendered from that object - Space never calls back to Activities. */
-function taskCardHtml(m){
-  const card=m?.taskCard;
-  if(!card||typeof card!=="object")return "";
+/* Tasks are fetched on demand and kept for the session: renderMessages()
+   rewrites the whole list on every reaction and read receipt, so without this
+   cache a visible card would refetch on each pass. */
+const sharedTaskCache=new Map();
+function sharedTaskCard(row){
+  const nameOf=id=>directory.find(person=>String(person.id)===String(id))?.full_name||"Medha user";
+  const attachments=(Array.isArray(row.attachments)?row.attachments:[])
+    .map(file=>({name:file?.name||"Attachment",url:String(file?.url||"")}))
+    .filter(file=>/^https?:\/\//i.test(file.url));
+  return {
+    title:row.title||"Untitled task",
+    details:String(row.work_description||"").slice(0,400),
+    status:row.status||"",
+    priority:row.priority||"none",
+    due:row.completed_at||"",
+    assignedBy:nameOf(row.created_by),
+    assignedTo:(row.assigned_user_uids||[]).map(nameOf).join(", "),
+    // Blank for one-off tasks, matching how Activities exports the column.
+    recurring:row.recurring?(row.recurrence_frequency||"Yes"):"",
+    attachments:attachments.slice(0,4)
+  };
+}
+async function loadSharedTask(id){
+  if(sharedTaskCache.has(id))return;
+  sharedTaskCache.set(id,{state:"loading"});
+  try{
+    /* select=* on purpose: Activities feature-detects its own columns, so
+       naming them here would break the fetch on a schema that predates one. */
+    const rows=await db(`medha_actvities?id=eq.${encodeURIComponent(id)}&select=*&limit=1`);
+    const row=Array.isArray(rows)?rows[0]:null;
+    sharedTaskCache.set(id,row?{state:"ready",card:sharedTaskCard(row)}:{state:"missing"});
+  }catch{
+    sharedTaskCache.set(id,{state:"missing"});
+  }
+  renderMessages();
+}
+function taskCardBody(card){
   const priority=String(card.priority||"none").toLowerCase();
   const status=String(card.status||"").toLowerCase();
   const rows=[
@@ -386,6 +420,29 @@ function taskCardHtml(m){
       `<a href="${esc(file.url)}" target="_blank" rel="noopener">${esc(file.name||"Attachment")}</a>`).join("")}</div>`:""}
   </article>`;
 }
+/* ---------- shared task scorecard ----------
+   Activities puts only the task id on the message; the card is read from the
+   task table here. The text stays a plain-language fallback for previews and
+   push, which cannot fetch. */
+function taskCardHtml(m){
+  if(m?.taskCard&&typeof m.taskCard==="object")return taskCardBody(m.taskCard);
+  const id=m?.taskId;
+  if(!id)return "";
+  const entry=sharedTaskCache.get(id);
+  if(entry?.state==="ready")return taskCardBody(entry.card);
+  if(entry?.state==="missing"){
+    return `<article class="task-card-message tcm-unavailable">
+      <h4 class="tcm-title">Task unavailable</h4>
+      <p class="tcm-details">It may have been deleted, or you may not have access to it.</p>
+    </article>`;
+  }
+  loadSharedTask(id);
+  return `<article class="task-card-message tcm-loading" aria-busy="true">
+    <header class="tcm-head"><span class="tcm-eyebrow">Task</span></header>
+    <div class="tcm-skeleton"><span></span><span></span><span></span></div>
+  </article>`;
+}
+
 function streamMessageToApp(message){
   const rawSenderId=String(message.user?.id||"");
   /* Older local development messages used a placeholder ID. Treat those as
@@ -395,6 +452,11 @@ function streamMessageToApp(message){
   return {id:String(message.id),senderId,who:isMine(senderId)?"me":"them",parentId:message.parent_id||null,pinned:!!message.pinned,callId:message.call_id||null,pollId:message.poll_id||null,poll:message.poll||null,
     /* Custom top-level field set by the Activities app when a task is shared
        into a chat. Stream preserves unknown fields verbatim. */
+    /* Only the task id travels on the message - the card is fetched from the
+       task table when the chat opens, so nothing about a task is duplicated
+       into chat storage and an edited task shows its current state. The older
+       inline object is still read so messages sent before this change render. */
+    taskId:message.medha_task_id?String(message.medha_task_id):null,
     taskCard:(message.medha_task&&typeof message.medha_task==="object")?message.medha_task:null,
     senderName:isMine(senderId)?(currentAppUser?.full_name||currentAppUser?.name||"You"):(profile?.full_name||message.user?.name||active?.name||"Unknown user"),text:message.text||"",
     /* Stream returns a GIF as type "image", so the kind has to be recovered
@@ -760,7 +822,7 @@ function writeCache(){
       messages:(c.messages||[]).slice(-10).map(m=>({
         id:m.id,senderId:m.senderId,who:m.who,senderName:m.senderName,
         text:String(m.text||"").slice(0,600),parentId:m.parentId||null,
-        pinned:!!m.pinned,pollId:m.pollId||null,taskCard:m.taskCard||null,
+        pinned:!!m.pinned,pollId:m.pollId||null,taskId:m.taskId||null,taskCard:m.taskCard||null,
         attachments:(m.attachments||[]).slice(0,6),
         reactions:m.reactions||{},createdAt:m.createdAt,time:m.time}))
     }))));
@@ -962,7 +1024,7 @@ function messageHtml(m){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4.2-1L3 20l1.2-4.6A8.4 8.4 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>
       ${replyCount} ${replyCount===1?"reply":"replies"}
     </button>`:"";
-  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${taskCardHtml(m)}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${linkifyHtml(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted&&!m.taskCard?`<div class="bubble">${linkifyHtml(displayText(m))}</div>`:""}${attachmentsHtml(links)}${sharedLinksHtml(shared)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}${mine&&String(m.id)===String(statusMessageId)?statusTickHtml(messageStatusFor(active,m)):""}</div></div>`;
+  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${taskCardHtml(m)}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${linkifyHtml(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted&&!m.taskCard&&!m.taskId?`<div class="bubble">${linkifyHtml(displayText(m))}</div>`:""}${attachmentsHtml(links)}${sharedLinksHtml(shared)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}${mine&&String(m.id)===String(statusMessageId)?statusTickHtml(messageStatusFor(active,m)):""}</div></div>`;
 }
 
 /* ---------- thread view (replies only) ----------
@@ -1754,7 +1816,6 @@ async function openDirectChat(person,openingText){
   return chat;
 }
 
-
 /* Group Details opens a focused member sheet, then reuses the standard
    direct-conversation and Stream audio-call flows. */
 const groupMemberDialog=document.createElement("dialog");
@@ -1781,6 +1842,7 @@ groupMemberDialog.addEventListener("click",async event=>{
   groupMemberDialog.close();
   try{await openDirectChat(selectedGroupMember,"");if(action==="call")await startStreamCall("audio")}catch(error){toast(error.message||"Could not open this member")}
 });
+
 
 /* ---------- responsive: chat list drawer on small screens ---------- */
 /* Must match the CSS drawer breakpoint below, or the menu button and
