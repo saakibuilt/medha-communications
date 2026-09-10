@@ -2298,4 +2298,13 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
 :root[data-theme="dark"] .tcm-priority-low{color:#bae6fd;background:#075985}
 :root[data-theme="dark"] .tcm-priority-very-low{color:#bbf7d0;background:#14532d}
 :root[data-theme="dark"] .tcm-priority-none{color:#d4d4d8;background:#3f3f46}
-@media(max-width:720px){.task-card-message{max-width:100%}.tcm-meta{grid-template-columns:1fr 1fr;gap:9px 10px}}
+/* Shared Tasks and Warehouse entries stay compact in a phone conversation.
+   They are cards in the message flow, not full-width content panels. */
+@media(max-width:720px){
+  .task-card-message{width:min(280px,calc(100vw - 108px));max-width:100%}
+  .shared-link{width:min(280px,calc(100vw - 108px));max-width:100%}
+  .tcm-head{padding:8px 10px}.tcm-title{padding:10px 10px 0;font-size:13px}
+  .tcm-details{padding:0 10px;font-size:11.5px;-webkit-line-clamp:2}
+  .tcm-meta{grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;padding:10px}
+  .tcm-files{padding:0 10px 10px}
+}
