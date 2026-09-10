@@ -2952,6 +2952,25 @@ $("#message-area").addEventListener("click",e=>{
   setTimeout(()=>target.classList.remove("message-flash"),1600);
 });
 
+const pendingPollVotes=new Set();
+function applyOptimisticPollVote(message,optionId,remove){
+  const poll=message?.poll;if(!poll)return null;
+  const before=JSON.parse(JSON.stringify(poll));
+  const mine=Array.isArray(poll.own_votes)?poll.own_votes:[];
+  const counts={...(poll.vote_counts_by_option||{})};
+  const adjust=(id,amount)=>counts[id]=Math.max(0,(Number(counts[id])||0)+amount);
+  if(remove){
+    poll.own_votes=mine.filter(v=>String(v.option_id)!==String(optionId));
+    adjust(optionId,-1);
+  }else{
+    /* A new choice replaces the previous one locally in the same paint. */
+    mine.forEach(v=>adjust(v.option_id,-1));
+    poll.own_votes=[{id:`local-${Date.now()}`,option_id:optionId,user_id:viewerId()}];
+    adjust(optionId,1);
+  }
+  poll.vote_counts_by_option=counts;
+  return before;
+}
 /* Voting happens on the bars themselves. The tally changes in this frame;
    Stream persistence and the authoritative refresh continue in background. */
 $("#message-area").addEventListener("click",async e=>{
