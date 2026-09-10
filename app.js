@@ -2957,9 +2957,39 @@ function canEditMessage(message){
   const reads=streamChannelFor(active)?.state?.read||{};
   return !Object.entries(reads).some(([id,state])=>String(id)!==String(viewerId())&&new Date(state.last_read||0)>=new Date(message.createdAt||0));
 }
+const UNSEND_WINDOW_MS=5*60*1000;
+function canUnsendMessage(message){
+  if(!message||!isMine(message.senderId)||!active)return false;
+  const sentAt=new Date(message.createdAt||0).getTime();
+  if(!Number.isFinite(sentAt))return false;
+  return Math.max(0,Date.now()-sentAt)<=UNSEND_WINDOW_MS;
+}
+async function removeUnsentAttachments(channel,message){
+  /* Stream hard-deletes message data, but uploaded channel media is a
+     separate resource. Remove owned uploads first; externally hosted GIFs
+     are not ours to delete and disappear when their message is hard-deleted. */
+  const uploads=(message.attachments||[]).filter(file=>{
+    const url=String(file?.url||"");
+    return /stream-io-(?:api|cdn)\.com|stream\.io/i.test(url);
+  });
+  for(const file of uploads){
+    const remove=file.kind==="image"?channel.deleteImage?.bind(channel):channel.deleteFile?.bind(channel);
+    if(!remove)throw Error("Could not remove this attachment");
+    await remove(file.url);
+  }
+}
+async function removeUnsentPoll(message){
+  if(!message?.pollId)return;
+  if(typeof streamClient?.deletePoll!=="function")throw Error("Could not remove this poll");
+  /* Polls keep options and votes separately from their message. Deleting it
+     explicitly prevents an unsent poll from leaving an orphaned record. */
+  await streamClient.deletePoll(message.pollId);
+}
 function openMessageActions(row,event){
   actionMessageId=row.dataset.messageId;const menu=$("#message-actions"),message=active?.messages?.find(item=>String(item.id)===String(actionMessageId));
   menu.hidden=false;menu.querySelector('[data-message-action="edit"]').hidden=!canEditMessage(message);
+  const unsend=menu.querySelector('[data-message-action="delete"]');
+  unsend.hidden=!canUnsendMessage(message);unsend.textContent="↶ Unsend for everyone";
   menu.querySelector('[data-message-action="pin"]').textContent=message?.pinned?"📌 Unpin message":"📌 Pin message";
   const rect=menu.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(event.clientX,window.innerWidth-rect.width-8))+"px";menu.style.top=Math.max(8,Math.min(event.clientY,window.innerHeight-rect.height-8))+"px";
 }
@@ -3177,7 +3207,16 @@ $("#message-actions").addEventListener("click",async e=>{
     else if(button.dataset.messageAction==="edit"){
       if(!canEditMessage(message)){toast("Only your latest unread message can be edited");return}
       openEditDialog(message);
-    }else if(button.dataset.messageAction==="delete"){await streamClient.deleteMessage(message.id);active.messages=active.messages.filter(item=>item.id!==message.id);renderMessages()}
+    }else if(button.dataset.messageAction==="delete"){
+      if(!canUnsendMessage(message)){toast("Messages can only be unsent within five minutes");return}
+      await removeUnsentPoll(message);
+      await removeUnsentAttachments(channel,message);
+      await streamClient.deleteMessage(message.id,{hardDelete:true});
+      active.messages=active.messages.filter(item=>item.id!==message.id);
+      writeCache();renderMessages();
+      if(document.body.classList.contains("details-open"))renderDetailsPanel();
+      toast("Message unsent for everyone");
+    }
     else if(button.dataset.messageAction==="pin"){
       message.pinned=!message.pinned;
       await (message.pinned?streamClient.pinMessage(message.id):streamClient.unpinMessage(message.id));
