@@ -2253,6 +2253,11 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
   #chat-view.active-view .send-button::after{content:"";position:absolute;inset:11px;width:14px;height:14px;background:#fff;clip-path:polygon(50% 0,100% 48%,68% 48%,68% 100%,32% 100%,32% 48%,0 48%)}
   #chat-view.active-view .send-button span{display:none}
   #chat-view.active-view .send-button:disabled{opacity:.48}
+  /* The keyboard rule above normalizes the composer for iOS, but its higher
+     selector specificity used to make it static again. Keep the send action
+     anchored to this composer while the visual viewport is reduced. */
+  body.keyboard-open #chat-view.active-view .composer{position:relative!important;overflow:visible}
+  body.keyboard-open #chat-view.active-view .send-button{display:grid!important;visibility:visible!important;position:absolute;z-index:4}
 }
 
 /* ---------- shared task scorecard ----------
