@@ -1160,7 +1160,7 @@ function toggleFavorite(chat){
 }
 function groupProfileMarkup(chat){
   const image=chat.image?`<img id="group-image-preview" src="${esc(chat.image)}" alt="Current group icon">`:`<span id="group-image-preview" class="group-image-placeholder" aria-hidden="true">${esc(initialsFor(chat.name))}</span>`;
-  return `<section class="details-section group-profile-section" id="group-profile-section"><h4>Group profile</h4><form id="group-profile-form" class="group-profile-form"><label>Group name<input id="group-profile-name" maxlength="80" required value="${esc(chat.name)}"></label><div class="group-image-control"><div class="group-image-preview">${image}</div><label class="group-image-picker" for="group-profile-image">Change icon<input id="group-profile-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label></div><button class="secondary-button group-profile-save" type="submit">Save changes</button></form></section>`;
+  return `<section class="details-section group-profile-section" id="group-profile-section"><div class="group-profile-head"><h4>Group profile</h4><button type="button" class="group-profile-edit" data-group-profile-edit aria-label="Edit group name and icon" title="Edit group profile"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16.8-.8 4 4-.8L18.6 8.6a2.6 2.6 0 0 0-3.7-3.7L3.5 16.3Z"/><path d="m13.8 6 4.2 4.2"/></svg></button></div><form id="group-profile-form" class="group-profile-form"><label>Group name<input id="group-profile-name" maxlength="80" required value="${esc(chat.name)}"></label><div class="group-image-control"><div class="group-image-preview">${image}</div><label class="group-image-picker" for="group-profile-image">Change icon<input id="group-profile-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label></div><button class="secondary-button group-profile-save" type="submit">Save changes</button></form></section>`;
 }
 async function saveGroupProfile(form){
   if(!active||active.kind!=="group")return;
@@ -2601,6 +2601,12 @@ $("#group-chat-form").addEventListener("submit",async e=>{
 $("#close-details").addEventListener("click",closeDetails);
 $("#details-favorite")?.addEventListener("click",()=>toggleFavorite(active));
 $("#details-search")?.addEventListener("click",openConversationSearch);
+$("#details-panel")?.addEventListener("click",event=>{
+  const edit=event.target.closest("[data-group-profile-edit]");
+  if(!edit)return;
+  const input=$("#group-profile-name");
+  input?.focus();input?.select();
+});
 $("#details-panel")?.addEventListener("submit",event=>{
   const form=event.target.closest("#group-profile-form");
   if(!form)return;
