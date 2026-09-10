@@ -2204,6 +2204,17 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
 @media(max-width:720px){.workspace-app-dialog{width:100vw;height:100dvh;border-radius:0}.workspace-app-header{min-height:60px;padding:10px 14px}.workspace-app-loading{inset:60px 0 0}}
 @media(prefers-reduced-motion:reduce){.workspace-app-loading span{animation:none}}
 
+/* Phone conversations are a three-row shell: header, scrolling messages, and
+   composer. Keeping this as a grid prevents the composer from consuming the
+   message row and appearing directly below the contact name. */
+@media(max-width:760px){
+  #chat-view.active-view{display:grid!important;grid-template-rows:auto minmax(0,1fr) auto;height:100%;min-height:0;overflow:hidden}
+  #chat-view.active-view .conversation-header{grid-row:1;min-width:0}
+  #chat-view.active-view .message-area{grid-row:2;display:block;min-height:0;height:auto;overflow-y:auto;overscroll-behavior:contain}
+  #chat-view.active-view .composer{grid-row:3;min-width:0;margin:6px 10px max(8px,env(safe-area-inset-bottom));align-self:end}
+  body.keyboard-open #chat-view.active-view .composer{margin-bottom:6px}
+}
+
 /* The launcher belongs with the rail navigation, directly under Calendar. */
 .rail{position:relative}.rail-nav{position:relative}
 .rail .workspace-launcher{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;margin-top:-4px;padding:7px 2px;background:transparent;color:#91a0b4;box-shadow:none}
