@@ -1,5 +1,30 @@
 import { StreamChat } from "stream-chat";
+/* Same allowlist as stream-token: other Medha apps upsert the people they are
+   about to open a channel with, so a first-time recipient is a known Stream
+   user by the time the channel is created. */
+const ALLOWED_ORIGINS=new Set([
+  "https://medha-hub.web.app",
+  "https://medha-hub.firebaseapp.com",
+  "https://medha-communications.vercel.app",
+  "https://medha-warehouse.vercel.app",
+  "https://medha-activities.vercel.app",
+  "http://localhost:3001",
+  "http://localhost:3000",
+  "http://localhost:4173",
+  "http://localhost:5000",
+]);
+function applyCors(req,res){
+  const origin=req.headers.origin;
+  if(origin&&ALLOWED_ORIGINS.has(origin)){
+    res.setHeader("Access-Control-Allow-Origin",origin);
+    res.setHeader("Vary","Origin");
+  }
+  res.setHeader("Access-Control-Allow-Headers","authorization, content-type");
+  res.setHeader("Access-Control-Allow-Methods","POST, OPTIONS");
+}
 export default async function handler(req,res){
+  applyCors(req,res);
+  if(req.method==="OPTIONS")return res.status(204).end();
   if(req.method!=="POST")return res.status(405).json({error:"POST required"});
   const apiKey=process.env.STREAM_API_KEY,secret=process.env.STREAM_API_SECRET;
   const authorization=req.headers.authorization||"";

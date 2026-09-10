@@ -7,6 +7,11 @@ const ALLOWED_ORIGINS=new Set([
   "https://medha-hub.web.app",
   "https://medha-hub.firebaseapp.com",
   "https://medha-communications.vercel.app",
+  // Warehouse calls this to share an entry into a conversation.
+  "https://medha-warehouse.vercel.app",
+  // Activities calls this to share a task scorecard into a conversation.
+  "https://medha-activities.vercel.app",
+  "http://localhost:3001",
   "http://localhost:3000",
   "http://localhost:4173",
   "http://localhost:5000",
@@ -35,6 +40,11 @@ export default async function handler(req,res){
     if(!identity?.localId)throw Error("Invalid Medha authentication");
     const user={id:identity.localId,name:identity.displayName||identity.email||req.body?.name||"Medha user"};
     const client=StreamChat.getInstance(apiKey,secret);
-    return res.status(200).json({apiKey,token:client.createToken(user.id,Math.floor(Date.now()/1000)+3600),user});
+    /* Callers that hold a live Firebase session re-mint whenever they need to,
+       so the default stays one hour. Activities discards its launch token by
+       design and caches this instead, so it asks for a longer window - capped
+       here at a day, matching how long a Hub launch is trusted for. */
+    const ttl=Math.min(Math.max(Number(req.body?.ttlSeconds)||3600,300),86400);
+    return res.status(200).json({apiKey,token:client.createToken(user.id,Math.floor(Date.now()/1000)+ttl),user,expiresIn:ttl});
   }catch(error){return res.status(401).json({error:error.message||"Could not create Stream session"})}
 }

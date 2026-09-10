@@ -212,6 +212,9 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
 
 /* Tablet and phone: slide over the conversation instead of taking a column. */
 @media(max-width:1180px){
+  #close-details{font-size:0}
+  #close-details .details-close-x{display:none}
+  #close-details .details-close-back{display:block}
   .details-panel{display:block!important;position:fixed;top:0;right:0;bottom:0;
     width:min(340px,100vw);z-index:55;padding:0 20px;
     border-left:1px solid var(--line);box-shadow:0 0 40px #17202b26;
@@ -2213,3 +2216,51 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
 :root[data-theme="dark"] .rail .workspace-menu[hidden]{background:color-mix(in srgb,#171b24 94%,transparent)}
 @media(max-width:720px){.rail .workspace-menu{left:54px;width:min(264px,calc(100vw - 64px))}}
 @media(prefers-reduced-motion:reduce){.rail .workspace-menu,.rail .workspace-menu[hidden]{transition:none}}
+
+/* ---------- shared task scorecard ----------
+   A task shared from Medha Activities renders as a card in place of the plain
+   bubble: brand-tinted header strip, title, then a small label/value grid. It
+   keeps the bubble's width so it sits in the message flow like any other. */
+.task-card-message{max-width:340px;overflow:hidden;border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:4px 14px 14px 14px;background:#fff;box-shadow:0 6px 18px #17202b0d}
+.mine .task-card-message{border-radius:14px 4px 14px 14px}
+.tcm-head{display:flex;align-items:center;gap:7px;padding:9px 13px;border-bottom:1px solid var(--line);background:var(--brand-soft)}
+.tcm-eyebrow{color:var(--brand);font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.tcm-status,.tcm-priority{padding:2px 8px;border-radius:999px;font-size:9.5px;font-weight:800;text-transform:capitalize;white-space:nowrap}
+.tcm-priority{margin-left:auto}
+.tcm-status-completed{color:#047857;background:#d1fae5}
+.tcm-status-in-progress{color:#1d4ed8;background:#dbeafe}
+.tcm-status-routine{color:#6d28d9;background:#ede9fe}
+.tcm-status-pending{color:#b45309;background:#fef3c7}
+.tcm-priority-very-high{color:#7f1d1d;background:#fee2e2}
+.tcm-priority-high{color:#9f1239;background:#ffe4e6}
+.tcm-priority-medium{color:#854d0e;background:#fef3c7}
+.tcm-priority-low{color:#075985;background:#e0f2fe}
+.tcm-priority-very-low{color:#14532d;background:#dcfce7}
+.tcm-priority-none{color:#5b6675;background:#eef1f5}
+.tcm-title{margin:0;padding:12px 13px 0;color:var(--ink);font-size:14px;font-weight:750;line-height:1.35}
+.tcm-details{display:-webkit-box;overflow:hidden;margin:6px 0 0;padding:0 13px;color:#5c6a7c;font-size:12px;line-height:1.5;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.tcm-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;margin:12px 0 0;padding:12px 13px;border-top:1px solid var(--line);background:#fbfcfd}
+.tcm-meta dt{color:#93a0b0;font-size:9px;font-weight:800;letter-spacing:.07em;text-transform:uppercase}
+.tcm-meta dd{overflow:hidden;margin:3px 0 0;color:var(--ink);font-size:12px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.tcm-files{display:flex;flex-wrap:wrap;gap:6px;padding:0 13px 13px}
+.tcm-files a{max-width:100%;overflow:hidden;padding:4px 9px;border:1px solid var(--line);border-radius:999px;color:var(--brand);background:#fff;font-size:11px;font-weight:700;text-decoration:none;text-overflow:ellipsis;white-space:nowrap}
+.tcm-files a:hover{border-color:var(--brand);background:var(--brand-soft)}
+:root[data-theme="dark"] .task-card-message{border-color:#2a2f39;background:#181c23;box-shadow:none}
+:root[data-theme="dark"] .tcm-head{border-color:#2a2f39;background:#241017}
+:root[data-theme="dark"] .tcm-eyebrow{color:#fda4af}
+:root[data-theme="dark"] .tcm-title{color:#eef2f7}
+:root[data-theme="dark"] .tcm-details{color:#aab4c2}
+:root[data-theme="dark"] .tcm-meta{border-color:#2a2f39;background:#14181e}
+:root[data-theme="dark"] .tcm-meta dd{color:#eef2f7}
+:root[data-theme="dark"] .tcm-files a{border-color:#2a2f39;color:#fda4af;background:#181c23}
+:root[data-theme="dark"] .tcm-status-completed{color:#6ee7b7;background:#064e3b}
+:root[data-theme="dark"] .tcm-status-in-progress{color:#93c5fd;background:#172554}
+:root[data-theme="dark"] .tcm-status-routine{color:#c4b5fd;background:#2e1065}
+:root[data-theme="dark"] .tcm-status-pending{color:#fde68a;background:#451a03}
+:root[data-theme="dark"] .tcm-priority-very-high{color:#fecaca;background:#7f1d1d}
+:root[data-theme="dark"] .tcm-priority-high{color:#fecdd3;background:#881337}
+:root[data-theme="dark"] .tcm-priority-medium{color:#fde68a;background:#78350f}
+:root[data-theme="dark"] .tcm-priority-low{color:#bae6fd;background:#075985}
+:root[data-theme="dark"] .tcm-priority-very-low{color:#bbf7d0;background:#14532d}
+:root[data-theme="dark"] .tcm-priority-none{color:#d4d4d8;background:#3f3f46}
+@media(max-width:720px){.task-card-message{max-width:100%}.tcm-meta{grid-template-columns:1fr 1fr;gap:9px 10px}}
