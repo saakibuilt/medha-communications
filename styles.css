@@ -2198,3 +2198,16 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
 :root[data-theme="dark"] .workspace-app-shell,:root[data-theme="dark"] .workspace-app-loading{background:#171a21}:root[data-theme="dark"] .workspace-app-header{border-color:#303641;background:linear-gradient(135deg,#1d222c,#171a21)}:root[data-theme="dark"] .workspace-app-close{border-color:#3a4250;background:#252a34;color:#cbd5e1}:root[data-theme="dark"] .workspace-app-close:hover{background:#303744;color:#fff}:root[data-theme="dark"] .workspace-app-shell iframe{background:#171a21}
 @media(max-width:720px){.workspace-app-dialog{width:100vw;height:100dvh;border-radius:0}.workspace-app-header{min-height:60px;padding:10px 14px}.workspace-app-loading{inset:60px 0 0}}
 @media(prefers-reduced-motion:reduce){.workspace-app-loading span{animation:none}}
+
+/* The launcher belongs with the rail navigation, directly under Calendar. */
+.rail{position:relative}.rail-nav{position:relative}
+.rail .workspace-launcher{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;margin-top:-4px;padding:7px 2px;background:transparent;color:#91a0b4;box-shadow:none}
+.rail .workspace-launcher .rail-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#172554,#2563eb);color:#fff;box-shadow:0 7px 16px #1d4ed833}
+.rail .workspace-launcher .rail-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.rail .workspace-launcher:hover{background:transparent;color:#2563eb}
+.rail .workspace-launcher:hover .rail-icon,.rail .workspace-launcher[aria-expanded="true"] .rail-icon{background:linear-gradient(135deg,#1e3a8a,#3b82f6);box-shadow:0 9px 20px #1d4ed84a}
+.rail .workspace-menu{top:calc(100% + 10px);right:auto;left:68px;display:grid;transform-origin:top left;opacity:1;transform:translateY(0) scale(1);visibility:visible;transition:opacity .2s ease,transform .24s cubic-bezier(.2,.8,.2,1),visibility 0s}
+.rail .workspace-menu[hidden]{display:grid!important;opacity:0;transform:translateY(-8px) scale(.97);visibility:hidden;pointer-events:none;transition:opacity .16s ease,transform .16s ease,visibility 0s linear .16s}
+:root[data-theme="dark"] .rail .workspace-menu[hidden]{background:color-mix(in srgb,#171b24 94%,transparent)}
+@media(max-width:720px){.rail .workspace-menu{left:54px;width:min(264px,calc(100vw - 64px))}}
+@media(prefers-reduced-motion:reduce){.rail .workspace-menu,.rail .workspace-menu[hidden]{transition:none}}
