@@ -9,7 +9,9 @@ export async function boot(page,{mobile=false}={}){
   await page.route("**/api/stream-token",r=>r.fulfill({status:200,contentType:"application/json",
     body:JSON.stringify({apiKey:"fake",token:"tok",user:{id:"u_me",name:"Saksham Nirula"}})}));
   await page.route("**/api/stream-users",r=>r.fulfill({status:200,contentType:"application/json",body:'{"ok":true}'}));
-  await page.goto("http://localhost:4173",{waitUntil:"domcontentloaded"});
+  // SPACE_TEST_URL lets the specs run when 4173 is already taken by another
+  // local app - otherwise they silently test whatever else is listening there.
+  await page.goto(process.env.SPACE_TEST_URL||"http://localhost:4173",{waitUntil:"domcontentloaded"});
   await page.waitForFunction(()=>!!window.__space,null,{timeout:15000});
   await page.waitForTimeout(900);
   await page.evaluate(async()=>{

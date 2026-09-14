@@ -2037,7 +2037,7 @@ menuButton.type="button";menuButton.className="chat-menu-btn";menuButton.id="cha
 menuButton.setAttribute("aria-label","Open menu");
 menuButton.innerHTML='<span></span><span></span><span></span>';
 $(".conversation-header").prepend(menuButton);
-menuButton.addEventListener("click",openMobileSidebar);
+menuButton.addEventListener("click",openRailSheet);
 
 /* Calendar and Settings are full-page views on small screens, so give them
    the same navigation entry point as the chat header. */
@@ -2047,7 +2047,7 @@ menuButton.addEventListener("click",openMobileSidebar);
   const button=document.createElement("button");
   button.type="button";button.className="mobile-view-menu";button.setAttribute("aria-label","Open menu");
   button.innerHTML="<span></span><span></span><span></span>";
-  button.addEventListener("click",openMobileSidebar);
+  button.addEventListener("click",openRailSheet);
   head.prepend(button);
 });
 
@@ -2064,8 +2064,79 @@ backButton.addEventListener("click",()=>{
 const scrim=document.createElement("div");
 scrim.className="sidebar-scrim";scrim.id="sidebar-scrim";
 document.body.append(scrim);
-scrim.addEventListener("click",()=>{closeMobileSidebar();closeDetails()});
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMobileSidebar()});
+scrim.addEventListener("click",()=>{closeRailSheet();closeMobileSidebar();closeDetails()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeRailSheet();closeMobileSidebar()}});
+
+/* ---------- phone / tablet navigation sheet ----------
+   On small screens the rail is a bottom sheet: the three-line button slides
+   it up with every destination as a large icon, and choosing one closes the
+   sheet and brings that page in. Desktop keeps the side rail untouched. */
+function openRailSheet(){
+  if(!isMobile())return;
+  closeMobileSidebar();
+  document.body.classList.add("rail-sheet-open");
+  $(".rail").setAttribute("aria-hidden","false");
+}
+function closeRailSheet(){
+  if(!document.body.classList.contains("rail-sheet-open"))return;
+  document.body.classList.remove("rail-sheet-open");
+  if(isMobile())$(".rail").setAttribute("aria-hidden","true");
+  $("#workspace-menu")?.setAttribute("hidden","");
+  $("#workspace-launcher")?.setAttribute("aria-expanded","false");
+}
+function animateActiveView(){
+  const view=document.querySelector(".view.active-view");
+  if(!view||window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+  view.classList.remove("view-enter");void view.offsetWidth;view.classList.add("view-enter");
+}
+/* Runs after each item's own onclick (bubbling), so the view has already
+   switched by the time the sheet closes and the page animates in. */
+$(".rail").addEventListener("click",e=>{
+  if(!isMobile())return;
+  const item=e.target.closest(".rail-item");
+  if(!item||item.id==="workspace-launcher")return;
+  const view=item.dataset.view||(item.dataset.railFilter?"favorites":"");
+  closeRailSheet();
+  animateActiveView();
+  // Chats and favourites are chosen from the list, so show it unless a
+  // conversation is already open.
+  if((view==="chat"||view==="favorites")&&!active)openMobileSidebar();
+});
+$(".rail").addEventListener("click",e=>{
+  if(isMobile()&&e.target.closest("#workspace-menu [data-workspace-app]"))closeRailSheet();
+});
+{
+  // Drag the sheet down to dismiss it.
+  let startY=null,dragY=0;const sheet=$(".rail");
+  sheet.addEventListener("touchstart",e=>{if(document.body.classList.contains("rail-sheet-open")){startY=e.touches[0].clientY;dragY=0}},{passive:true});
+  sheet.addEventListener("touchmove",e=>{
+    if(startY===null)return;dragY=Math.max(0,e.touches[0].clientY-startY);
+    sheet.style.transition="none";sheet.style.transform=`translateY(${dragY}px)`;
+  },{passive:true});
+  const end=()=>{
+    if(startY===null)return;startY=null;
+    sheet.style.removeProperty("transition");sheet.style.removeProperty("transform");
+    if(dragY>70)closeRailSheet();
+  };
+  sheet.addEventListener("touchend",end,{passive:true});
+  sheet.addEventListener("touchcancel",end,{passive:true});
+}
+mobileQuery.addEventListener("change",()=>{
+  if(!isMobile()){document.body.classList.remove("rail-sheet-open");$(".rail").removeAttribute("aria-hidden")}
+  else if(!document.body.classList.contains("rail-sheet-open"))$(".rail").setAttribute("aria-hidden","true");
+});
+if(isMobile())$(".rail").setAttribute("aria-hidden","true");
+/* The conversation list is the first page on a phone, and the rail used to sit
+   beside it in the same drawer. Now the rail is a sheet, the list needs its
+   own way to open it. */
+{
+  const listMenu=document.createElement("button");
+  listMenu.type="button";listMenu.className="sidebar-menu-btn";listMenu.id="sidebar-menu";
+  listMenu.setAttribute("aria-label","Open menu");
+  listMenu.innerHTML="<span></span><span></span><span></span>";
+  listMenu.addEventListener("click",openRailSheet);
+  $(".sidebar-top")?.prepend(listMenu);
+}
 
 /* Keep the layout correct when the viewport or on-screen keyboard changes. */
 function applyViewportHeight(){

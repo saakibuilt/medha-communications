@@ -2362,3 +2362,73 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
 .tcm-unavailable .tcm-details{padding:0;margin-top:4px}
 :root[data-theme="dark"] .tcm-skeleton span{background:linear-gradient(90deg,#20242d,#2a2f39,#20242d);background-size:200% 100%}
 @media(prefers-reduced-motion:reduce){.tcm-skeleton span{animation:none}}
+
+/* ============================================================
+   PHONE / TABLET NAVIGATION - bottom sheet
+   The rail leaves the left drawer and becomes a sheet that slides up from
+   the bottom with every destination as a large, tappable icon. The chat list
+   stays a left drawer of its own.
+   ============================================================ */
+@media(max-width:1024px){
+  .rail{
+    position:fixed;top:auto!important;bottom:0;left:0;right:0;width:100%!important;height:auto;
+    display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:start;gap:8px 6px;
+    padding:10px 14px calc(16px + env(safe-area-inset-bottom));
+    border-right:0;border-top:1px solid var(--line);border-radius:24px 24px 0 0;
+    box-shadow:0 -22px 60px #17202b33;z-index:80;
+    transform:translateY(calc(100% + 24px));
+    transition:transform .34s cubic-bezier(.22,1,.36,1);
+    will-change:transform;
+  }
+  body.rail-sheet-open .rail{transform:translateY(0)}
+  /* The rail is no longer part of the left drawer. */
+  body.sidebar-open .rail{transform:translateY(calc(100% + 24px))}
+  body.rail-sheet-open.sidebar-open .rail{transform:translateY(0)}
+  .rail::before{content:"";grid-column:1/-1;justify-self:center;width:40px;height:5px;margin:0 0 6px;border-radius:99px;background:#c9d0da}
+  .rail .brand{display:none}
+  .rail-nav,.rail-bottom{display:contents}
+  .rail .profile-chip{display:none}
+  .rail .rail-item{
+    width:auto!important;min-height:74px;padding:12px 4px 10px;gap:7px;
+    border-radius:16px;font-size:11.5px;font-weight:700;color:#5d6b7d;background:#f4f6f9;
+    opacity:0;transform:translateY(14px);
+    transition:transform .38s cubic-bezier(.22,1,.36,1),opacity .28s ease,background-color .18s,color .18s;
+  }
+  body.rail-sheet-open .rail .rail-item{opacity:1;transform:none}
+  body.rail-sheet-open .rail .rail-item:nth-of-type(2){transition-delay:.03s}
+  body.rail-sheet-open .rail .rail-item:nth-of-type(3){transition-delay:.06s}
+  body.rail-sheet-open .rail .rail-item:nth-of-type(4){transition-delay:.09s}
+  body.rail-sheet-open .rail .rail-bottom .rail-item{transition-delay:.12s}
+  .rail .rail-item span,.rail .rail-item .rail-icon{font-size:24px}
+  .rail .rail-item svg{width:24px;height:24px}
+  .rail .rail-item.active{color:#fff;background:var(--brand);box-shadow:0 8px 18px -8px #88133790}
+  .rail .rail-item:active{transform:scale(.95)}
+  .rail .workspace-launcher{margin-top:0;background:#f4f6f9}
+  .rail .workspace-launcher .rail-icon{width:30px;height:30px}
+  .rail .workspace-menu{position:static!important;grid-column:1/-1;width:auto!important;margin-top:4px;transform:none!important}
+  .rail .workspace-menu[hidden]{display:none!important}
+
+  /* The chat list drawer starts at the screen edge now the rail is gone. */
+  .chat-sidebar{left:0!important;width:min(380px,100vw - 44px)!important;transform:translateX(-105%)!important}
+  body.sidebar-open .chat-sidebar{transform:translateX(0)!important}
+  body.chat-open:not(.sidebar-open) .chat-sidebar{transform:translateX(-105%)!important}
+  body.rail-sheet-open .sidebar-scrim{display:block;opacity:1;left:0}
+
+  /* A page chosen from the sheet rises into place. */
+  .view.view-enter{animation:space-view-in .36s cubic-bezier(.22,1,.36,1)}
+}
+@keyframes space-view-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+:root[data-theme="dark"] .rail .rail-item{background:rgba(255,255,255,.06);color:#f3c3ce}
+:root[data-theme="dark"] .rail .rail-item.active{color:#fff;background:var(--brand)}
+@media(max-width:1024px){:root[data-theme="dark"] .rail::before{background:rgba(255,255,255,.22)}}
+@media(max-width:360px){.rail .rail-item{font-size:10px;min-height:66px}}
+@media(prefers-reduced-motion:reduce){.rail,.rail .rail-item{transition:none}.view.view-enter{animation:none}}
+.sidebar-menu-btn{display:none}
+@media(max-width:1024px){
+  .sidebar-top{align-items:center;gap:10px}
+  .sidebar-top>div:first-of-type{flex:1;min-width:0}
+  .sidebar-menu-btn{display:flex;flex-direction:column;justify-content:center;gap:4px;flex:0 0 auto;width:40px;height:40px;padding:0 10px;border:0;border-radius:10px;background:#f3f5f8;cursor:pointer}
+  .sidebar-menu-btn span{display:block;height:2px;width:20px;border-radius:2px;background:var(--ink)}
+  :root[data-theme="dark"] .sidebar-menu-btn{background:rgba(255,255,255,.08)}
+  :root[data-theme="dark"] .sidebar-menu-btn span{background:#f3c3ce}
+}
