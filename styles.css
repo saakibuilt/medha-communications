@@ -2432,3 +2432,70 @@ body.embed-chat .composer { margin-left: 12px; margin-right: 12px; }
   :root[data-theme="dark"] .sidebar-menu-btn{background:rgba(255,255,255,.08)}
   :root[data-theme="dark"] .sidebar-menu-btn span{background:#f3c3ce}
 }
+
+/* ---------- bottom sheet: three to a row, centred, aligned ---------- */
+@media(max-width:1024px){
+  .rail{
+    display:flex!important;flex-direction:row!important;flex-wrap:wrap;justify-content:center;align-content:flex-start;align-items:stretch;
+    /* Side padding caps the icon area at ~560px, so a wide iPad still gets
+       three to a row instead of all five in one line. */
+    gap:10px;padding:10px max(14px,calc((100% - 560px) / 2)) calc(18px + env(safe-area-inset-bottom));
+  }
+  .rail::before{flex:0 0 100%;height:5px;margin:0 0 4px;border-radius:0;
+    background:linear-gradient(#c9d0da,#c9d0da) center/40px 5px no-repeat}
+  .rail .rail-item{
+    flex:0 0 calc((100% - 20px) / 3);min-width:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:8px;min-height:84px;padding:12px 6px;text-align:center;line-height:1.2;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  /* Every icon sits in the same 32px box, whether it is an SVG or a glyph. */
+  .rail .rail-item>span:first-child,.rail .rail-item .rail-icon{
+    display:grid!important;place-items:center;flex:0 0 32px;width:32px;height:32px;
+    margin:0;font-size:22px;line-height:1}
+  .rail .rail-item svg{width:23px;height:23px}
+  .rail .workspace-launcher .rail-icon{border-radius:10px}
+  .rail .workspace-menu{order:10;flex:0 0 100%}
+}
+:root[data-theme="dark"] .rail::before{background:linear-gradient(#ffffff38,#ffffff38) center/40px 5px no-repeat}
+
+/* ---------- floating conversation-list button ---------- */
+.chat-list-fab-wrap{display:none}
+@media(max-width:1024px){
+  #chat-view{position:relative}
+  .chat-list-fab-wrap{display:block;position:absolute;left:0;top:58px;width:0;height:0;z-index:25}
+  .chat-list-fab{position:absolute;top:10px;left:12px;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:14px;
+    color:#fff;background:linear-gradient(145deg,#a51f48,#7f1233);box-shadow:0 10px 22px -8px #88133790;cursor:pointer;
+    animation:space-fab-in .35s cubic-bezier(.22,1,.36,1) both;transition:transform .18s}
+  .chat-list-fab:active{transform:scale(.92)}
+  .chat-list-fab svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  body.sidebar-open .chat-list-fab-wrap,body.rail-sheet-open .chat-list-fab-wrap{display:none}
+  /* Keep the first message clear of the button. */
+  #chat-view .message-area{padding-top:62px}
+}
+@keyframes space-fab-in{from{opacity:0;transform:translateY(-6px) scale(.9)}to{opacity:1;transform:none}}
+
+/* ---------- favourites as a page on phone / tablet ---------- */
+@media(max-width:1024px){
+  body.favorites-page .chat-sidebar{
+    left:0!important;right:0;width:100vw!important;max-width:none;transform:none!important;z-index:40}
+  body.favorites-page .sidebar-scrim{display:none!important}
+  body.favorites-page .favorites-sidebar .sidebar-top{display:flex!important;align-items:center;padding:16px 16px 10px}
+  body.favorites-page .favorites-sidebar .chat-list{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));padding:12px 16px 28px;gap:14px}
+  .chat-sidebar.view-enter{animation:space-view-in .36s cubic-bezier(.22,1,.36,1)}
+}
+@media(prefers-reduced-motion:reduce){.chat-list-fab{animation:none}.chat-sidebar.view-enter{animation:none}}
+
+/* Phone and tablet Calendar (up to 1024px). A pile of older width rules and an
+   inline grid set by setWorkspaceView fought over this layout: on a phone the
+   calendar landed in a 280px column beside an empty one, and on a tablet the
+   agenda took the whole row and the calendar collapsed to 0px. One rule with
+   enough specificity to win: one column, calendar on top, agenda below. */
+@media(max-width:1024px){
+  body .app-shell.calendar-mode.calendar-mode,
+  body .app-shell.calendar-mode.calendar-mode:has(#calendar-view.active-view){
+    grid-template-columns:minmax(0,1fr)!important;
+    grid-template-rows:minmax(0,1fr) minmax(0,34dvh)!important}
+  body .app-shell.calendar-mode.calendar-mode .main-area{grid-column:1!important;grid-row:1!important;min-height:0}
+  body .app-shell.calendar-mode.calendar-mode .calendar-sidebar{grid-column:1!important;grid-row:2!important;min-height:0;border-right:0;border-top:1px solid var(--line)}
+}

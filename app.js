@@ -2089,6 +2089,11 @@ function closeRailSheet(){
   $("#workspace-menu")?.setAttribute("hidden","");
   $("#workspace-launcher")?.setAttribute("aria-expanded","false");
 }
+function animateSidebarPage(){
+  const page=$("#chat-sidebar");
+  if(!page||window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+  page.classList.remove("view-enter");void page.offsetWidth;page.classList.add("view-enter");
+}
 function animateActiveView(){
   const view=document.querySelector(".view.active-view");
   if(!view||window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
@@ -2102,10 +2107,16 @@ $(".rail").addEventListener("click",e=>{
   if(!item||item.id==="workspace-launcher")return;
   const view=item.dataset.view||(item.dataset.railFilter?"favorites":"");
   closeRailSheet();
-  animateActiveView();
-  // Chats and favourites are chosen from the list, so show it unless a
-  // conversation is already open.
-  if((view==="chat"||view==="favorites")&&!active)openMobileSidebar();
+  // Favorites is a page of its own on a phone: the favourites grid lives in the
+  // chat sidebar, which is otherwise an off-screen drawer, so without this the
+  // screen was left blank.
+  document.body.classList.toggle("favorites-page",view==="favorites");
+  if(view==="favorites"){closeMobileSidebar();animateSidebarPage()}
+  else{
+    animateActiveView();
+    // Chat is chosen from the list, so show it unless a conversation is open.
+    if(view==="chat"&&!active)openMobileSidebar();
+  }
 });
 $(".rail").addEventListener("click",e=>{
   if(isMobile()&&e.target.closest("#workspace-menu [data-workspace-app]"))closeRailSheet();
@@ -2142,6 +2153,28 @@ if(isMobile())$(".rail").setAttribute("aria-hidden","true");
   listMenu.addEventListener("click",openRailSheet);
   $(".sidebar-top")?.prepend(listMenu);
 }
+/* In a conversation on a phone, a floating button just under the menu opens
+   the conversation list. */
+{
+  const wrap=document.createElement("div");wrap.className="chat-list-fab-wrap";
+  const fab=document.createElement("button");
+  fab.type="button";fab.className="chat-list-fab";fab.id="chat-list-fab";
+  fab.setAttribute("aria-label","Show conversations");fab.title="Conversations";
+  fab.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.2A2.2 2.2 0 0 1 6.2 4h8.6A2.2 2.2 0 0 1 17 6.2v5.1a2.2 2.2 0 0 1-2.2 2.2H9.4L6 16.2v-2.8a2.2 2.2 0 0 1-2-2.1Z"/><path d="M19.6 9.2a1.6 1.6 0 0 1 .4 1.1v5.3a2 2 0 0 1-1.8 2v2.2l-3-2.2h-4.5"/></svg>';
+  fab.addEventListener("click",()=>{document.body.classList.remove("favorites-page");openMobileSidebar()});
+  wrap.append(fab);
+  // Lives in the chat view but outside its grid flow, pinned just below the
+  // header - whose height changes with the viewport, so it is measured.
+  const chatView=$("#chat-view"),header=$(".conversation-header");
+  chatView?.append(wrap);
+  const place=()=>{if(header&&chatView)wrap.style.top=`${header.offsetTop+header.offsetHeight}px`};
+  place();
+  if(header&&"ResizeObserver" in window)new ResizeObserver(place).observe(header);
+  window.addEventListener("resize",place);
+}
+/* Any route back to Chat ends the favourites page. */
+document.querySelectorAll('.rail-item[data-view="chat"],.rail-item[data-view="calendar"],.rail-item[data-view="settings"]').forEach(item=>
+  item.addEventListener("click",()=>document.body.classList.remove("favorites-page")));
 
 /* Keep the layout correct when the viewport or on-screen keyboard changes. */
 function applyViewportHeight(){
