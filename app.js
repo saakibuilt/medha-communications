@@ -932,6 +932,10 @@ function renderList(){
     return new Date(b.updatedAt||0)-new Date(a.updatedAt||0);
   });
   const shown=ordered.filter(c=>{
+    /* Opening "new chat" with someone creates the channel straight away. Until
+       a message is actually sent or received it is not a conversation, so it
+       stays out of the list - only 1:1 chats; a group is created on purpose. */
+    if(c.kind==="direct"&&c.lastMessageAt===null&&!(c.messages||[]).length&&!c.preview)return false;
     if(q&&!`${c.name} ${c.preview}`.toLowerCase().includes(q))return false;
     if(chatFilter==="archived")return !!c.archived;
     /* An archived chat stays out of every other tab until it is unarchived
@@ -1697,6 +1701,7 @@ async function hydrateConversations(){
              from queryChannels, so this is a local read, not a request. */
           mentions:channel.countUnreadMentions?.()||0,
           archived:!!(channel.data?.archived||channel.state?.membership?.archived_at),
+          lastMessageAt:channel.data?.last_message_at||last?.created_at||null,
           messages:[],messagesLoaded:false,messageOffset:0,hasMore:true,streamChannel:channel};
       });
       const previousCid=active?.cid;conversations=loaded;active=conversations.find(c=>c.cid===previousCid)||null;
