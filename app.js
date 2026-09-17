@@ -64,9 +64,15 @@ function readLaunchToken(){
      token is a Firebase CUSTOM token - it is signed in with directly and must
      NOT be posted to /api/hub-session, which expects a Hub ID token. */
   const fromPath=decodeURIComponent((location.pathname.match(/^\/hub-launch\/(.+)$/)||[])[1]||"");
-  const found=fromPath||fromHash||fromQuery;
+  /* Preferred route: the same custom token in the FRAGMENT under a neutral
+     name. A fragment is never sent to the server, so it needs no rewrite and
+     cannot 404, and Brave's stripping of credential-looking values applies to
+     query parameters, not to the hash. */
+  const fromHashCustom=hashParams.get("hl");
+  const customFound=fromHashCustom||fromPath;
+  const found=customFound||fromHash||fromQuery;
   if(found){
-    launchTokenIsCustom=!!fromPath;
+    launchTokenIsCustom=!!customFound;
     try{
       sessionStorage.setItem(launchStorageKey,found);
       sessionStorage.setItem(launchKindKey,launchTokenIsCustom?"custom":"id");
