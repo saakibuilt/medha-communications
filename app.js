@@ -9,6 +9,10 @@ const firebaseApp=initializeApp({apiKey:"AIzaSyDhyDoFRrCXXEkoQ3i6wpqmNd8Po6p_KIw
 const auth=getAuth(firebaseApp); let currentUserId=null; let currentAppUser=null; let launchAuthorized=false;
 const $=s=>document.querySelector(s); const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const launchStorageKey="medha-communications-hub-token";
+const launchKindKey="medha-communications-hub-token-kind";
+/* A path handoff carries a Firebase custom token; ?token= carries a Hub ID
+   token. The two are redeemed differently, so remember which one we hold. */
+let launchTokenIsCustom=false;
 /* Embedded mode: Space rendered inside Medha Hub's chat popup. Only the
    conversation column shows, and the named chat opens on load. */
 let embedMode=false;
@@ -53,18 +57,58 @@ function readLaunchToken(){
   if(embedMode)document.body.classList.add("embed-chat");
   const fromHash=hashParams.get("token");
   const fromQuery=queryParams.get("token");
-  const found=fromHash||fromQuery;
+  /* Medha Hub's primary Space launch is a path handoff:
+       /hub-launch/<firebase custom token>
+     It uses a path because Brave and some standalone mobile browsers strip
+     credential-looking QUERY values on a cross-origin popup navigation. That
+     token is a Firebase CUSTOM token - it is signed in with directly and must
+     NOT be posted to /api/hub-session, which expects a Hub ID token. */
+  const fromPath=decodeURIComponent((location.pathname.match(/^\/hub-launch\/(.+)$/)||[])[1]||"");
+  const found=fromPath||fromHash||fromQuery;
   if(found){
-    try{sessionStorage.setItem(launchStorageKey,found)}catch{}
-    /* Drop the token from both places so it never lingers in the address bar
-       or in history, but keep any other query params (hubLaunch). */
+    launchTokenIsCustom=!!fromPath;
+    try{
+      sessionStorage.setItem(launchStorageKey,found);
+      sessionStorage.setItem(launchKindKey,launchTokenIsCustom?"custom":"id");
+    }catch{}
+    /* Drop the credential from the URL - path included - so it never lingers
+       in the address bar or in history, but keep any other query params. */
     const keep=new URLSearchParams(location.search);
     keep.delete("token");
     const q=keep.toString();
-    history.replaceState(null,"",location.pathname+(q?`?${q}`:""));
+    const path=fromPath?"/":location.pathname;
+    history.replaceState(null,"",path+(q?`?${q}`:""));
     return found;
   }
-  try{return sessionStorage.getItem(launchStorageKey)}catch{return null}
+  try{
+    launchTokenIsCustom=sessionStorage.getItem(launchKindKey)==="custom";
+    return sessionStorage.getItem(launchStorageKey);
+  }catch{return null}
+}
+
+/* Last resort. If even the path was sanitised away, ask the Hub window that
+   opened us for a credential over postMessage. The Hub answers with a fresh
+   ID token, which takes the normal /api/hub-session route. Unavailable when
+   Hub runs as an installed app, which is exactly why the path handoff above
+   exists as the primary route. */
+const HUB_ORIGIN="https://medha-hub.web.app";
+function requestLaunchTokenFromOpener(){
+  if(!window.opener||window.opener===window)return Promise.resolve(null);
+  return new Promise(resolve=>{
+    const timer=setTimeout(()=>finish(null),6000);
+    function finish(value){
+      clearTimeout(timer);
+      window.removeEventListener("message",receive);
+      resolve(value);
+    }
+    function receive(event){
+      if(event.origin!==HUB_ORIGIN||event.data?.type!=="medha-hub-space-token")return;
+      finish(event.data.hubToken||null);
+    }
+    window.addEventListener("message",receive);
+    try{window.opener.postMessage({type:"medha-space-token-request"},HUB_ORIGIN)}
+    catch{finish(null)}
+  });
 }
 const launchGate=$("#launch-gate");
 const WORKSPACE_APPS=Object.freeze({
@@ -4266,7 +4310,20 @@ async function initializeAuthorizedUser(user){
 }
 
 async function authorizeHubLaunch(){
-  const launchToken=readLaunchToken();
+  let launchToken=readLaunchToken();
+  if(!launchToken&&!hasRememberedLaunch()){
+    /* Nothing in the URL and no session to resume: the Hub window that opened
+       us can still hand one over directly. */
+    const fromOpener=await requestLaunchTokenFromOpener();
+    if(fromOpener){
+      launchToken=fromOpener;
+      launchTokenIsCustom=false;
+      try{
+        sessionStorage.setItem(launchStorageKey,fromOpener);
+        sessionStorage.setItem(launchKindKey,"id");
+      }catch{}
+    }
+  }
   if(!launchToken){
     if(location.hostname==="localhost"){
       try{
@@ -4311,7 +4368,11 @@ async function authorizeHubLaunch(){
   }
   try{
     let customToken;
-    if(location.hostname==="localhost"&&launchToken.startsWith("custom:")){customToken=launchToken.slice(7)}
+    /* A path handoff already IS a Firebase custom token - signing in with it
+       directly is the whole point of that route. Posting it to
+       /api/hub-session would fail: that endpoint verifies Hub ID tokens. */
+    if(launchTokenIsCustom){customToken=launchToken}
+    else if(location.hostname==="localhost"&&launchToken.startsWith("custom:")){customToken=launchToken.slice(7)}
     else{
       const r=await fetchWithTimeout("/api/hub-session",{method:"POST",headers:{Authorization:`Bearer ${launchToken}`}},10000);
       if(!r.ok)throw Error();
