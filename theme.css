@@ -209,6 +209,14 @@
   --chart-8: #ec4899;
   --chart-grid: var(--border);
   --chart-label: var(--slate-600);
+
+  /* Filled brand surfaces — a button, a chip, an app tile — need the same red
+     in both themes, because white type sits on them. The --rose-700/800/900
+     steps are TEXT colours in dark mode (they lighten), so never fill with
+     those; fill with these. */
+  --brand-solid: #ce0505;
+  --brand-solid-deep: #a80404;
+  --brand-solid-bright: #ef2a20;
 }
 
 /* ============================================================================
@@ -370,4 +378,9 @@
   --chart-8: #f472b6;
   --chart-grid: var(--border);
   --chart-label: var(--text-soft);
+
+  /* Unchanged in dark on purpose: see the note in the light block. */
+  --brand-solid: #ce0505;
+  --brand-solid-deep: #a80404;
+  --brand-solid-bright: #ef2a20;
 }
