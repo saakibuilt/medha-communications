@@ -6,6 +6,11 @@
   <title>Medha Space</title>
   <link rel="icon" type="image/png" href="/medha-circular.png">
   <link rel="apple-touch-icon" href="/medha-circular.png">
+  <!-- Colours come from one file in Medha Hub. The local copy is a generated
+       fallback (scripts-sync-theme.mjs); the live file loads after it and wins,
+       so a colour changed in Hub reaches this app without redeploying it. -->
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="https://medha-hub.web.app/theme.css">
   <link rel="stylesheet" href="/styles.css?v=8">
   <script>
     /* Applied before first paint: reading it in app.js (a deferred module)
@@ -80,7 +85,7 @@
       
     </main>
 
-    <aside class="details-panel" id="details-panel"><div class="details-head"><h3>Chat details</h3><button id="close-details">×</button></div><div class="details-person"><div class="person-avatar blue large"></div><h3 id="details-name">No conversation selected</h3><p></p><span class="presence"></span></div><div class="details-section" id="contact-details-section"><h4 id="contact-details-title">Contact</h4><div id="details-facts" class="details-facts"></div></div><div class="details-section" id="chat-pins-section"><h4>Chat Pins</h4><div id="chat-pins" class="chat-pins"><div class="directory-empty">No pinned messages</div></div></div><div class="details-section"><h4>Shared media</h4><div class="media-strip" id="shared-media"><div class="directory-empty">No shared media</div></div></div><div class="details-section" id="group-members-section" hidden><div class="group-members-head"><h4 id="group-members-title">Members</h4><span id="group-members-count" class="group-members-count"></span></div><div id="group-members-list" class="group-members-list"></div></div><div class="details-section"><h4>Chat settings</h4><button type="button" class="detail-row" id="details-favorite"><span class="detail-label" id="details-favorite-label">☆ Add to favorites</span><span>›</span></button><button type="button" class="detail-row" id="details-search">⌕ Search in conversation <span>›</span></button></div></aside>
+    <aside class="details-panel" id="details-panel"><div class="details-head"><h3>Chat details</h3><button id="close-details" aria-label="Close chat details"><span class="details-close-x" aria-hidden="true">×</span><svg class="details-close-back" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7"/><path d="M8 12h10"/></svg></button></div><div class="details-person"><div class="person-avatar blue large"></div><h3 id="details-name">No conversation selected</h3><p></p><span class="presence"></span></div><div class="details-section" id="contact-details-section"><h4 id="contact-details-title">Contact</h4><div id="details-facts" class="details-facts"></div></div><div class="details-section" id="chat-pins-section"><h4>Chat Pins</h4><div id="chat-pins" class="chat-pins"><div class="directory-empty">No pinned messages</div></div></div><div class="details-section"><h4>Shared media</h4><div class="media-strip" id="shared-media"><div class="directory-empty">No shared media</div></div></div><div class="details-section" id="group-members-section" hidden><div class="group-members-head"><h4 id="group-members-title">Members</h4><span id="group-members-count" class="group-members-count"></span></div><div id="group-members-list" class="group-members-list"></div></div><div class="details-section"><h4>Chat settings</h4><button type="button" class="detail-row" id="details-favorite"><span class="detail-label" id="details-favorite-label">☆ Add to favorites</span><span>›</span></button><button type="button" class="detail-row" id="details-search">⌕ Search in conversation <span>›</span></button></div></aside>
   </div>
   <div class="toast" id="toast" role="status"></div>
   <div id="chat-actions" class="chat-actions" hidden><button type="button" data-chat-action="favorite">☆ Add to favorite</button><button type="button" data-chat-action="unread">◉ Mark unread</button></div>

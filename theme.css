@@ -1,0 +1,374 @@
+/* GENERATED — do not edit.
+   Copy of Medha Hub's theme.css, the single source of truth for every Medha
+   app's colours. Edit "Medha Hub/theme.css" and run scripts-sync-theme.mjs.
+   Apps load the live file from https://medha-hub.web.app/theme.css and use
+   this copy only when that is unreachable. */
+/* ============================================================================
+   Medha — the single source of truth for every application's colours.
+
+   This file lives in Medha Hub and is published at
+       https://medha-hub.web.app/theme.css
+   Every Medha application loads it BEFORE its own stylesheet, so changing a
+   value here changes that colour in Hub, ClockIn, Warehouse, Activities,
+   Users, Communications, Events & News, Files Storage, Grants and Marketing —
+   in both light and dark mode — without touching those apps.
+
+   Contract, shared by every app:
+     • Light mode  = no attribute on <html>.
+     • Dark mode   = <html data-theme="dark">.
+     • The choice is persisted in localStorage under "medha-theme".
+
+   Rules for app stylesheets:
+     • Never write a literal colour for themed UI. Use var(--token).
+     • Prefer the semantic tokens (§3) over raw ramp steps (§1, §2); the ramps
+       exist so the semantic tokens have somewhere to point.
+     • Need a colour that is not here? Add it here, not in the app.
+   ========================================================================= */
+
+:root {
+  color-scheme: light;
+
+  /* ---- §1 Brand ramp — the logo's red (#ce0505), not rose ---------------- */
+  --rose-50: #fff2f0;
+  --rose-100: #ffe2de;
+  --rose-200: #ffc9c2;
+  --rose-300: #ff9a8e;
+  --rose-400: #f9584c;
+  --rose-500: #ef2a20;
+  --rose-600: #ce0505;
+  --rose-700: #a80404;
+  --rose-800: #870404;
+  --rose-900: #6b0303;
+  --rose-950: #4a0202;
+
+  /* ---- §2 Neutral ramp --------------------------------------------------- */
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+  --slate-950: #020617;
+
+  /* Accent families, reserved for meaning (tags, charts, statuses). The app
+     chrome itself stays Medha red. */
+  --blue-100: #dbeafe; --blue-300: #93c5fd; --blue-500: #3b82f6; --blue-700: #1d4ed8;
+  --violet-100: #ede9fe; --violet-300: #c4b5fd; --violet-500: #8b5cf6; --violet-700: #6d28d9;
+  --amber-50: #fffbeb; --amber-100: #fef3c7; --amber-300: #fcd34d; --amber-500: #f59e0b; --amber-700: #b45309;
+  --teal-100: #ccfbf1; --teal-300: #5eead4; --teal-500: #14b8a6; --teal-700: #0f766e;
+  --emerald-100: #d1fae5; --emerald-300: #6ee7b7; --emerald-500: #10b981; --emerald-700: #047857;
+
+  /* ---- §3 Semantic surfaces and type ------------------------------------- */
+  /* The page behind the cards. */
+  --canvas: #eef0f4;
+  /* Cards, panels, menus, modals. */
+  --surface: #ffffff;
+  /* A surface raised above another surface (popover on a card). */
+  --surface-raised: #ffffff;
+  /* Rows and controls under the pointer. */
+  --surface-hover: var(--slate-50);
+  /* Inset wells: filter bars, code blocks, empty states. */
+  --surface-sunken: var(--slate-50);
+  --border: var(--slate-200);
+  --border-strong: var(--slate-300);
+  --text: var(--slate-900);
+  --text-secondary: var(--slate-500);
+  --text-muted: var(--slate-400);
+  /* Type that sits on a brand-filled surface. */
+  --text-on-brand: #ffffff;
+  --muted: var(--text-secondary);
+
+  /* ---- §4 Brand roles ----------------------------------------------------- */
+  --brand: var(--rose-600);
+  --brand-hover: var(--rose-700);
+  --brand-active: var(--rose-800);
+  --brand-contrast: var(--text-on-brand);
+  /* Tinted brand chips, selected rows, focus rings. */
+  --brand-soft-bg: var(--rose-50);
+  --brand-soft-fg: var(--rose-700);
+  --brand-ring: rgba(206, 5, 5, 0.35);
+  --header-background: linear-gradient(120deg, #6b0202 0%, #a30404 48%, #ce0505 100%);
+
+  /* Back-compat aliases used by existing Hub rules. */
+  --accent: var(--brand);
+  --accent-dark: var(--brand-hover);
+  --accent-deep: var(--brand-active);
+  --accent-light: var(--rose-100);
+  --accent-faint: var(--rose-50);
+
+  /* ---- §5 Status pairs (background + foreground) --------------------------- */
+  --success-bg: var(--emerald-100);
+  --success-fg: var(--emerald-700);
+  --warning-bg: var(--amber-100);
+  --warning-fg: var(--amber-700);
+  --danger-bg: var(--rose-100);
+  --danger-fg: var(--rose-700);
+  --danger: var(--rose-600);
+  --info-bg: var(--blue-100);
+  --info-fg: var(--blue-700);
+  --neutral-bg: var(--slate-100);
+  --neutral-fg: var(--slate-600);
+
+  /* ---- §6 Elevation, shape, motion, type ---------------------------------- */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 1px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 6px 16px rgba(15, 23, 42, 0.07), 0 2px 6px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 20px 45px rgba(15, 23, 42, 0.12), 0 6px 16px rgba(15, 23, 42, 0.06);
+  --overlay: rgba(15, 23, 42, 0.45);
+  --radius-control: 10px;
+  --radius-card: 16px;
+  --radius-modal: 20px;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-fast: 160ms;
+  --motion-base: 240ms;
+  --font-sans: Arial, Helvetica, sans-serif;
+
+  /* ---- §7 Application surfaces and meaning tints ------------------------- */
+  /* Soft body copy — the dimmed text colour on cards and tables. */
+  --text-soft: var(--slate-600);
+  /* Brand tints: chips, selected rows, callout panels. */
+  --brand-tint: var(--rose-50);
+  --brand-tint-strong: var(--rose-100);
+  /* Warning surfaces beyond the plain bg/fg pair. */
+  --warning-border: #fde68a;
+  --warning-tint: var(--amber-50);
+  /* Meaning tints. Chip backgrounds and their text, light and dark. */
+  --tint-rose-bg: #ffe4e6;
+  --tint-rose-fg: #be123c;
+  --tint-amber-bg: #fef3c7;
+  --tint-amber-fg: #b45309;
+  --tint-emerald-bg: #d1fae5;
+  --tint-emerald-fg: #047857;
+  --tint-green-bg: #dcfce7;
+  --tint-teal-bg: #ccfbf1;
+  --tint-teal-fg: #0f766e;
+  --tint-blue-bg: #dbeafe;
+  --tint-blue-fg: #1d4ed8;
+  --tint-sky-bg: #e0f2fe;
+  --tint-sky-fg: #0369a1;
+  --tint-cyan-bg: #cffafe;
+  --tint-cyan-fg: #0e7490;
+  --tint-indigo-bg: #e0e7ff;
+  --tint-indigo-fg: #4338ca;
+  --tint-violet-bg: #ede9fe;
+  --tint-violet-fg: #6d28d9;
+  --tint-purple-bg: #f3e8ff;
+  --tint-fuchsia-bg: #fae8ff;
+  --tint-fuchsia-fg: #a21caf;
+  --tint-pink-bg: #fce7f3;
+  --tint-pink-fg: #be185d;
+  --tint-lime-bg: #ecfccb;
+  --tint-lime-fg: #4d7c0f;
+  --tint-orange-bg: #ffedd5;
+  --tint-orange-fg: #c2410c;
+
+  /* ---- §8 ClockIn session ring and launch screen -------------------------- */
+  /* The punch button is red; the ring around it reads as elapsed shift time,
+     so it runs its own cool spectrum. */
+  --ring-elapsed-1: #22d3ee;
+  --ring-elapsed-2: #6366f1;
+  --ring-elapsed-3: #a855f7;
+  --ring-elapsed-4: #e879f9;
+  --ring-track: rgba(148, 163, 184, 0.2);
+  /* "Live" indicator dot — the one green in the system. */
+  --live: #22c55e;
+  --launch-ground-1: #ffffff;
+  --launch-ground-2: var(--slate-50);
+
+  /* Raw ingredients for translucent effects: every rgba() in the apps became a
+     colour-mix of one of these, so tints and shadows follow the theme too. */
+  --shadow-color: #0f172a;
+  --scrim: #0f172a;
+  --glow: #ffffff;
+
+  /* ---- §9 Map and chart ramps (read from JS via getComputedStyle) --------- */
+  --map-land: #e2e8f0;
+  --map-programs-1: #fecdd3;
+  --map-programs-2: #fb7185;
+  --map-programs-3: #e11d48;
+  --map-companies-1: #fed7aa;
+  --map-companies-2: #d99a5c;
+  --map-companies-3: #9a3412;
+  --map-manufacturers-1: #ddd6fe;
+  --map-manufacturers-2: #9b7ad6;
+  --map-manufacturers-3: #6d28d9;
+  /* Canvas drawing colours used by the Warehouse label/preview renderers. */
+  --canvas-paper: #ffffff;
+  --canvas-ink: var(--rose-700);
+
+  /* ---- §10 Chart series palette (read from JS via getComputedStyle) -------- */
+  --chart-1: #e11d48;
+  --chart-2: #f97316;
+  --chart-3: #f59e0b;
+  --chart-4: #10b981;
+  --chart-5: #06b6d4;
+  --chart-6: #3b82f6;
+  --chart-7: #8b5cf6;
+  --chart-8: #ec4899;
+  --chart-grid: var(--border);
+  --chart-label: var(--slate-600);
+}
+
+/* ============================================================================
+   Dark mode. Graphite foundation, Medha red reserved for action and selection.
+   Only token VALUES change here — never the token names, so an app written
+   against the tokens gets dark mode for free.
+   ========================================================================= */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Straight from the logo: Medha red, true black, white type. No pink or
+     mauve cast anywhere — the mark only uses these three. */
+  --rose-50: #170404;
+  --rose-100: #240807;
+  --rose-200: #451110;
+  --rose-300: #ff9d92;
+  --rose-400: #ff7d6d;
+  --rose-500: #ef2a20;
+  --rose-600: #ce0505;
+  --rose-700: #ff7d6d;
+  --rose-800: #a30404;
+  --rose-900: #6d0202;
+  --rose-950: #3a0202;
+
+  /* Neutral greys, not tinted — the red is the only colour in the brand.
+     The ramp is inverted so slate-900 stays "the strongest text colour". */
+  --slate-50: #08080a;
+  --slate-100: #101013;
+  --slate-200: #26262c;
+  --slate-300: #3d3d45;
+  --slate-400: #7b7b85;
+  --slate-500: #9b9ba5;
+  --slate-600: #bcbcc4;
+  --slate-700: #d8d8dd;
+  --slate-800: #eeeef1;
+  --slate-900: #fbfbfc;
+  --slate-950: #ffffff;
+
+  --blue-100: #0b1626; --blue-300: #6aa8ff; --blue-500: #4b8dff; --blue-700: #8cbcff;
+  --violet-100: #140e26; --violet-300: #b9a4fb; --violet-500: #a78bfa; --violet-700: #a78bfa;
+  --amber-50: #1a1206; --amber-100: #241704; --amber-300: #d9a13c; --amber-500: #f59e0b; --amber-700: #fbbf24;
+  --teal-100: #04202a; --teal-300: #2ec7d8; --teal-500: #22d3ee; --teal-700: #22d3ee;
+  --emerald-100: #072016; --emerald-300: #34d399; --emerald-500: #10b981; --emerald-700: #4ade80;
+
+  --canvas: #050506;
+  --surface: #101013;
+  --surface-raised: #191920;
+  --surface-hover: #191920;
+  --surface-sunken: #08080a;
+  --border: var(--slate-200);
+  --border-strong: var(--slate-300);
+  --text: var(--slate-900);
+  --text-secondary: var(--slate-500);
+  --text-muted: var(--slate-400);
+  --text-on-brand: #ffffff;
+  --muted: var(--text-secondary);
+
+  --brand: var(--rose-600);
+  --brand-hover: #a30404;
+  --brand-active: #870303;
+  --brand-soft-bg: var(--rose-100);
+  --brand-soft-fg: var(--rose-700);
+  --brand-ring: rgba(255, 125, 109, 0.45);
+  --header-background: linear-gradient(120deg, #000000 0%, #3a0202 50%, #ce0505 100%);
+
+  --accent: var(--brand);
+  --accent-dark: var(--brand-hover);
+  --accent-deep: var(--brand-active);
+  --accent-light: var(--rose-100);
+  --accent-faint: var(--rose-50);
+
+  --success-bg: var(--emerald-100);
+  --success-fg: var(--emerald-700);
+  --warning-bg: var(--amber-100);
+  --warning-fg: var(--amber-700);
+  --danger-bg: var(--rose-100);
+  --danger-fg: #ff8a7a;
+  --danger: #ff8a7a;
+  --info-bg: var(--blue-100);
+  --info-fg: var(--blue-700);
+  --neutral-bg: var(--slate-100);
+  --neutral-fg: var(--slate-600);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.62);
+  --shadow-lg: 0 24px 50px rgba(0, 0, 0, 0.75);
+  --overlay: rgba(0, 0, 0, 0.66);
+
+  /* ---- §7 Application surfaces and meaning tints ------------------------- */
+  /* Soft body copy — the dimmed text colour on cards and tables. */
+  --text-soft: #e4e4e7;
+  /* Brand tints: chips, selected rows, callout panels. */
+  --brand-tint: #2b0810;
+  --brand-tint-strong: #4a0e17;
+  /* Warning surfaces beyond the plain bg/fg pair. */
+  --warning-border: #5a3a12;
+  --warning-tint: #2a1c08;
+  /* Meaning tints. Chip backgrounds and their text, light and dark. */
+  --tint-rose-bg: #4c0519;
+  --tint-rose-fg: #ff9d92;
+  --tint-amber-bg: #451a03;
+  --tint-amber-fg: #fcd34d;
+  --tint-emerald-bg: #022c22;
+  --tint-emerald-fg: #6ee7b7;
+  --tint-green-bg: #052e16;
+  --tint-teal-bg: #042f2e;
+  --tint-teal-fg: #5eead4;
+  --tint-blue-bg: #172554;
+  --tint-blue-fg: #93c5fd;
+  --tint-sky-bg: #082f49;
+  --tint-sky-fg: #7dd3fc;
+  --tint-cyan-bg: #083344;
+  --tint-cyan-fg: #67e8f9;
+  --tint-indigo-bg: #1e1b4b;
+  --tint-indigo-fg: #a5b4fc;
+  --tint-violet-bg: #271f42;
+  --tint-violet-fg: #c4b5fd;
+  --tint-purple-bg: #2e1065;
+  --tint-fuchsia-bg: #4a044e;
+  --tint-fuchsia-fg: #f0abfc;
+  --tint-pink-bg: #500724;
+  --tint-pink-fg: #f9a8d4;
+  --tint-lime-bg: #1a2e05;
+  --tint-lime-fg: #bef264;
+  --tint-orange-bg: #431407;
+  --tint-orange-fg: #fdba74;
+
+  /* ---- §8 ClockIn session ring and launch screen -------------------------- */
+  --ring-track: rgba(123, 123, 133, 0.22);
+  --live: #3ddc75;
+  --launch-ground-1: #080405;
+  --launch-ground-2: #250a13;
+  --shadow-color: #000000;
+  --scrim: #000000;
+  --glow: #ffffff;
+
+  /* ---- §9 Map and chart ramps -------------------------------------------- */
+  --map-land: #232a33;
+  --map-programs-1: #3a121a;
+  --map-programs-2: #8a2c40;
+  --map-programs-3: #c73349;
+  --map-companies-1: #402a10;
+  --map-companies-2: #8a5a2c;
+  --map-companies-3: #fdba74;
+  --map-manufacturers-1: #271f42;
+  --map-manufacturers-2: #6b52a8;
+  --map-manufacturers-3: #c4b5fd;
+  --canvas-paper: #ffffff;
+  --canvas-ink: var(--rose-700);
+
+  /* ---- §10 Chart series palette ------------------------------------------- */
+  --chart-1: #ff5a72;
+  --chart-2: #ff9a4d;
+  --chart-3: #fbbf24;
+  --chart-4: #34d399;
+  --chart-5: #22d3ee;
+  --chart-6: #60a5fa;
+  --chart-7: #a78bfa;
+  --chart-8: #f472b6;
+  --chart-grid: var(--border);
+  --chart-label: var(--text-soft);
+}
