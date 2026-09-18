@@ -182,7 +182,7 @@ for(const size of SIZES){
   await page.waitForTimeout(400);
   t=await page.evaluate(()=>document.documentElement.getAttribute("data-theme"));
   ok(`${size.name}: theme choice persists across reload`,t==="dark",t);
-  await page.evaluate(()=>{try{localStorage.removeItem("medhaSpaceTheme")}catch{}});
+  await page.evaluate(()=>{try{localStorage.removeItem("medha-theme")}catch{}});
 
   await page.close();
 }

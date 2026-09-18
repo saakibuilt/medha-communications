@@ -6,23 +6,16 @@
   <title>Medha Space</title>
   <link rel="icon" type="image/png" href="/medha-circular.png">
   <link rel="apple-touch-icon" href="/medha-circular.png">
+  <!-- The active theme (decide, apply, store, propagate) is owned by one
+       script in Medha Hub, copied here by scripts-sync-theme.mjs. It must run
+       before the stylesheets so the page never paints the wrong theme. -->
+  <script src="/theme.js"></script>
   <!-- Colours come from one file in Medha Hub. The local copy is a generated
        fallback (scripts-sync-theme.mjs); the live file loads after it and wins,
        so a colour changed in Hub reaches this app without redeploying it. -->
   <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="https://medha-hub.web.app/theme.css">
   <link rel="stylesheet" href="/styles.css?v=8">
-  <script>
-    /* Applied before first paint: reading it in app.js (a deferred module)
-       would flash the light theme first. Falls back to the OS preference
-       until the user picks a side. */
-    (function(){
-      var t;
-      try{t=localStorage.getItem("medhaSpaceTheme")}catch(e){}
-      if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";
-      document.documentElement.setAttribute("data-theme",t);
-    })();
-  </script>
 </head>
 <body class="space-booting">
   <section id="space-launch-loader" class="space-launch-loader" role="status" aria-live="polite" aria-label="Opening Space">

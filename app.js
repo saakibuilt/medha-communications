@@ -2572,26 +2572,21 @@ document.addEventListener("click",e=>{
    this only handles switching and keeping the two controls (header icon and
    the Settings pair) in agreement. Following the OS is the default until the
    user picks a side, after which their choice sticks. */
-const THEME_KEY="medhaSpaceTheme";
-function storedTheme(){try{const v=localStorage.getItem(THEME_KEY);return v==="light"||v==="dark"?v:null}catch{return null}}
-function currentTheme(){return document.documentElement.getAttribute("data-theme")==="dark"?"dark":"light"}
-function applyTheme(theme,persist){
-  const next=theme==="dark"?"dark":"light";
-  document.documentElement.setAttribute("data-theme",next);
-  if(persist){try{localStorage.setItem(THEME_KEY,next)}catch{}}
+/* The active theme is owned by Medha Hub's theme.js (window.MedhaTheme): it
+   has already decided, applied and stored it by the time this runs. Space only
+   keeps its own controls in step. */
+function currentTheme(){return MedhaTheme.get()}
+function syncThemeControls(theme){
   document.querySelectorAll("[data-theme-choice]").forEach(button=>
-    button.setAttribute("aria-pressed",String(button.dataset.themeChoice===next)));
-  $("#theme-toggle")?.setAttribute("title",next==="dark"?"Switch to light theme":"Switch to dark theme");
+    button.setAttribute("aria-pressed",String(button.dataset.themeChoice===theme)));
+  $("#theme-toggle")?.setAttribute("title",theme==="dark"?"Switch to light theme":"Switch to dark theme");
 }
-applyTheme(currentTheme(),false);
-$("#theme-toggle")?.addEventListener("click",()=>applyTheme(currentTheme()==="dark"?"light":"dark",true));
+syncThemeControls(currentTheme());
+MedhaTheme.subscribe(syncThemeControls);
+$("#theme-toggle")?.addEventListener("click",()=>MedhaTheme.toggle());
 document.addEventListener("click",e=>{
   const choice=e.target.closest("[data-theme-choice]");
-  if(choice)applyTheme(choice.dataset.themeChoice,true);
-});
-/* Only track the OS while the user has not chosen for themselves. */
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change",e=>{
-  if(!storedTheme())applyTheme(e.matches?"dark":"light",false);
+  if(choice)MedhaTheme.set(choice.dataset.themeChoice);
 });
 
 /* ---------- AI reply draft ----------
