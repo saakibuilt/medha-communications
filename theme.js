@@ -1,7 +1,6 @@
 /* GENERATED — do not edit.
-   Copy of Medha Hub's theme.js, the single source of truth for every Medha app's
-   active theme. Edit "Medha Hub/theme.js"
-   and run scripts-sync-theme.mjs. */
+   Copy of Medha Hub's theme.js. Edit "Medha Hub/theme.js" and run
+   scripts-sync-theme.mjs. */
 /* ============================================================================
    Medha — the single source of truth for the ACTIVE theme.
 
@@ -39,7 +38,16 @@
   "use strict";
 
   var STORAGE_KEY = "medha-theme";
+  var COLLECTION_STORAGE_KEY = "medha-theme-collection";
   var ATTR = "data-theme";
+  var COLLECTION_ATTR = "data-theme-collection";
+  // The Hub collection is shared workspace state. It is deliberately read
+  // from Supabase on every Hub open so a local browser preference or a stale
+  // launch link can never override the collection an admin applied for all
+  // users. The public key can only read this one already-public setting;
+  // writes remain in the authenticated Hub Tools API.
+  var WORKSPACE_COLLECTION_URL = "https://nnvyfeckimnjvmeneiro.supabase.co/rest/v1/app_settings?key=eq.hub_theme_collection&select=value";
+  var SUPABASE_PUBLISHABLE_KEY = "sb_publishable_H-o5HRFu3lCq5E9Hf1s3uA_Hi_LaMnY";
   var FORCED_ATTR = "data-theme-forced";
   var EVENT = "medha-theme-change";
   var root = document.documentElement;
@@ -64,6 +72,14 @@
     }
   }
 
+  function readCollection() {
+    try { return normaliseCollection(localStorage.getItem(COLLECTION_STORAGE_KEY)) || "original"; }
+    catch (error) { return "original"; }
+  }
+  function writeCollection(collection) {
+    try { localStorage.setItem(COLLECTION_STORAGE_KEY, collection); } catch (error) { /* non-fatal */ }
+  }
+
   function urlTheme(param) {
     var search = new URLSearchParams(location.search).get(param);
     if (search === "dark" || search === "light") return search;
@@ -74,6 +90,12 @@
 
   /* A preview frame is shown in a theme without adopting it. */
   function forcedTheme() { return urlTheme("theme-preview"); }
+  function urlCollection(param) {
+    var value = new URLSearchParams(location.search).get(param);
+    return normaliseCollection(value);
+  }
+  function forcedCollection() { return urlCollection("theme-collection-preview"); }
+  function seededCollection() { return urlCollection("theme-collection"); }
 
   /* An app opened from Hub is seeded with the theme Hub is showing, and keeps
      it like any other saved choice. */
@@ -94,6 +116,21 @@
     else root.removeAttribute(ATTR);
     return theme;
   }
+  /* A collection is a theme set: "original" is the palette in theme.css, and
+     any other name is a collection-<name>.js loaded on the page. The name is
+     taken on trust here — this runs before those files do, and a name with no
+     file behind it simply leaves the Original palette showing. */
+  function normaliseCollection(value) {
+    if (typeof value !== "string") return null;
+    value = value.trim().toLowerCase();
+    return /^[a-z0-9-]{1,40}$/.test(value) ? value : null;
+  }
+
+  function applyCollection(collection) {
+    if (collection && collection !== "original") root.setAttribute(COLLECTION_ATTR, collection);
+    else root.removeAttribute(COLLECTION_ATTR);
+    return collection;
+  }
 
   function current() {
     return root.getAttribute(ATTR) === "dark" ? "dark" : "light";
@@ -112,17 +149,23 @@
 
   // Decide and paint immediately — this runs before the page has any content.
   var forced = forcedTheme();
+  var forcedCollectionValue = forcedCollection();
   var seeded = forced ? null : seededTheme();
+  var seededCollectionValue = forcedCollectionValue ? null : seededCollection();
   apply(forced || seeded || readStored() || systemTheme());
+  applyCollection(forcedCollectionValue || seededCollectionValue || readCollection());
   if (forced) root.setAttribute(FORCED_ATTR, forced);
   if (seeded) write(seeded);
+  if (seededCollectionValue) writeCollection(seededCollectionValue);
 
   var MedhaTheme = {
     STORAGE_KEY: STORAGE_KEY,
     EVENT: EVENT,
+    COLLECTION_STORAGE_KEY: COLLECTION_STORAGE_KEY,
 
     get: current,
     stored: readStored,
+    getCollection: function () { return root.getAttribute(COLLECTION_ATTR) || "original"; },
     /* True when this load is a preview forced by the URL. Such a page must
        never overwrite the saved choice. */
     isForced: function () { return !!forced; },
@@ -137,6 +180,13 @@
 
     toggle: function () {
       return MedhaTheme.set(current() === "dark" ? "light" : "dark");
+    },
+    setCollection: function (collection) {
+      var next = normaliseCollection(collection) || "original";
+      applyCollection(next);
+      if (!forcedCollectionValue) writeCollection(next);
+      announce(current());
+      return next;
     },
 
     bind: function (el) {
@@ -158,6 +208,7 @@
       try {
         var target = new URL(url, location.href);
         target.searchParams.set(options && options.preview ? "theme-preview" : "theme", current());
+        target.searchParams.set(options && options.preview ? "theme-collection-preview" : "theme-collection", MedhaTheme.getCollection());
         return target.href;
       } catch (error) {
         return url;
@@ -173,6 +224,27 @@
     },
   };
 
+  function syncWorkspaceCollection() {
+    // Preview frames intentionally show the collection selected in Hub Tools,
+    // never the workspace's live collection.
+    if (forcedCollectionValue || !global.fetch) return;
+    global.fetch(WORKSPACE_COLLECTION_URL, {
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: "Bearer " + SUPABASE_PUBLISHABLE_KEY
+      },
+      cache: "no-store"
+    }).then(function (response) {
+      return response.ok ? response.json() : null;
+    }).then(function (rows) {
+      var value = rows && rows[0] && rows[0].value;
+      // Missing rows keep Original as the safe default.
+      MedhaTheme.setCollection(normaliseCollection(value) || "original");
+    }).catch(function () {
+      // A transient read failure should never block Hub from opening.
+    });
+  }
+
   // Another tab of the same app changed the theme: follow it.
   global.addEventListener("storage", function (event) {
     if (event.key !== STORAGE_KEY || forced) return;
@@ -183,4 +255,5 @@
   });
 
   global.MedhaTheme = MedhaTheme;
+  syncWorkspaceCollection();
 })(typeof window !== "undefined" ? window : globalThis);

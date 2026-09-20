@@ -1,7 +1,6 @@
 /* GENERATED — do not edit.
-   Copy of Medha Hub's theme.css, the single source of truth for every Medha app's
-   colours. Edit "Medha Hub/theme.css"
-   and run scripts-sync-theme.mjs. */
+   Copy of Medha Hub's theme.css. Edit "Medha Hub/theme.css" and run
+   scripts-sync-theme.mjs. */
 /* ============================================================================
    Medha — the single source of truth for every application's colours.
 
@@ -384,3 +383,7 @@
   --brand-solid-deep: #a80404;
   --brand-solid-bright: #ef2a20;
 }
+
+/* Seasonal collections (Halloween, and any you add) live one-per-file in
+   collection-<name>.js: palette and artwork together, loaded after this file.
+   Nothing about them belongs here — this is the Original theme. */
