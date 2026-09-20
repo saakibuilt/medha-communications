@@ -1,5 +1,5 @@
 /* GENERATED — do not edit.
-   Copy of Medha Hub's theme.js. Edit "Medha Hub/theme.js" and run
+   Copy of Medha Hub's themes/theme.js. Edit "Medha Hub/themes/theme.js" and run
    scripts-sync-theme.mjs. */
 /* ============================================================================
    Medha — the single source of truth for the ACTIVE theme.

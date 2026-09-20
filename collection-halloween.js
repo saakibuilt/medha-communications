@@ -1,5 +1,5 @@
 /* GENERATED — do not edit.
-   Copy of Medha Hub's collection-halloween.js. Edit "Medha Hub/collection-halloween.js" and run
+   Copy of Medha Hub's themes/halloween/collection.js. Edit "Medha Hub/themes/halloween/collection.js" and run
    scripts-sync-theme.mjs. */
 /* ===========================================================================
    A Medha THEME COLLECTION, in one file.
@@ -128,11 +128,11 @@
        the tiles, named by the pose ids in halloween-layout.mjs. */
     images: {
       props: {
-        folder: "assets/halloween-props",
+        folder: "themes/halloween/assets/props",
         items: ["pumpkin", "lights", "candy", "tools", "raven"]
       },
       characters: {
-        folder: "assets/halloween-characters-v2"
+        folder: "themes/halloween/assets/characters"
       }
     },
 
@@ -140,7 +140,7 @@
        How busy the decoration is. Leave `scene` out entirely for a collection
        that only changes colours. */
     scene: {
-      script: "halloween-scene.js",
+      script: "themes/halloween/scene.js",
       /* Figures on tiles at once, at most. */
       cast: 3,
       /* Drifting particles across the page. */
