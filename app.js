@@ -2597,6 +2597,9 @@ document.addEventListener("click",e=>{
    token as the Medha Hub email summaries). */
 const AI_REPLY_ENDPOINT=`${SUPABASE_URL}/functions/v1/ai-reply`;
 const aiReplyButton=$("#ai-reply");
+/* Keep the AI action independent of the attachment/emoji/GIF row so it can
+   stay pinned to the typing field's lower-right corner as text grows. */
+$("#composer")?.append(aiReplyButton);
 
 /* The trailing run of received messages after the viewer's last sent one.
    With no sent message in the loaded page, everything received is pending. */
@@ -4312,6 +4315,37 @@ async function initializeAuthorizedUser(user){
   if("Notification" in window&&Notification.permission==="denied")writePermissionStore("notifications","denied");
 }
 
+/* Resume a launch verified within the last 24h while Firebase is still signed
+   in - the path every other Medha app takes when no fresh token arrives. */
+async function resumeRememberedLaunch(){
+  if(!hasRememberedLaunch())return false;
+  const resumed=auth.currentUser||await new Promise(resolve=>{
+    const stop=onAuthStateChanged(auth,u=>{stop();resolve(u)});
+  });
+  if(!resumed)return false;
+  try{
+    launchAuthorized=true;
+    launchGate.hidden=true;
+    await initializeAuthorizedUser(resumed);
+    finishSpaceLoading("Your conversations are ready");
+    launchGate.hidden=true;
+    try{sessionStorage.removeItem(HUB_RELAUNCH_KEY)}catch{}
+    return true;
+  }catch{launchAuthorized=false;return false}
+}
+/* No usable Hub session: send the user through Medha Hub, which re-opens this
+   app with a fresh launch token (medha-hub.web.app/#launch=<app>). Once per
+   tab per two minutes, so an account Hub cannot authorize lands on the gate
+   instead of bouncing forever. */
+const HUB_RELAUNCH_KEY="medhaHubRelaunchAt";
+function relaunchThroughHub(app){
+  try{
+    if(Date.now()-Number(sessionStorage.getItem(HUB_RELAUNCH_KEY)||0)<120000)return false;
+    sessionStorage.setItem(HUB_RELAUNCH_KEY,String(Date.now()));
+  }catch{return false}
+  location.replace(`${HUB_ORIGIN}/#launch=${app}`);
+  return true;
+}
 async function authorizeHubLaunch(){
   let launchToken=readLaunchToken();
   if(!launchToken&&!hasRememberedLaunch()){
@@ -4345,21 +4379,10 @@ async function authorizeHubLaunch(){
     /* No token this time. If a recent Hub launch was verified and Firebase is
        still signed in, resume instead of demanding a new launch - this is the
        path every other Medha app takes. */
-    if(hasRememberedLaunch()){
-      const resumed=auth.currentUser||await new Promise(resolve=>{
-        const stop=onAuthStateChanged(auth,u=>{stop();resolve(u)});
-      });
-      if(resumed){
-        try{
-          launchAuthorized=true;
-          launchGate.hidden=true;
-          await initializeAuthorizedUser(resumed);
-          finishSpaceLoading("Your conversations are ready");
-          launchGate.hidden=true;
-          return;
-        }catch{launchAuthorized=false}
-      }
-    }
+    if(await resumeRememberedLaunch())return;
+    /* No session at all: go through Hub for a fresh launch instead of the
+       gate. Never from the Hub's own chat popup, which is an iframe. */
+    if(!embedMode&&relaunchThroughHub("communications"))return;
     /* Say WHY the launch was refused instead of the generic gate text - a
        silent gate is indistinguishable from a token that never arrived. */
     const why=location.hash?"the Hub launch link carried no token"
@@ -4383,6 +4406,7 @@ async function authorizeHubLaunch(){
     }
     launchAuthorized=true;
     rememberLaunch();
+    try{sessionStorage.removeItem(HUB_RELAUNCH_KEY)}catch{}
     const signedIn=await signInWithCustomToken(auth,customToken);
     /* The gate means "this launch is not authorized", nothing more. The launch
        IS authorized by here, so drop it now: initializeAuthorizedUser can bail
@@ -4395,8 +4419,11 @@ async function authorizeHubLaunch(){
     launchGate.hidden=true;
   }catch(error){
     sessionStorage.removeItem(launchStorageKey);
-    forgetLaunch();
     launchAuthorized=false;
+    /* A launch token that expired in transit is not a denial while the last
+       verified launch is still remembered and Firebase is signed in. */
+    if(!launchTokenIsCustom&&await resumeRememberedLaunch())return;
+    forgetLaunch();
     /* Firebase's own sign-in call goes straight to
        identitytoolkit.googleapis.com/securetoken.googleapis.com - not our
        API, not configurable via authDomain - and Brave Shields (and some

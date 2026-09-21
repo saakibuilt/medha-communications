@@ -2061,6 +2061,24 @@ body,.rail,.chat-sidebar,.main-area,.details-panel,.calendar-sidebar,
   .composer-tools #gif-button{display:inline-grid!important}
 }
 
+/* The message actions live in the same visual row as the typing field. */
+.composer{position:relative}
+.composer-tools{
+  position:absolute;z-index:2;right:10px;top:8px;transform:none;
+  padding:0;background:var(--surface)
+}
+.composer textarea{padding:10px 122px 10px 14px;min-height:52px}
+.composer>.ai-reply-btn{
+  position:absolute;z-index:3;right:10px;bottom:5px;
+  background:var(--surface)
+}
+@media(max-width:520px){
+  .composer-tools{right:5px;gap:0}
+  .header-action,.tool-btn,.icon-button{width:36px;height:36px}
+  .composer textarea{padding-right:116px}
+  .composer>.ai-reply-btn{right:5px;bottom:5px}
+}
+
 /* ============================================================
    DELIVERY STATUS TICKS (own messages)
    sent = one check, delivered = two, read = two in the accent colour.
