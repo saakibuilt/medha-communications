@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import { getAuth, onAuthStateChanged, onIdTokenChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { Buffer } from "https://esm.sh/buffer@6.0.3";
 import { StreamChat } from "https://esm.sh/stream-chat@9.52.0";
 import { StreamVideoClient, CallingState } from "https://esm.sh/@stream-io/video-client@latest";
@@ -431,6 +431,8 @@ function sharedTaskCard(row){
     due:row.completed_at||"",
     assignedBy:nameOf(row.created_by),
     assignedTo:(row.assigned_user_uids||[]).map(nameOf).join(", "),
+    createdById:String(row.created_by||""),
+    assignedIds:(row.assigned_user_uids||[]).map(String),
     // Blank for one-off tasks, matching how Activities exports the column.
     recurring:row.recurring?(row.recurrence_frequency||"Yes"):"",
     attachments:attachments.slice(0,4)
@@ -479,6 +481,77 @@ function taskCardBody(card){
    Activities puts only the task id on the message; the card is read from the
    task table here. The text stays a plain-language fallback for previews and
    push, which cannot fetch. */
+/* ---------- shared tasks / warehouse entries ----------
+   A message from Space's share picker carries medha_shares: tasks by id (the
+   card is read live, like Activities' shares) and warehouse entries as a
+   summary snapshot (Warehouse keeps its data in its own project). Admin/HR can
+   open either in its app; a task's creator and assignees can open that task. */
+function shareSummaryText(shares){
+  return (shares||[]).map(share=>share.type==="task"?`Task: ${share.title||"Untitled task"}`:`Warehouse: ${share.title||"Untitled entry"}`).join("\n");
+}
+function canOpenShare(type,id){
+  const role=String(currentAppUser?.role||"").toLowerCase();
+  if(role==="admin"||role==="hr")return true;
+  if(type!=="task")return false;
+  const card=sharedTaskCache.get(String(id))?.card,me=viewerId();
+  return !!(card&&me&&(card.createdById===me||(card.assignedIds||[]).includes(me)));
+}
+function openableShare(type,id,title,body){
+  if(!body||!canOpenShare(type,id))return body;
+  const label=type==="task"?"Open in Tasks":"Open in Warehouse";
+  return `<div class="share-card is-openable" role="link" tabindex="0" data-open-share="${type}" data-share-id="${esc(id)}" aria-label="${esc(`${label}: ${title||""}`)}">${body}<span class="share-card-open">${label}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4"/></svg></span></div>`;
+}
+function openableTaskCardHtml(m){
+  const html=taskCardHtml(m);
+  return m?.taskId?openableShare("task",String(m.taskId),"",html):html;
+}
+function warehouseCardBody(entry){
+  const status=String(entry.status||"").toLowerCase();
+  const rows=[
+    ["Items",entry.rows?String(entry.rows):""],
+    ["Customer",entry.customer||""],
+    ["Shipment",entry.shipmentId||""],
+    ["Type",[entry.kind,entry.tag].filter(Boolean).join(" · ")]
+  ].filter(([,value])=>value);
+  return `<article class="task-card-message wh-card-message">
+    <header class="tcm-head">
+      <span class="tcm-eyebrow">Warehouse</span>
+      ${status?`<span class="tcm-status tcm-status-${esc(status.replace(/\s+/g,"-"))}">${esc(status)}</span>`:""}
+    </header>
+    <h4 class="tcm-title">${esc(entry.title||"Untitled entry")}</h4>
+    ${rows.length?`<dl class="tcm-meta">${rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>`:""}
+  </article>`;
+}
+function sharesHtml(m){
+  const shares=m?.shares||[];
+  if(!shares.length)return "";
+  return `<div class="share-cards">${shares.map(share=>{
+    const id=String(share.id);
+    const body=share.type==="task"?taskCardHtml({taskId:id}):warehouseCardBody(share);
+    return openableShare(share.type,id,share.title,body);
+  }).join("")}</div>`;
+}
+function openShare(type,id){
+  const token=firebaseIdToken?encodeURIComponent(firebaseIdToken):"";
+  let url;
+  if(type==="task"){
+    url=`${WORKSPACE_APPS.tasks}#${token?`token=${token}&`:""}task=${encodeURIComponent(id)}`;
+  }else{
+    const target=new URL(WORKSPACE_APPS.warehouse);
+    if(firebaseIdToken)target.searchParams.set("token",firebaseIdToken);
+    target.searchParams.set("entry",id);
+    url=target.toString();
+  }
+  window.open(url,"_blank","noopener");
+}
+document.addEventListener("click",e=>{
+  const card=e.target.closest?.("[data-open-share]");
+  if(!card||e.target.closest("a"))return;
+  openShare(card.dataset.openShare,card.dataset.shareId);
+});
+document.addEventListener("keydown",e=>{
+  if((e.key==="Enter"||e.key===" ")&&e.target?.matches?.("[data-open-share]")){e.preventDefault();openShare(e.target.dataset.openShare,e.target.dataset.shareId)}
+});
 function taskCardHtml(m){
   if(m?.taskCard&&typeof m.taskCard==="object")return taskCardBody(m.taskCard);
   const id=m?.taskId;
@@ -513,6 +586,8 @@ function streamMessageToApp(message){
        inline object is still read so messages sent before this change render. */
     taskId:message.medha_task_id?String(message.medha_task_id):null,
     taskCard:(message.medha_task&&typeof message.medha_task==="object")?message.medha_task:null,
+    /* Tasks and warehouse entries attached from Space's share picker. */
+    shares:Array.isArray(message.medha_shares)?message.medha_shares.filter(share=>share&&(share.type==="task"||share.type==="warehouse")&&share.id).slice(0,10):[],
     senderName:isMine(senderId)?(currentAppUser?.full_name||currentAppUser?.name||"You"):(profile?.full_name||message.user?.name||active?.name||"Unknown user"),text:message.text||"",
     /* Stream returns a GIF as type "image", so the kind has to be recovered
        from the url or the giphy marker - otherwise a sent GIF comes back as a
@@ -905,7 +980,7 @@ function writeCache(){
       messages:(c.messages||[]).slice(-10).map(m=>({
         id:m.id,senderId:m.senderId,who:m.who,senderName:m.senderName,
         text:String(m.text||"").slice(0,600),parentId:m.parentId||null,
-        pinned:!!m.pinned,pollId:m.pollId||null,taskId:m.taskId||null,taskCard:m.taskCard||null,
+        pinned:!!m.pinned,pollId:m.pollId||null,taskId:m.taskId||null,taskCard:m.taskCard||null,shares:m.shares||[],
         attachments:(m.attachments||[]).slice(0,6),
         reactions:m.reactions||{},createdAt:m.createdAt,time:m.time}))
     }))));
@@ -1111,7 +1186,7 @@ function messageHtml(m){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4.2-1L3 20l1.2-4.6A8.4 8.4 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>
       ${replyCount} ${replyCount===1?"reply":"replies"}
     </button>`:"";
-  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}${m.poll&&animatedPollMessageIds.has(String(m.id))?" poll-entering":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${taskCardHtml(m)}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${linkifyHtml(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted&&!m.taskCard&&!m.taskId?`<div class="bubble">${linkifyHtml(displayText(m))}</div>`:""}${attachmentsHtml(links)}${sharedLinksHtml(shared)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}${mine&&String(m.id)===String(statusMessageId)?statusTickHtml(messageStatusFor(active,m)):""}</div></div>`;
+  return `<div class="message ${mine?"mine":""}${settled?" is-settled":""}${m.pending?" is-pending":""}${m.poll&&animatedPollMessageIds.has(String(m.id))?" poll-entering":""}" data-message-id="${esc(m.id||"")}">${avatar(who,true)}<div class="message-body"><div class="message-meta"><strong>${esc(m.senderName||active?.name||"Unknown user")}</strong><time>${esc(m.time)}</time></div>${pollCard}${openableTaskCardHtml(m)}${quoted?`<div class="bubble bubble-reply">${quoted}<span class="reply-body">${linkifyHtml(displayText(m))}</span></div>`:""}${displayText(m)&&!m.poll&&!quoted&&!m.taskCard&&!m.taskId&&!(m.shares?.length&&displayText(m)===shareSummaryText(m.shares))?`<div class="bubble">${linkifyHtml(displayText(m))}</div>`:""}${sharesHtml(m)}${attachmentsHtml(links)}${sharedLinksHtml(shared)}${reactions.length?`<div class="stored-reactions">${reactions.map(([emoji,users])=>`<span class="${users.map(String).includes(viewerId())?"by-me":""}" data-reaction-toggle="${esc(emoji)}" title="${users.length} reaction${users.length===1?"":"s"}${users.map(String).includes(viewerId())?" - select to remove yours":""}">${emoji}${users.length>1?` ${users.length}`:""}</span>`).join("")}</div>`:""}${threadFooter}${mine&&String(m.id)===String(statusMessageId)?statusTickHtml(messageStatusFor(active,m)):""}</div></div>`;
 }
 
 /* ---------- thread view (replies only) ----------
@@ -2242,6 +2317,8 @@ window.visualViewport?.addEventListener("scroll",applyViewportHeight);
 
 /* ---------- composer ---------- */
 let pendingAttachments=[];
+/* Tasks / warehouse entries attached from the share picker, sent with the next message. */
+let pendingShares=[];
 /* Bytes -> "1.4 MB". Shown on every card so an oversized file is obvious
    before it is sent rather than after. */
 function fileSizeLabel(bytes){
@@ -2267,7 +2344,7 @@ function fileGlyph(name,kind){
 }
 function renderPending(){
   const host=$("#pending-attachments");
-  host.classList.toggle("has-items",pendingAttachments.length>0);
+  host.classList.toggle("has-items",pendingAttachments.length>0||pendingShares.length>0);
   host.innerHTML=pendingAttachments.map((a,i)=>{
     /* While uploading the card shows a spinner and no remove button - there
        is nothing to preview yet and cancelling mid-flight would leave the
@@ -2290,9 +2367,15 @@ function renderPending(){
       <span class="attach-copy"><strong>${esc(a.name||"File")}</strong><small>${esc(fileSizeLabel(a.size)||(a.kind==="gif"?"GIF":"Ready"))}</small></span>
       <button type="button" class="attach-remove" data-remove-attachment="${i}" aria-label="Remove ${esc(a.name||"attachment")}">\u00d7</button>
     </div>`;
-  }).join("");
+  }).join("")+pendingShares.map((share,i)=>`<div class="attach-card ready share-chip share-chip-${share.type}" data-share-index="${i}">
+      <span class="attach-thumb share-chip-glyph" aria-hidden="true">${SHARE_GLYPHS[share.type]}</span>
+      <span class="attach-copy"><strong>${esc(share.title||"Untitled")}</strong><small>${share.type==="task"?"Task":"Warehouse entry"}</small></span>
+      <button type="button" class="attach-remove" data-remove-share="${i}" aria-label="Remove ${esc(share.title||"item")}">\u00d7</button>
+    </div>`).join("");
 }
 $("#pending-attachments").addEventListener("click",e=>{
+  const removeShare=e.target.closest("[data-remove-share]");
+  if(removeShare){pendingShares.splice(Number(removeShare.dataset.removeShare),1);renderPending();autosizeComposer();return}
   const remove=e.target.closest("[data-remove-attachment]");
   if(remove){
     pendingAttachments.splice(Number(remove.dataset.removeAttachment),1);
@@ -2510,7 +2593,8 @@ $("#composer").addEventListener("submit",async e=>{
      neither can be sent. Waiting is better than silently dropping it. */
   if(pendingAttachments.some(a=>a.uploading)){toast("Wait for attachments to finish uploading");return}
   const attachments=pendingAttachments.filter(a=>!a.failed&&a.url);
-  if(!text&&!attachments.length)return;
+  const shares=pendingShares.map(share=>({...share}));
+  if(!text&&!attachments.length&&!shares.length)return;
   sending=true;
   const sendButton=$(".send-button");sendButton.disabled=true;
   /* Painted before the request so the bubble appears instantly and carries a
@@ -2519,19 +2603,22 @@ $("#composer").addEventListener("submit",async e=>{
   const chat=active;
   const pending={id:"pending-"+crypto.randomUUID(),senderId:viewerId(),who:"me",pending:true,
     senderName:currentAppUser?.full_name||currentAppUser?.name||"You",text,
-    parentId:replyTarget?.id||null,attachments:attachments.map(a=>({...a})),reactions:{},
+    parentId:replyTarget?.id||null,attachments:attachments.map(a=>({...a})),shares,reactions:{},
     createdAt:new Date().toISOString(),time:new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
   chat.messages=[...(chat.messages||[]),pending];chat.messagesLoaded=true;
   const clearPending=()=>{chat.messages=(chat.messages||[]).filter(m=>m.id!==pending.id)};
-  messageInput.value="";setReplyTarget(null);pendingAttachments=[];renderPending();autosizeComposer();
+  messageInput.value="";setReplyTarget(null);pendingAttachments=[];pendingShares=[];renderPending();autosizeComposer();
   if(active===chat){renderMessages();scrollMessagesToEnd()}
   try{
     /* show_in_channel keeps a reply in the main message list. Without it
        Stream files a parent_id message inside its thread only, so the reply
        disappeared from the conversation after a refresh - channel.query()
        returns main-channel messages, not thread replies. */
-    const saved=await persistMessage(chat,text,attachments,
-      pending.parentId?{parent_id:pending.parentId,show_in_channel:true}:{});
+    // With nothing typed, the share summary is the text previews and push show.
+    const body=text||(shares.length&&!attachments.length?shareSummaryText(shares):text);
+    const saved=await persistMessage(chat,body,attachments,{
+      ...(pending.parentId?{parent_id:pending.parentId,show_in_channel:true}:{}),
+      ...(shares.length?{medha_shares:shares}:{})});
     stopTypingNow(chat);
     clearPending();
     if(saved&&!chat.messages.some(m=>m.id===saved.id))chat.messages.push(saved);
@@ -2539,7 +2626,7 @@ $("#composer").addEventListener("submit",async e=>{
   }catch(error){
     clearPending();
     if(active===chat)renderMessages();
-    messageInput.value=text;autosizeComposer();
+    messageInput.value=text;pendingShares=shares;renderPending();autosizeComposer();
     toast(error.message);
   }
   finally{sending=false;sendButton.disabled=false;messageInput.focus()}
@@ -2575,9 +2662,9 @@ document.addEventListener("keydown",e=>{
    The stacked-cards button beside the three dots opens Tasks and/or
    Warehouse - only the apps Medha Hub lets this user open (the same
    app_visibility rule as its tiles). Picking one lists the user's assigned
-   tasks or the warehouse entries; the chosen ones post into the open chat in
-   the formats Activities and Warehouse already share with, so the existing
-   task scorecard and warehouse link card render them. */
+   tasks or the warehouse entries; the chosen ones attach to the composer as
+   chips and go out with the next message (medha_shares), rendering as
+   scorecards. */
 const shareWork=$("#share-work"),shareWorkButton=$("#share-work-button");
 const shareDialog=$("#share-work-dialog"),shareList=$("#share-work-list"),shareSearch=$("#share-work-search");
 const shareSubmit=$("#share-work-submit"),shareCount=$("#share-work-count");
@@ -2667,7 +2754,7 @@ function renderShareFoot(){
   const n=shareChosen.size;
   shareCount.textContent=n?`${n} selected`:"Choose one or more";
   shareSubmit.disabled=!n;
-  shareSubmit.textContent=n>1?`Share ${n}`:"Share";
+  shareSubmit.textContent=n>1?`Attach ${n}`:"Attach";
 }
 function renderShareList(){
   const query=shareSearch.value.trim().toLowerCase();
@@ -2719,27 +2806,18 @@ shareList?.addEventListener("change",e=>{
 });
 $("#close-share-work")?.addEventListener("click",()=>shareDialog.close());
 shareDialog?.addEventListener("click",e=>{if(e.target===shareDialog)shareDialog.close()});
-shareSubmit?.addEventListener("click",async()=>{
-  const chat=active,chosen=shareItems.filter(item=>shareChosen.has(item.id));
-  if(!chat||!chosen.length)return;
-  shareSubmit.disabled=true;shareSubmit.textContent="Sharing…";
-  let sent=0;
-  try{
-    for(const item of chosen){
-      const saved=shareApp==="tasks"
-        ?await persistMessage(chat,`Task: ${item.title}`,[],{medha_task_id:item.id})
-        :await persistMessage(chat,warehouseShareText(item.entry),[]);
-      if(saved&&!chat.messages.some(m=>String(m.id)===String(saved.id))){chat.messages.push(saved);chat.messagesLoaded=true}
-      sent++;
-    }
-    shareDialog.close();
-    toast(`Shared ${sent} ${shareApp==="tasks"?(sent===1?"task":"tasks"):(sent===1?"entry":"entries")}`);
-  }catch(error){
-    toast(error.message||"Could not share");
-  }finally{
-    renderList();renderMessages();scrollMessagesToEnd();renderShareFoot();
+shareSubmit?.addEventListener("click",()=>{
+  const chosen=shareItems.filter(item=>shareChosen.has(item.id));
+  if(!chosen.length)return;
+  for(const item of chosen){
+    const share=shareApp==="tasks"?{type:"task",id:item.id,title:item.title}:{type:"warehouse",...item.entry};
+    if(!pendingShares.some(existing=>existing.type===share.type&&String(existing.id)===String(share.id)))pendingShares.push(share);
   }
+  pendingShares=pendingShares.slice(0,10);
+  shareDialog.close();
+  renderPending();autosizeComposer();messageInput.focus();
 });
+
 
 /* ---------- theme (light / dark) ----------
    The head script has already applied the stored choice before first paint;
@@ -4623,6 +4701,10 @@ async function authorizeHubLaunch(){
     try{await signOut(auth)}catch{}
   }
 }
+/* Keep the ID token current (Firebase refreshes it hourly). Shared scorecards
+   open Tasks/Warehouse in a new tab synchronously with it: awaiting a token
+   inside the click would spend the gesture and the popup blocker would win. */
+onIdTokenChanged(auth,async user=>{try{firebaseIdToken=user?await user.getIdToken():null}catch{}});
 onAuthStateChanged(auth,user=>{
   if(!launchAuthorized){currentUserId=null;return}
   if(user)initializeAuthorizedUser(user);

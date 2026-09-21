@@ -2656,3 +2656,26 @@ body.share-open .share-work-menu{opacity:1;visibility:visible;transform:none;tra
 .share-work-glyph{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--brand-soft-bg);color:var(--brand-solid-bright)}
 .share-work-glyph svg{width:21px;height:21px;fill:none;stroke:currentColor}
 .share-work-list:focus{outline:none}
+
+/* ---------- attached tasks / warehouse entries ---------- */
+.share-chip .share-chip-glyph{display:grid;place-items:center;background:var(--brand-soft-bg);color:var(--brand-solid-bright)}
+.share-chip .share-chip-glyph svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.share-chip-warehouse .share-chip-glyph{background:color-mix(in srgb, var(--info-fg) 12%, transparent);color:var(--info-fg)}
+
+/* Scorecards under the message text; several stack in one bubble. */
+.share-cards{display:grid;gap:8px;margin-top:6px;max-width:340px}
+.mine .share-cards{justify-items:end;margin-left:auto}
+.share-cards .task-card-message{max-width:340px;width:100%}
+.wh-card-message{border-left-color:var(--info-fg)}
+.wh-card-message .tcm-eyebrow{color:var(--info-fg)}
+.share-card{position:relative;display:grid;width:100%;max-width:340px}
+.share-card.is-openable{cursor:pointer;border-radius:14px;transition:transform .16s ease}
+.share-card.is-openable .task-card-message{transition:box-shadow .16s ease,border-color .16s ease}
+.share-card.is-openable:hover .task-card-message,.share-card.is-openable:focus-visible .task-card-message{box-shadow:0 10px 26px color-mix(in srgb, var(--text) 12%, transparent);border-color:color-mix(in srgb, var(--brand-solid-bright) 40%, var(--border))}
+.share-card.is-openable:hover{transform:translateY(-1px)}
+.share-card.is-openable:focus-visible{outline:2px solid var(--brand-solid-bright);outline-offset:2px}
+.share-card-open{display:inline-flex;align-items:center;gap:5px;justify-self:start;margin:6px 2px 0;font-size:12px;font-weight:700;color:var(--brand-solid-bright)}
+.mine .share-card-open{justify-self:end}
+.share-card-open svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media(prefers-reduced-motion:reduce){.share-card.is-openable,.share-card.is-openable .task-card-message{transition:none}.share-card.is-openable:hover{transform:none}}
+.wh-card-message .tcm-head{background:color-mix(in srgb, var(--info-fg) 8%, var(--surface))}
