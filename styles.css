@@ -2069,14 +2069,19 @@ body,.rail,.chat-sidebar,.main-area,.details-panel,.calendar-sidebar,
 }
 .composer textarea{padding:10px 122px 10px 14px;min-height:52px}
 .composer>.ai-reply-btn{
-  position:absolute;z-index:3;right:10px;bottom:5px;
+  /* The desktop composer keeps Send in its own footer row. Anchor AI just
+     above that row instead of allowing the two actions to overlap. */
+  position:absolute;z-index:3;right:10px;bottom:47px;
   background:var(--surface)
+}
+@media(max-width:1024px){
+  .composer>.ai-reply-btn{bottom:5px}
 }
 @media(max-width:520px){
   .composer-tools{right:5px;gap:0}
   .header-action,.tool-btn,.icon-button{width:36px;height:36px}
   .composer textarea{padding-right:116px}
-  .composer>.ai-reply-btn{right:5px;bottom:5px}
+  .composer>.ai-reply-btn{right:5px}
 }
 
 /* ============================================================
