@@ -2549,8 +2549,8 @@ messageInput.addEventListener("keydown",e=>{
   if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("#composer").requestSubmit()}
 });
 
-/* On phones and tablets the composer tools collapse behind a three-dot
-   button, so the message row keeps its full width. */
+/* Attachment, emoji, GIF and poll (groups only) live in a pop-up menu behind
+   the three-dot button, right-aligned above the message box. */
 const toolsMore=$("#tools-more");
 function closeComposerTools(){
   document.body.classList.remove("tools-open");
@@ -2563,6 +2563,9 @@ toolsMore?.addEventListener("click",e=>{
 });
 document.addEventListener("click",e=>{
   if(!e.target.closest(".composer-tools"))closeComposerTools();
+});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&document.body.classList.contains("tools-open")){closeComposerTools();toolsMore?.focus()}
 });
 /* Picking a tool closes the menu. */
 ["#attach-file","#emoji-button","#gif-button"].forEach(sel=>
@@ -3518,13 +3521,13 @@ $("#message-actions").addEventListener("click",async e=>{
 /* Polls are deliberately not placed in the direct-message composer. Group
    polling continues to be handled from the group tools flow, not this row. */
 const pollButton=document.createElement("button");pollButton.type="button";pollButton.id="poll-button";pollButton.className="tool-btn";pollButton.title="Create poll";pollButton.setAttribute("aria-label","Create poll");
-pollButton.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>';
+pollButton.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg><span>Create poll</span>';
 /* Commit d3cb4b9 dropped this append, so no chat showed the poll tool. It
    sits in the tool row with attachment, emoji and GIF, in group chats only
    (renderMessages keeps it in step with the open conversation). */
 pollButton.hidden=active?.kind!=="group";
-$(".composer-tools")?.append(pollButton);
-pollButton.addEventListener("click",()=>{if(active?.kind!=="group"){toast("Polls are available in group chats");return}$("#poll-dialog").showModal()});
+$("#composer-tools-menu")?.append(pollButton);
+pollButton.addEventListener("click",()=>{closeComposerTools();if(active?.kind!=="group"){toast("Polls are available in group chats");return}$("#poll-dialog").showModal()});
 let pollPosting=false;
 $("#poll-form").addEventListener("submit",async e=>{
   if(e.submitter?.value==="cancel")return;e.preventDefault();
