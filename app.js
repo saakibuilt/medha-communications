@@ -2597,8 +2597,8 @@ document.addEventListener("click",e=>{
    token as the Medha Hub email summaries). */
 const AI_REPLY_ENDPOINT=`${SUPABASE_URL}/functions/v1/ai-reply`;
 const aiReplyButton=$("#ai-reply");
-/* The AI action stays in the tool row above the typing field, at its right
-   end (see the composer-tools rules in styles.css). */
+/* The AI action lives inside the message row (.composer-input-row in
+   index.html), pinned to the typing field's last line as text grows. */
 
 /* The trailing run of received messages after the viewer's last sent one.
    With no sent message in the loaded page, everything received is pending. */
