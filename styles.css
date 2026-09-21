@@ -2047,7 +2047,8 @@ body,.rail,.chat-sidebar,.main-area,.details-panel,.calendar-sidebar,
    the AI button in DOM order. Ordering keeps the AI button in the right
    corner regardless of what gets appended later. */
 .ai-reply-btn{order:99}
-#poll-button{order:50;font-size:17px;line-height:1}
+#poll-button{order:50}
+#poll-button[hidden]{display:none!important}
 :root[data-theme="dark"] #poll-button{color:var(--text-secondary)}
 
 /* Keep every composer action visible at the right edge: attachment, emoji,

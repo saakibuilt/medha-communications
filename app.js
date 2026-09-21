@@ -1458,6 +1458,7 @@ function toggleDetails(){
 }
 
 function renderMessages(){
+  const poll=document.getElementById("poll-button");if(poll)poll.hidden=active?.kind!=="group";
   const area=$("#message-area");
   if(!active){
     /* The first phone screen is the people list. Keep its drawer open until
@@ -3516,7 +3517,13 @@ $("#message-actions").addEventListener("click",async e=>{
 });
 /* Polls are deliberately not placed in the direct-message composer. Group
    polling continues to be handled from the group tools flow, not this row. */
-const pollButton=document.createElement("button");pollButton.type="button";pollButton.id="poll-button";pollButton.className="tool-btn";pollButton.title="Create poll";pollButton.textContent="◉";
+const pollButton=document.createElement("button");pollButton.type="button";pollButton.id="poll-button";pollButton.className="tool-btn";pollButton.title="Create poll";pollButton.setAttribute("aria-label","Create poll");
+pollButton.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>';
+/* Commit d3cb4b9 dropped this append, so no chat showed the poll tool. It
+   sits in the tool row with attachment, emoji and GIF, in group chats only
+   (renderMessages keeps it in step with the open conversation). */
+pollButton.hidden=active?.kind!=="group";
+$(".composer-tools")?.append(pollButton);
 pollButton.addEventListener("click",()=>{if(active?.kind!=="group"){toast("Polls are available in group chats");return}$("#poll-dialog").showModal()});
 let pollPosting=false;
 $("#poll-form").addEventListener("submit",async e=>{
