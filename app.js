@@ -2597,9 +2597,8 @@ document.addEventListener("click",e=>{
    token as the Medha Hub email summaries). */
 const AI_REPLY_ENDPOINT=`${SUPABASE_URL}/functions/v1/ai-reply`;
 const aiReplyButton=$("#ai-reply");
-/* Keep the AI action independent of the attachment/emoji/GIF row so it can
-   stay pinned to the typing field's lower-right corner as text grows. */
-$("#composer")?.append(aiReplyButton);
+/* The AI action stays in the tool row above the typing field, at its right
+   end (see the composer-tools rules in styles.css). */
 
 /* The trailing run of received messages after the viewer's last sent one.
    With no sent message in the loaded page, everything received is pending. */
