@@ -3,12 +3,39 @@
    Warehouse keeps its data in its own Supabase project behind its own API,
    which sends no CORS headers, so Space reads it server-to-server here. The
    caller must be a signed-in, active Medha user whose role may open Warehouse
-   - the same app_visibility rule Medha Hub applies to its tiles - and only a
-   short summary of each entry is returned, never its rows. */
+   - the same app_visibility rule Medha Hub applies to its tiles. Delivered
+   entries are left out; each entry comes back as a summary plus its part
+   numbers (for part-number search), not the full rows. */
 const SUPABASE_URL = "https://nnvyfeckimnjvmeneiro.supabase.co";
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_H-o5HRFu3lCq5E9Hf1s3uA_Hi_LaMnY";
 const FIREBASE_KEY = process.env.FIREBASE_WEB_API_KEY || "AIzaSyDhyDoFRrCXXEkoQ3i6wpqmNd8Po6p_KIw";
 const WAREHOUSE_ENTRIES = "https://medha-warehouse.vercel.app/api/entries";
+// Warehouse's own grouping (SHIPMENT_PAGE_STATUSES in its frontend): these are
+// on the Shipments page; delivered/completed entries are left out entirely.
+const SHIPMENT_STATUSES = new Set(["shipment", "shipped", "scheduled"]);
+const DELIVERED_STATUSES = new Set(["deliveries", "delivered"]);
+
+// Same column detection Warehouse uses (lib/supabase.js columnRoles).
+function columnRoles(columns) {
+  const find = pattern => columns.findIndex(column => pattern.test(String(column)));
+  let code = find(/(?:part|item|material).*(?:no|number|code)|\bcode\b/i);
+  let name = find(/desc|(?:item|material).*name/i);
+  let quantity = find(/qty|quant/i);
+  if (code < 0) code = 0;
+  if (name < 0) name = Math.min(1, columns.length - 1);
+  if (quantity < 0) quantity = columns.length - 1;
+  return { code, name, quantity };
+}
+// [partNumber, description, quantity] per row, so the picker can search by
+// part number and show which part matched.
+function entryParts(entry) {
+  const columns = Array.isArray(entry.columns) ? entry.columns : [];
+  const roles = columnRoles(columns);
+  return (Array.isArray(entry.rows) ? entry.rows : []).slice(0, 500).map(values => {
+    const row = Array.isArray(values) ? values : [];
+    return [row[roles.code], row[roles.name], row[roles.quantity]].map(value => String(value ?? "").trim().slice(0, 120));
+  }).filter(([code, name]) => code || name);
+}
 
 async function supabase(path) {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -68,18 +95,28 @@ export default async function handler(req, res) {
     const upstream = await fetch(WAREHOUSE_ENTRIES, { headers: { Accept: "application/json" } });
     if (!upstream.ok) return res.status(502).json({ error: "Warehouse is unavailable right now" });
     const entries = await upstream.json();
+    const open = (Array.isArray(entries) ? entries : []).filter(entry => {
+      const status = String(entry.status || "stock").trim().toLowerCase();
+      return !entry.completedAt && !DELIVERED_STATUSES.has(status);
+    });
     return res.status(200).json({
-      entries: (Array.isArray(entries) ? entries : []).slice(0, 400).map(entry => ({
-        id: String(entry.id),
-        title: entry.title || "Untitled entry",
-        kind: entry.kind || "",
-        tag: entry.tag || "",
-        status: entry.status || "",
-        customer: entry.customerName || "",
-        shipmentId: entry.shipmentId || "",
-        createdAt: entry.createdAt || "",
-        rows: Array.isArray(entry.rows) ? entry.rows.length : 0,
-      })),
+      entries: open.slice(0, 600).map(entry => {
+        const status = String(entry.status || "stock").trim().toLowerCase();
+        return {
+          id: String(entry.id),
+          title: entry.title || "Untitled entry",
+          kind: entry.kind || "",
+          // Warehouse calls the tag the entry's warehouse location.
+          location: entry.tag || "",
+          status,
+          group: SHIPMENT_STATUSES.has(status) ? "shipments" : "stock",
+          customer: entry.customerName || "",
+          shipmentId: entry.shipmentId || "",
+          createdAt: entry.createdAt || "",
+          rows: Array.isArray(entry.rows) ? entry.rows.length : 0,
+          parts: entryParts(entry),
+        };
+      }),
     });
   } catch {
     return res.status(502).json({ error: "Warehouse entries could not be loaded" });

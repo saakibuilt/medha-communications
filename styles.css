@@ -2679,3 +2679,20 @@ body.share-open .share-work-menu{opacity:1;visibility:visible;transform:none;tra
 .share-card-open svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 @media(prefers-reduced-motion:reduce){.share-card.is-openable,.share-card.is-openable .task-card-message{transition:none}.share-card.is-openable:hover{transform:none}}
 .wh-card-message .tcm-head{background:color-mix(in srgb, var(--info-fg) 8%, var(--surface))}
+
+/* Warehouse picker: Stock / Shipments tabs in the header, location pill and
+   the part that matched a part-number search. */
+.share-work-tabs{display:flex;gap:4px;margin:0 20px 12px;padding:4px;border-radius:12px;background:var(--surface-hover);flex:none}
+.share-work-tabs[hidden]{display:none}
+.share-work-tabs button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;border:0;border-radius:9px;background:transparent;color:var(--text-secondary);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:background .16s ease,color .16s ease,box-shadow .16s ease}
+.share-work-tabs button[aria-selected="true"]{background:var(--surface);color:var(--text);box-shadow:0 2px 8px color-mix(in srgb, var(--text) 10%, transparent)}
+.share-work-tab-count{min-width:22px;padding:1px 7px;border-radius:999px;background:var(--brand-soft-bg);color:var(--brand-solid-bright);font-size:11px;line-height:18px}
+.share-work-tab-count:empty{display:none}
+.share-work-row-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.share-work-loc,.share-work-part{display:inline-flex;align-items:center;gap:4px;max-width:100%;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.share-work-loc{background:color-mix(in srgb, var(--info-fg) 11%, transparent);color:var(--info-fg)}
+.share-work-loc.is-empty{background:var(--surface-hover);color:var(--text-muted)}
+.share-work-loc svg{flex:none;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.2}
+.share-work-part{background:var(--brand-soft-bg);color:var(--brand-solid-bright)}
+:root[data-theme="dark"] .share-work-tabs button[aria-selected="true"]{background:var(--surface-raised)}
+@media(pointer:coarse){.share-work-tabs button{min-height:44px}}

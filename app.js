@@ -507,11 +507,16 @@ function openableTaskCardHtml(m){
 }
 function warehouseCardBody(entry){
   const status=String(entry.status||"").toLowerCase();
+  // Name, part count, location (Warehouse's tag) and inventory type (its kind)
+  // always show; the matched part and shipment details only when there are any.
+  const parts=Number(entry.rows)||0;
   const rows=[
-    ["Items",entry.rows?String(entry.rows):""],
-    ["Customer",entry.customer||""],
-    ["Shipment",entry.shipmentId||""],
-    ["Type",[entry.kind,entry.tag].filter(Boolean).join(" · ")]
+    ["Parts",String(parts)],
+    ["Location",entry.location||entry.tag||"Not set"],
+    ["Type",entry.kind||"Not set"],
+    ["Matched part",entry.part||""],
+    ["Customer",entry.group==="shipments"?entry.customer||"":""],
+    ["Shipment",entry.shipmentId||""]
   ].filter(([,value])=>value);
   return `<article class="task-card-message wh-card-message">
     <header class="tcm-head">
@@ -2669,7 +2674,7 @@ const shareWork=$("#share-work"),shareWorkButton=$("#share-work-button");
 const shareDialog=$("#share-work-dialog"),shareList=$("#share-work-list"),shareSearch=$("#share-work-search");
 const shareSubmit=$("#share-work-submit"),shareCount=$("#share-work-count");
 const shareAccess={tasks:false,warehouse:false};
-let shareApp=null,shareItems=[];const shareChosen=new Set();
+let shareApp=null,shareItems=[],shareTab="stock";const shareChosen=new Set();
 function parseSettingValue(value){
   if(value==null)return {};
   if(typeof value==="string"){try{return JSON.parse(value)||{}}catch{return {}}}
@@ -2738,9 +2743,14 @@ async function loadWarehouseEntries(){
   const response=await fetch("/api/warehouse-entries",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
   const body=await response.json().catch(()=>({}));
   if(!response.ok)throw Error(body.error||"Warehouse entries could not be loaded");
-  return (body.entries||[]).map(entry=>({id:entry.id,title:entry.title,status:String(entry.status||"").toLowerCase(),entry,
-    meta:[entry.status,entry.rows?`${entry.rows} ${entry.rows===1?"item":"items"}`:"",entry.customer,entry.shipmentId?`Shipment ${entry.shipmentId}`:""].filter(Boolean).join(" · "),
-    search:`${entry.title} ${entry.status} ${entry.kind} ${entry.tag} ${entry.customer} ${entry.shipmentId}`.toLowerCase()}));
+  return (body.entries||[]).map(entry=>{
+    const parts=Array.isArray(entry.parts)?entry.parts:[];
+    return {id:entry.id,title:entry.title,status:String(entry.status||"").toLowerCase(),group:entry.group==="shipments"?"shipments":"stock",
+      location:entry.location||"",parts,entry,
+      meta:[entry.kind,`${entry.rows||0} ${entry.rows===1?"part":"parts"}`,entry.customer,entry.shipmentId?`Shipment ${entry.shipmentId}`:""].filter(Boolean).join(" · "),
+      search:`${entry.title} ${entry.status} ${entry.kind} ${entry.location} ${entry.customer} ${entry.shipmentId}`.toLowerCase(),
+      partSearch:parts.map(([code,name])=>`${code} ${name}`).join("\n").toLowerCase()};
+  });
 }
 // The same link Warehouse's own "share to Space" sends, so the card matches.
 function warehouseShareText(entry){
@@ -2756,30 +2766,63 @@ function renderShareFoot(){
   shareSubmit.disabled=!n;
   shareSubmit.textContent=n>1?`Attach ${n}`:"Attach";
 }
+/* The first part whose number or description contains the query, so a
+   part-number search shows which part made the entry match. */
+function matchedPart(item,query){
+  if(!query||!item.parts?.length)return null;
+  const hit=item.parts.find(([code,name])=>String(code).toLowerCase().includes(query)||String(name).toLowerCase().includes(query));
+  if(!hit)return null;
+  const [code,name,qty]=hit;
+  return [code,name].filter(Boolean).join(" — ")+(qty?` ×${qty}`:"");
+}
+function shareMatches(item,query){
+  return !query||item.search.includes(query)||(item.partSearch||"").includes(query);
+}
+const LOCATION_PIN='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>';
 function renderShareList(){
   const query=shareSearch.value.trim().toLowerCase();
-  const visible=shareItems.filter(item=>!query||item.search.includes(query));
-  if(!shareItems.length){
-    shareList.innerHTML=`<p class="share-work-empty">${shareApp==="tasks"?"No tasks are assigned to you.":"There are no warehouse entries yet."}</p>`;
+  const warehouse=shareApp==="warehouse";
+  const matching=shareItems.filter(item=>shareMatches(item,query));
+  if(warehouse){
+    for(const tab of ["stock","shipments"]){
+      const count=matching.filter(item=>item.group===tab).length;
+      const badge=shareDialog.querySelector(`[data-count="${tab}"]`);
+      if(badge)badge.textContent=shareItems.length?String(count):"";
+    }
+    shareDialog.querySelectorAll("[data-share-tab]").forEach(tab=>tab.setAttribute("aria-selected",String(tab.dataset.shareTab===shareTab)));
+  }
+  const visible=warehouse?matching.filter(item=>item.group===shareTab):matching;
+  const emptyWarehouse=shareTab==="stock"?"There are no stock entries.":"There are no open shipments.";
+  if(!shareItems.length||(warehouse&&!query&&!visible.length)){
+    shareList.innerHTML=`<p class="share-work-empty">${warehouse?emptyWarehouse:"No tasks are assigned to you."}</p>`;
   }else if(!visible.length){
-    shareList.innerHTML=`<p class="share-work-empty">Nothing matches “${esc(query)}”.</p>`;
+    shareList.innerHTML=`<p class="share-work-empty">Nothing matches “${esc(query)}”${warehouse?` in ${shareTab==="stock"?"Stock":"Shipments"}`:""}.</p>`;
   }else{
-    shareList.innerHTML=visible.map(item=>`<label class="share-work-row${shareChosen.has(item.id)?" is-chosen":""}" role="option" aria-selected="${shareChosen.has(item.id)}">
+    shareList.innerHTML=visible.map(item=>{
+      const part=warehouse?matchedPart(item,query):null;
+      item.matchedPart=part;
+      return `<label class="share-work-row${shareChosen.has(item.id)?" is-chosen":""}" role="option" aria-selected="${shareChosen.has(item.id)}">
       <input type="checkbox" value="${esc(item.id)}"${shareChosen.has(item.id)?" checked":""}>
       <span class="share-work-row-glyph" aria-hidden="true">${SHARE_GLYPHS[shareApp]}</span>
-      <span class="share-work-row-copy"><strong>${esc(item.title)}</strong>${item.meta?`<small>${esc(item.meta)}</small>`:""}</span>
-      <span class="share-work-tick" aria-hidden="true"></span></label>`).join("");
+      <span class="share-work-row-copy"><strong>${esc(item.title)}</strong>${item.meta?`<small>${esc(item.meta)}</small>`:""}${
+        warehouse?`<span class="share-work-row-tags"><span class="share-work-loc${item.location?"":" is-empty"}">${LOCATION_PIN}${esc(item.location||"No location")}</span>${part?`<span class="share-work-part">Part ${esc(part)}</span>`:""}</span>`:""}</span>
+      <span class="share-work-tick" aria-hidden="true"></span></label>`;
+    }).join("");
   }
   renderShareFoot();
 }
+shareDialog?.querySelectorAll("[data-share-tab]").forEach(tab=>tab.addEventListener("click",()=>{
+  shareTab=tab.dataset.shareTab;renderShareList();shareList.scrollTop=0;
+}));
 async function openSharePicker(app){
   closeShareMenu();
   if(!active){toast("Select a conversation first");return}
   if(!shareAccess[app])return;
-  shareApp=app;shareItems=[];shareChosen.clear();shareSearch.value="";
+  shareApp=app;shareItems=[];shareChosen.clear();shareSearch.value="";shareTab="stock";
+  $("#share-work-tabs").hidden=app!=="warehouse";
   $("#share-work-title").textContent=app==="tasks"?"Your tasks":"Warehouse entries";
   $("#share-work-glyph").innerHTML=SHARE_GLYPHS[app];
-  shareSearch.placeholder=app==="tasks"?"Search your tasks":"Search entries, customers, shipments";
+  shareSearch.placeholder=app==="tasks"?"Search your tasks":"Search part number, entry, location, customer";
   shareList.innerHTML='<div class="share-work-loading" aria-busy="true"><span></span><span></span><span></span></div>';
   renderShareFoot();
   shareDialog.showModal();
@@ -2810,7 +2853,13 @@ shareSubmit?.addEventListener("click",()=>{
   const chosen=shareItems.filter(item=>shareChosen.has(item.id));
   if(!chosen.length)return;
   for(const item of chosen){
-    const share=shareApp==="tasks"?{type:"task",id:item.id,title:item.title}:{type:"warehouse",...item.entry};
+    let share;
+    if(shareApp==="tasks")share={type:"task",id:item.id,title:item.title};
+    else{
+      // The part list stays out of the message; the part that matched the search rides along.
+      const {parts,...entry}=item.entry;
+      share={type:"warehouse",...entry,...(item.matchedPart?{part:item.matchedPart}:{})};
+    }
     if(!pendingShares.some(existing=>existing.type===share.type&&String(existing.id)===String(share.id)))pendingShares.push(share);
   }
   pendingShares=pendingShares.slice(0,10);
