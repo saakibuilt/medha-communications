@@ -2050,6 +2050,17 @@ body,.rail,.chat-sidebar,.main-area,.details-panel,.calendar-sidebar,
 #poll-button{order:50;font-size:17px;line-height:1}
 :root[data-theme="dark"] #poll-button{color:var(--text-secondary)}
 
+/* Keep every composer action visible at the right edge: attachment, emoji,
+   GIF and AI. The overflow menu is not needed when the full cluster fits. */
+.composer-tools{justify-content:flex-end}
+.ai-reply-btn{order:0;margin-left:0}
+.tools-more{display:none!important}
+@media(max-width:1024px){
+  .composer-tools #attach-file,
+  .composer-tools #emoji-button,
+  .composer-tools #gif-button{display:inline-grid!important}
+}
+
 /* ============================================================
    DELIVERY STATUS TICKS (own messages)
    sent = one check, delivered = two, read = two in the accent colour.

@@ -3512,7 +3512,9 @@ $("#message-actions").addEventListener("click",async e=>{
     }
   }catch(error){toast(error.message)}
 });
-const pollButton=document.createElement("button");pollButton.type="button";pollButton.id="poll-button";pollButton.className="tool-btn";pollButton.title="Create poll";pollButton.textContent="◉";$(".composer-tools")?.append(pollButton);
+/* Polls are deliberately not placed in the direct-message composer. Group
+   polling continues to be handled from the group tools flow, not this row. */
+const pollButton=document.createElement("button");pollButton.type="button";pollButton.id="poll-button";pollButton.className="tool-btn";pollButton.title="Create poll";pollButton.textContent="◉";
 pollButton.addEventListener("click",()=>{if(active?.kind!=="group"){toast("Polls are available in group chats");return}$("#poll-dialog").showModal()});
 let pollPosting=false;
 $("#poll-form").addEventListener("submit",async e=>{
