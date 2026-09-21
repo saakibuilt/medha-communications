@@ -2571,6 +2571,176 @@ document.addEventListener("keydown",e=>{
 ["#attach-file","#emoji-button","#gif-button"].forEach(sel=>
   $(sel)?.addEventListener("click",()=>closeComposerTools()));
 
+/* ---------- share from Medha apps ----------
+   The stacked-cards button beside the three dots opens Tasks and/or
+   Warehouse - only the apps Medha Hub lets this user open (the same
+   app_visibility rule as its tiles). Picking one lists the user's assigned
+   tasks or the warehouse entries; the chosen ones post into the open chat in
+   the formats Activities and Warehouse already share with, so the existing
+   task scorecard and warehouse link card render them. */
+const shareWork=$("#share-work"),shareWorkButton=$("#share-work-button");
+const shareDialog=$("#share-work-dialog"),shareList=$("#share-work-list"),shareSearch=$("#share-work-search");
+const shareSubmit=$("#share-work-submit"),shareCount=$("#share-work-count");
+const shareAccess={tasks:false,warehouse:false};
+let shareApp=null,shareItems=[];const shareChosen=new Set();
+function parseSettingValue(value){
+  if(value==null)return {};
+  if(typeof value==="string"){try{return JSON.parse(value)||{}}catch{return {}}}
+  return value||{};
+}
+// Mirrors Medha Hub's appVisibilityRoleForUser / paintAppVisibility.
+function hubAppAllowed(visibility,app,user){
+  const cfg=visibility?.[app];
+  if(!cfg)return true;
+  const allows=value=>value!==false&&value!=="false"&&value!==0;
+  const role=user?.permissions?.__custom_role||(user?.role!=="employee"?user?.role:
+    ({full_time:"employee_full",part_time:"employee_part",contract:"contractor",temporary:"temporary"}[user?.employment_type]||"employee"));
+  if(Object.prototype.hasOwnProperty.call(cfg,role))return allows(cfg[role]);
+  if(user?.role&&Object.prototype.hasOwnProperty.call(cfg,user.role))return allows(cfg[user.role]);
+  return true;
+}
+async function refreshShareWorkAccess(uid){
+  shareAccess.tasks=shareAccess.warehouse=false;
+  try{
+    const [users,settings]=await Promise.all([
+      db(`users?id=eq.${encodeURIComponent(uid)}&select=role,employment_type,permissions,is_active&limit=1`),
+      db("app_settings?key=eq.app_visibility&select=value")
+    ]);
+    const user=users?.[0],visibility=parseSettingValue(settings?.[0]?.value);
+    if(user&&user.is_active!==false){
+      shareAccess.tasks=hubAppAllowed(visibility,"tasks",user);
+      shareAccess.warehouse=hubAppAllowed(visibility,"warehouse",user);
+    }
+  }catch{}
+  document.querySelectorAll("[data-share-app]").forEach(item=>{item.hidden=!shareAccess[item.dataset.shareApp]});
+  if(shareWork)shareWork.hidden=!shareAccess.tasks&&!shareAccess.warehouse;
+}
+function closeShareMenu(){
+  document.body.classList.remove("share-open");
+  shareWorkButton?.setAttribute("aria-expanded","false");
+}
+shareWorkButton?.addEventListener("click",e=>{
+  e.stopPropagation();
+  closeComposerTools();
+  const open=document.body.classList.toggle("share-open");
+  shareWorkButton.setAttribute("aria-expanded",open?"true":"false");
+});
+toolsMore?.addEventListener("click",closeShareMenu);
+document.addEventListener("click",e=>{if(!e.target.closest(".share-work"))closeShareMenu()});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&document.body.classList.contains("share-open")){closeShareMenu();shareWorkButton?.focus()}
+});
+const SHARE_GLYPHS={
+  tasks:'<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12.2 2.3 2.3 4.7-4.8"/></svg>',
+  warehouse:'<svg viewBox="0 0 24 24"><path d="M3.5 9 12 4.5 20.5 9v9.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M8 20v-6h8v6M8 17h8"/></svg>'
+};
+async function loadAssignedTasks(){
+  const me=viewerId();
+  const rows=await db(`medha_actvities?assigned_user_uids=cs.${encodeURIComponent(`{"${me}"}`)}&select=*&limit=300`);
+  const done=status=>/complete|done|closed/.test(status);
+  return (Array.isArray(rows)?rows:[]).map(row=>{
+    const status=String(row.status||"").toLowerCase();
+    return {id:String(row.id),title:row.title||"Untitled task",status,done:done(status),due:row.completed_at||"",
+      meta:[row.status,row.completed_at?`Due ${row.completed_at}`:"",row.priority&&row.priority!=="none"?`${row.priority} priority`:""].filter(Boolean).join(" · "),
+      search:`${row.title||""} ${row.status||""} ${row.work_description||""}`.toLowerCase()};
+  }).sort((a,b)=>Number(a.done)-Number(b.done)||String(a.due||"9999").localeCompare(String(b.due||"9999")));
+}
+async function loadWarehouseEntries(){
+  const token=await auth.currentUser?.getIdToken();
+  if(!token)throw Error("Open Space from Medha Hub again to load Warehouse");
+  const response=await fetch("/api/warehouse-entries",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
+  const body=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(body.error||"Warehouse entries could not be loaded");
+  return (body.entries||[]).map(entry=>({id:entry.id,title:entry.title,status:String(entry.status||"").toLowerCase(),entry,
+    meta:[entry.status,entry.rows?`${entry.rows} ${entry.rows===1?"item":"items"}`:"",entry.customer,entry.shipmentId?`Shipment ${entry.shipmentId}`:""].filter(Boolean).join(" · "),
+    search:`${entry.title} ${entry.status} ${entry.kind} ${entry.tag} ${entry.customer} ${entry.shipmentId}`.toLowerCase()}));
+}
+// The same link Warehouse's own "share to Space" sends, so the card matches.
+function warehouseShareText(entry){
+  const url=new URL("https://medha-warehouse.vercel.app/");
+  url.searchParams.set("entry",entry.id);
+  if(entry.title)url.searchParams.set("title",entry.title);
+  url.searchParams.set("subtitle",`${entry.rows} ${entry.rows===1?"entry":"entries"}`);
+  return url.toString();
+}
+function renderShareFoot(){
+  const n=shareChosen.size;
+  shareCount.textContent=n?`${n} selected`:"Choose one or more";
+  shareSubmit.disabled=!n;
+  shareSubmit.textContent=n>1?`Share ${n}`:"Share";
+}
+function renderShareList(){
+  const query=shareSearch.value.trim().toLowerCase();
+  const visible=shareItems.filter(item=>!query||item.search.includes(query));
+  if(!shareItems.length){
+    shareList.innerHTML=`<p class="share-work-empty">${shareApp==="tasks"?"No tasks are assigned to you.":"There are no warehouse entries yet."}</p>`;
+  }else if(!visible.length){
+    shareList.innerHTML=`<p class="share-work-empty">Nothing matches “${esc(query)}”.</p>`;
+  }else{
+    shareList.innerHTML=visible.map(item=>`<label class="share-work-row${shareChosen.has(item.id)?" is-chosen":""}" role="option" aria-selected="${shareChosen.has(item.id)}">
+      <input type="checkbox" value="${esc(item.id)}"${shareChosen.has(item.id)?" checked":""}>
+      <span class="share-work-row-glyph" aria-hidden="true">${SHARE_GLYPHS[shareApp]}</span>
+      <span class="share-work-row-copy"><strong>${esc(item.title)}</strong>${item.meta?`<small>${esc(item.meta)}</small>`:""}</span>
+      <span class="share-work-tick" aria-hidden="true"></span></label>`).join("");
+  }
+  renderShareFoot();
+}
+async function openSharePicker(app){
+  closeShareMenu();
+  if(!active){toast("Select a conversation first");return}
+  if(!shareAccess[app])return;
+  shareApp=app;shareItems=[];shareChosen.clear();shareSearch.value="";
+  $("#share-work-title").textContent=app==="tasks"?"Your tasks":"Warehouse entries";
+  $("#share-work-glyph").innerHTML=SHARE_GLYPHS[app];
+  shareSearch.placeholder=app==="tasks"?"Search your tasks":"Search entries, customers, shipments";
+  shareList.innerHTML='<div class="share-work-loading" aria-busy="true"><span></span><span></span><span></span></div>';
+  renderShareFoot();
+  shareDialog.showModal();
+  // Search on a desktop; on touch, focus the list so the keyboard stays down
+  // (and the close button does not open with a focus ring).
+  if(matchMedia("(pointer:fine)").matches)shareSearch.focus();else shareList.focus({preventScroll:true});
+  try{
+    shareItems=app==="tasks"?await loadAssignedTasks():await loadWarehouseEntries();
+    if(shareApp!==app)return;
+    renderShareList();
+  }catch(error){
+    shareList.innerHTML=`<p class="share-work-empty">${esc(error.message||"Could not load")}</p>`;
+  }
+}
+document.querySelectorAll("[data-share-app]").forEach(item=>item.addEventListener("click",()=>openSharePicker(item.dataset.shareApp)));
+shareSearch?.addEventListener("input",renderShareList);
+shareList?.addEventListener("change",e=>{
+  const box=e.target.closest("input[type=checkbox]");
+  if(!box)return;
+  box.checked?shareChosen.add(box.value):shareChosen.delete(box.value);
+  const row=box.closest(".share-work-row");
+  row?.classList.toggle("is-chosen",box.checked);row?.setAttribute("aria-selected",String(box.checked));
+  renderShareFoot();
+});
+$("#close-share-work")?.addEventListener("click",()=>shareDialog.close());
+shareDialog?.addEventListener("click",e=>{if(e.target===shareDialog)shareDialog.close()});
+shareSubmit?.addEventListener("click",async()=>{
+  const chat=active,chosen=shareItems.filter(item=>shareChosen.has(item.id));
+  if(!chat||!chosen.length)return;
+  shareSubmit.disabled=true;shareSubmit.textContent="Sharing…";
+  let sent=0;
+  try{
+    for(const item of chosen){
+      const saved=shareApp==="tasks"
+        ?await persistMessage(chat,`Task: ${item.title}`,[],{medha_task_id:item.id})
+        :await persistMessage(chat,warehouseShareText(item.entry),[]);
+      if(saved&&!chat.messages.some(m=>String(m.id)===String(saved.id))){chat.messages.push(saved);chat.messagesLoaded=true}
+      sent++;
+    }
+    shareDialog.close();
+    toast(`Shared ${sent} ${shareApp==="tasks"?(sent===1?"task":"tasks"):(sent===1?"entry":"entries")}`);
+  }catch(error){
+    toast(error.message||"Could not share");
+  }finally{
+    renderList();renderMessages();scrollMessagesToEnd();renderShareFoot();
+  }
+});
+
 /* ---------- theme (light / dark) ----------
    The head script has already applied the stored choice before first paint;
    this only handles switching and keeping the two controls (header icon and
@@ -4247,6 +4417,8 @@ function finishSpaceLoading(message){
 }
 async function loadCurrentProfile(user){
   if(!user)return;
+  // Decides whether the share-from-apps button shows, and which apps it lists.
+  void refreshShareWorkAccess(user.uid);
   let name=user.displayName||user.email||"Signed-in user";
   try{
     const rows=await db(`users?id=eq.${encodeURIComponent(user.uid)}&select=id,full_name,email,department,role,is_active`);
