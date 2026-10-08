@@ -2735,7 +2735,10 @@ async function loadAssignedTasks(){
     return {id:String(row.id),title:row.title||"Untitled task",status,done:done(status),due:row.completed_at||"",
       meta:[row.status,row.completed_at?`Due ${row.completed_at}`:"",row.priority&&row.priority!=="none"?`${row.priority} priority`:""].filter(Boolean).join(" · "),
       search:`${row.title||""} ${row.status||""} ${row.work_description||""}`.toLowerCase()};
-  }).sort((a,b)=>Number(a.done)-Number(b.done)||String(a.due||"9999").localeCompare(String(b.due||"9999")));
+  // Completed work remains in the task desk, but is not actionable when
+  // choosing tasks to attach to a Spaces message.
+  }).filter(task=>!task.done)
+    .sort((a,b)=>String(a.due||"9999").localeCompare(String(b.due||"9999")));
 }
 async function loadWarehouseEntries(){
   const token=await auth.currentUser?.getIdToken();
