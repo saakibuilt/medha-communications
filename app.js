@@ -1448,6 +1448,18 @@ function renderDetailsPanel(){
     :[detailRow("Name",active.name),detailRow("Status",isSelf?"This is you":status),detailRow("Email",person?.email)].filter(Boolean).join("");
   const facts_el=$("#details-facts");
   if(facts_el)facts_el.innerHTML=facts||'<div class="directory-empty">No details available</div>';
+  let calendarBtn=$("#details-view-calendar");
+  if(!isGroup&&!isSelf&&active.participantId){
+    if(!calendarBtn){
+      calendarBtn=document.createElement("button");calendarBtn.type="button";calendarBtn.id="details-view-calendar";calendarBtn.className="details-calendar-button";
+      $("#contact-details-section")?.append(calendarBtn);
+      calendarBtn.addEventListener("click",()=>{const id=calendarBtn.dataset.personId;if(id)viewPersonCalendar(id,calendarBtn.dataset.personName)});
+    }
+    const name=person?.full_name||active.name||"this user";
+    calendarBtn.dataset.personId=String(active.participantId);calendarBtn.dataset.personName=name;
+    calendarBtn.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg><span>View ${esc(name)}'s calendar</span>`;
+    calendarBtn.hidden=false;
+  }else if(calendarBtn)calendarBtn.hidden=true;
   const contactTitle=$("#contact-details-title");
   if(contactTitle)contactTitle.textContent=isGroup?"Group":"Contact";
   const membersSection=$("#group-members-section");
@@ -1989,7 +2001,7 @@ async function openDirectChat(person,openingText){
    direct-conversation and Stream audio-call flows. */
 const groupMemberDialog=document.createElement("dialog");
 groupMemberDialog.id="group-member-dialog";groupMemberDialog.className="group-member-dialog";
-groupMemberDialog.innerHTML=`<section class="member-profile-sheet"><button type="button" class="member-profile-close" aria-label="Close member profile">×</button><span class="member-profile-avatar" id="member-profile-avatar">?</span><p class="eyebrow">Group member</p><h2 id="member-profile-name">Member</h2><p class="member-profile-handle" id="member-profile-handle"></p><div class="member-profile-actions"><button type="button" class="member-profile-action" data-member-profile-action="message" aria-label="Message member"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.5c0 4.1-3.8 7.4-8.5 7.4-1 0-2-.2-2.9-.5L4 20l1.4-4A6.9 6.9 0 0 1 3.5 11.5C3.5 7.4 7.3 4.1 12 4.1s8.5 3.3 8.5 7.4Z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg><span>Message</span></button><button type="button" class="member-profile-action" data-member-profile-action="call" aria-label="Start audio call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 3.5 9 3l2 5-2.2 1.8a14.5 14.5 0 0 0 5.4 5.4L16 13l5 2 .5 2.4a2 2 0 0 1-2.2 2.3C11.5 19 5 12.5 4.3 4.7A2 2 0 0 1 6.6 3.5Z"/></svg><span>Audio call</span></button></div></section>`;
+groupMemberDialog.innerHTML=`<section class="member-profile-sheet"><button type="button" class="member-profile-close" aria-label="Close member profile">×</button><span class="member-profile-avatar" id="member-profile-avatar">?</span><p class="eyebrow">Group member</p><h2 id="member-profile-name">Member</h2><p class="member-profile-handle" id="member-profile-handle"></p><div class="member-profile-actions"><button type="button" class="member-profile-action" data-member-profile-action="message" aria-label="Message member"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.5c0 4.1-3.8 7.4-8.5 7.4-1 0-2-.2-2.9-.5L4 20l1.4-4A6.9 6.9 0 0 1 3.5 11.5C3.5 7.4 7.3 4.1 12 4.1s8.5 3.3 8.5 7.4Z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg><span>Message</span></button><button type="button" class="member-profile-action" data-member-profile-action="call" aria-label="Start audio call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 3.5 9 3l2 5-2.2 1.8a14.5 14.5 0 0 0 5.4 5.4L16 13l5 2 .5 2.4a2 2 0 0 1-2.2 2.3C11.5 19 5 12.5 4.3 4.7A2 2 0 0 1 6.6 3.5Z"/></svg><span>Audio call</span></button><button type="button" class="member-profile-action" data-member-profile-action="calendar" aria-label="View calendar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg><span>Calendar</span></button></div></section>`;
 document.body.append(groupMemberDialog);
 let selectedGroupMember=null;
 function openGroupMemberProfile(id,name){
@@ -2009,6 +2021,7 @@ groupMemberDialog.addEventListener("click",async event=>{
   if(!action||!selectedGroupMember)return;
   const button=event.target.closest("button");if(button?.disabled)return;
   groupMemberDialog.close();
+  if(action==="calendar"){viewPersonCalendar(selectedGroupMember.id,selectedGroupMember.full_name);return}
   try{await openDirectChat(selectedGroupMember,"");if(action==="call")await startStreamCall("audio")}catch(error){toast(error.message||"Could not open this member")}
 });
 
@@ -4015,6 +4028,10 @@ $("#gif-results").addEventListener("click",async e=>{
 /* ---------- calendar ---------- */
 
 let meetings=[];let calendarCursor=new Date();
+/* Viewing a colleague's calendar ("View <name>'s calendar"): their meetings live in
+   their own list so presence, invitations and the sidebar keep using yours. */
+let calendarSubject=null,subjectMeetings=[];
+const calendarItems=()=>calendarSubject?subjectMeetings:meetings;
 /* Stretches each multi-day bar across the days it covers. Done from JS
    because a CSS percentage resolves against the day cell, not the strip,
    so the bar either fell short of, or ran past, the final day. */
@@ -4062,7 +4079,7 @@ function renderCalendar(){
   for(let i=0;i<first;i++)cells.push('<div class="muted"></div>');
   for(let d=1;d<=last;d++){
     const key=dayKey(new Date(y,m,d));
-    const items=meetings.filter(x=>coversDay(x,key));
+    const items=calendarItems().filter(x=>coversDay(x,key));
     cells.push(`<div class="${key===todayKey?"today":""}" data-day="${key}">${d}${items.map(x=>{
       const s=new Date(x.start),e=new Date(x.end||x.start);
       const multi=dayKey(s)!==dayKey(e);
@@ -4099,8 +4116,8 @@ function renderCalendar(){
       }
       const label=(!multi||rowStart)?esc(x.title):"";
       const style=multi&&rowStart&&daysInRow>1?` style="--span-days:${daysInRow}" data-span-days="${daysInRow}"`:"";
-      const controls=(!multi||rowStart)?`<span class="calendar-event-actions"><button type="button" data-edit-meeting="${esc(x.id||"")}" aria-label="Edit ${esc(x.title)}" title="Edit event">✎</button><button type="button" data-delete-meeting="${esc(x.id||"")}" aria-label="Delete ${esc(x.title)}" title="Delete event">×</button></span>`:"";
-      return `<i class="${span.trim()}"${style} title="${esc(x.title)}${esc(range)}" data-meeting-id="${esc(x.id||"")}"><span class="calendar-event-label">${label}</span>${controls}</i>`;
+      const controls=(!multi||rowStart)&&(!calendarSubject||String(x.created_by)===String(viewerId()))?`<span class="calendar-event-actions"><button type="button" data-edit-meeting="${esc(x.id||"")}" aria-label="Edit ${esc(x.title)}" title="Edit event">✎</button><button type="button" data-delete-meeting="${esc(x.id||"")}" aria-label="Delete ${esc(x.title)}" title="Delete event">×</button></span>`:"";
+      return `<i class="${(span+(x.busy?" is-busy":"")).trim()}"${style} title="${esc(x.title)}${esc(range)}" data-meeting-id="${esc(x.id||"")}"><span class="calendar-event-label">${label}</span>${controls}</i>`;
     }).join("")}</div>`);
   }
   $("#calendar-grid").innerHTML=cells.join("")||'<div class="empty-state">No scheduled meetings.</div>';
@@ -4108,7 +4125,7 @@ function renderCalendar(){
   /* Re-measure once CSS grid sizing and responsive fonts have settled. */
   requestAnimationFrame(sizeCalendarSpans);
   const now=new Date();
-  const future=meetings.filter(x=>new Date(x.end||x.start)>=now).sort((a,b)=>new Date(a.start)-new Date(b.start));
+  const future=calendarItems().filter(x=>new Date(x.end||x.start)>=now).sort((a,b)=>new Date(a.start)-new Date(b.start));
   $("#agenda-list").innerHTML=future.length?future.map(x=>{
     const s=new Date(x.start),e=new Date(x.end||x.start);
     const multi=s.toDateString()!==e.toDateString();
@@ -4277,7 +4294,7 @@ $("#setting-presence")?.addEventListener("change",async event=>{
   setPresenceLabel();renderList();
   if($("#settings-note"))$("#settings-note").textContent=enabled?"Your status is visible to teammates":"Your status is hidden from teammates";
 });
-document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.onclick=()=>setWorkspaceView(item.dataset.view));
+document.querySelectorAll(".rail-item[data-view]").forEach(item=>item.onclick=()=>{if(item.dataset.view==="calendar"&&calendarSubject)showMyCalendar();setWorkspaceView(item.dataset.view)});
 document.querySelectorAll(".rail-item[data-rail-filter]").forEach(item=>item.onclick=()=>{
   setWorkspaceView("favorites");
   document.querySelectorAll(".sidebar-tabs .tab").forEach(tab=>tab.classList.remove("active"));
@@ -4814,3 +4831,54 @@ window.addEventListener("hashchange",()=>{
   if(new URLSearchParams(location.hash.slice(1)).get("token"))authorizeHubLaunch();
 });
 loadSuggestions();
+
+
+/* ---------- a colleague's calendar ----------
+   Free/busy, like Outlook or Google: meetings you are both in show in full;
+   their other meetings show only as "Busy" with the time. Those other rows are
+   requested as start/end only, so their titles never reach this browser. */
+async function loadSubjectMeetings(){
+  if(!calendarSubject){subjectMeetings=[];return}
+  const them=calendarSubject.id,me=String(viewerId()||"");
+  const theirs=`or(created_by.eq.${them},invitee_ids.cs.{${them}})`,mine=`or(created_by.eq.${me},invitee_ids.cs.{${me}})`;
+  try{
+    const [shared,times]=await Promise.all([
+      me?db(`medha_communications_meetings?select=id,title,start_at,end_at,invitee_ids,created_by,location&and=${encodeURIComponent(`(${theirs},${mine})`)}&order=start_at.asc`):[],
+      db(`medha_communications_meetings?select=id,start_at,end_at&or=${encodeURIComponent(`(created_by.eq.${them},invitee_ids.cs.{${them}})`)}&order=start_at.asc`),
+    ]);
+    const sharedIds=new Set((shared||[]).map(x=>String(x.id)));
+    subjectMeetings=[
+      ...(shared||[]).map(x=>({...x,start:String(x.start_at||""),end:String(x.end_at||x.start_at||"")})),
+      ...(times||[]).filter(x=>!sharedIds.has(String(x.id))).map((x,i)=>({id:`busy-${i}`,title:"Busy",busy:true,start:String(x.start_at||""),end:String(x.end_at||x.start_at||""),invitee_ids:[],created_by:null})),
+    ].sort((a,b)=>new Date(a.start)-new Date(b.start));
+  }catch{subjectMeetings=[];toast("Could not load this calendar")}
+}
+function renderCalendarHead(){
+  const head=$("#calendar-view .page-head");if(!head)return;
+  const eyebrow=head.querySelector(".eyebrow"),title=head.querySelector("h2"),sub=head.querySelector("h2 + p");
+  let back=$("#calendar-back-mine");
+  if(!back){
+    back=document.createElement("button");back.type="button";back.id="calendar-back-mine";back.className="secondary-button calendar-back-mine";
+    back.textContent="Back to my calendar";back.addEventListener("click",()=>{showMyCalendar();renderCalendar()});
+    $("#new-event")?.before(back);
+  }
+  const name=calendarSubject?.name||"";
+  if(eyebrow)eyebrow.textContent=calendarSubject?`${name}'s schedule`:"Your schedule";
+  if(title)title.textContent=calendarSubject?`${name}'s calendar`:"Calendar";
+  if(sub)sub.textContent=calendarSubject?"Meetings you share show in full; their other meetings show as Busy.":"Meetings scheduled in Space.";
+  back.hidden=!calendarSubject;
+  const create=$("#new-event");if(create)create.hidden=!!calendarSubject;
+  $("#calendar-view")?.classList.toggle("is-subject",!!calendarSubject);
+}
+function showMyCalendar(){calendarSubject=null;subjectMeetings=[];renderCalendarHead()}
+async function viewPersonCalendar(id,name){
+  if(!id)return;
+  if(String(id)===String(viewerId())){showMyCalendar();setWorkspaceView("calendar");renderCalendar();return}
+  const person=directory.find(item=>String(item.id)===String(id));
+  calendarSubject={id:String(id),name:person?.full_name||name||"Medha user"};
+  calendarCursor=new Date();
+  setWorkspaceView("calendar");
+  renderCalendarHead();subjectMeetings=[];renderCalendar();
+  await loadSubjectMeetings();
+  if(calendarSubject&&String(calendarSubject.id)===String(id))renderCalendar();
+}

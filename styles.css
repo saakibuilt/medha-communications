@@ -2696,3 +2696,17 @@ body.share-open .share-work-menu{opacity:1;visibility:visible;transform:none;tra
 .share-work-part{background:var(--brand-soft-bg);color:var(--brand-solid-bright)}
 :root[data-theme="dark"] .share-work-tabs button[aria-selected="true"]{background:var(--surface-raised)}
 @media(pointer:coarse){.share-work-tabs button{min-height:44px}}
+
+/* ---------- a colleague's calendar ---------- */
+.details-calendar-button { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 12px; padding: 11px 14px; border: 1px solid var(--border, rgba(0,0,0,.12));
+  border-radius: 12px; background: var(--surface, #fff); color: var(--text, inherit); font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer;
+  transition: background .15s, border-color .15s; }
+.details-calendar-button:hover { background: color-mix(in srgb, var(--brand-solid, #be123c) 7%, var(--surface, #fff)); border-color: color-mix(in srgb, var(--brand-solid, #be123c) 35%, transparent); }
+.details-calendar-button svg { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--brand-solid, #be123c); }
+.details-calendar-button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-back-mine { margin-right: 8px; }
+.calendar-back-mine[hidden], #new-event[hidden] { display: none !important; }
+/* Busy blocks: neutral and hatched, so they never read as a meeting you can open */
+#calendar-grid i.is-busy { background: repeating-linear-gradient(135deg, color-mix(in srgb, currentColor 10%, transparent) 0 6px, color-mix(in srgb, currentColor 4%, transparent) 6px 12px) !important;
+  color: var(--text-soft, #64748b) !important; border-color: color-mix(in srgb, currentColor 25%, transparent) !important; cursor: default; font-style: italic; }
+.calendar-back-mine { align-self: flex-start; width: auto; flex: none; }
