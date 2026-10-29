@@ -916,8 +916,33 @@ function avatar(c,small=false){
     ?`<img src="${esc(c.image)}" alt="" class="group-avatar-image">`
     :group
     ?`<svg viewBox="0 0 24 24" aria-hidden="true" class="group-glyph"><circle cx="9" cy="9" r="3.2"/><path d="M3.4 18.2c0-2.7 2.5-4.4 5.6-4.4s5.6 1.7 5.6 4.4"/><circle cx="16.8" cy="10.2" r="2.4"/><path d="M16.8 14.6c2.4 0 4.2 1.4 4.2 3.6"/></svg>`
-    :esc(c?.initials||"");
+    :esc(c?.initials||"")+photoImg(c?.photoId??c?.participantId);
   return `<div class="person-avatar ${c?.color||"blue"}${small?" small":""}${group?" is-group":""}"${group?` title="Group chat"`:""}>${inner}</div>`;
+}
+/* Profile pictures live in private Storage (users.avatar_path); the Users app
+   signs them in one batch. Each photo sits over the initials, so a missing or
+   expired one just falls back to them. */
+const PROFILE_PHOTOS_API="https://medha-users.vercel.app/api/profile-photos";
+let profilePhotos=new Map(),profilePhotosExpireAt=0,profilePhotosLoad=null;
+try{const c=JSON.parse(sessionStorage.getItem("space-profile-photos")||"null");if(c?.expiresAt>Date.now()+60000){profilePhotos=new Map(Object.entries(c.photos||{}));profilePhotosExpireAt=c.expiresAt}}catch{}
+function ensureProfilePhotos(){
+  if(!firebaseIdToken||profilePhotosLoad||profilePhotosExpireAt>Date.now()+5*60*1000)return profilePhotosLoad;
+  profilePhotosLoad=(async()=>{
+    try{
+      const r=await fetchWithTimeout(PROFILE_PHOTOS_API,{headers:{Authorization:`Bearer ${firebaseIdToken}`}});
+      if(!r.ok)return;
+      const body=await r.json();
+      profilePhotos=new Map(Object.entries(body.photos||{}));profilePhotosExpireAt=body.expiresAt||Date.now()+30*60*1000;
+      try{sessionStorage.setItem("space-profile-photos",JSON.stringify({photos:body.photos||{},expiresAt:profilePhotosExpireAt}))}catch{}
+      renderList();if(active)renderMessages();paintStaticAvatars();
+    }catch{}finally{profilePhotosLoad=null}
+  })();
+  return profilePhotosLoad;
+}
+function photoImg(id){const url=id==null?"":profilePhotos.get(String(id));return url?`<img src="${esc(url)}" alt="" class="avatar-photo" loading="lazy" onerror="this.remove()">`:""}
+function paintStaticAvatars(){
+  const me=photoImg(viewerId());
+  ["#current-user-initials","#settings-avatar"].forEach(sel=>{const el=$(sel);if(el&&me&&!el.querySelector(".avatar-photo"))el.insertAdjacentHTML("beforeend",me)});
 }
 function initialsFor(name){return String(name||"?").trim().split(/\s+/).map(x=>x[0]||"").join("").slice(0,2).toUpperCase()||"?"}
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove("show"),3200)}
@@ -1111,7 +1136,7 @@ function renderList(){
        :"No conversations found"}</p>`;
   if(people.length){
     const heading=document.createElement("p");heading.className="search-result-heading";heading.textContent="People";$("#chat-list").prepend(heading);
-    $("#chat-list").insertAdjacentHTML("beforeend",people.map(person=>{const state=presenceFor(person.id);return `<div class="chat-item search-person" data-person-id="${esc(person.id)}"><div class="avatar-stack"><span class="person-avatar blue">${esc(initialsFor(person.full_name))}</span>${state==="hidden"?"":`<i class="presence-dot ${state}"></i>`}</div><div class="chat-copy"><div class="chat-line"><strong>${esc(person.full_name)}</strong><time>Start chat</time></div></div></div>`}).join(""));
+    $("#chat-list").insertAdjacentHTML("beforeend",people.map(person=>{const state=presenceFor(person.id);return `<div class="chat-item search-person" data-person-id="${esc(person.id)}"><div class="avatar-stack"><span class="person-avatar blue">${esc(initialsFor(person.full_name))}${photoImg(person.id)}</span>${state==="hidden"?"":`<i class="presence-dot ${state}"></i>`}</div><div class="chat-copy"><div class="chat-line"><strong>${esc(person.full_name)}</strong><time>Start chat</time></div></div></div>`}).join(""));
   }
 }
 
@@ -1177,10 +1202,10 @@ function messageHtml(m){
   /* In a group each message shows its own sender, not the group glyph -
      otherwise every bubble would carry the same icon. */
   const who=mine
-    ?{initials:initialsFor(currentAppUser?.full_name||"You"),color:"blue"}
+    ?{initials:initialsFor(currentAppUser?.full_name||"You"),color:"blue",photoId:viewerId()}
     :active?.kind==="group"
-      ?{initials:initialsFor(m.senderName||"?"),color:"blue"}
-      :{initials:active?.initials,color:active?.color};
+      ?{initials:initialsFor(m.senderName||"?"),color:"blue",photoId:m.senderId}
+      :{initials:active?.initials,color:active?.color,photoId:active?.participantId};
   const reactions=Object.entries(m.reactions||{}).filter(([,u])=>Array.isArray(u)&&u.length);
   const pollCard=m.poll?pollHtml(m.poll,m.id):"";
   /* Replies already show inline (show_in_channel), so the thread footer is
@@ -1473,7 +1498,7 @@ function renderDetailsPanel(){
       const member=directory.find(p=>String(p.id)===String(id));
       const name=member?.full_name||(String(id)===String(viewerId())?currentAppUser?.full_name:"")||"Unknown user";
       const username=memberUsername(member,id);
-      return '<button type="button" class="group-member" data-group-member-id="'+esc(id)+'" data-group-member-name="'+esc(name)+'" aria-label="Open '+esc(name)+' profile"><span class="person-avatar blue small">'+esc(initialsFor(name))+'</span><span class="group-member-copy"><strong>'+esc(name)+'</strong><small>@'+esc(username)+'</small></span>'+(String(id)===creatorId?'<span class="group-owner">Creator</span>':"")+'<span class="group-member-go" aria-hidden="true">›</span></button>';
+      return '<button type="button" class="group-member" data-group-member-id="'+esc(id)+'" data-group-member-name="'+esc(name)+'" aria-label="Open '+esc(name)+' profile"><span class="person-avatar blue small">'+esc(initialsFor(name))+photoImg(id)+'</span><span class="group-member-copy"><strong>'+esc(name)+'</strong><small>@'+esc(username)+'</small></span>'+(String(id)===creatorId?'<span class="group-owner">Creator</span>':"")+'<span class="group-member-go" aria-hidden="true">›</span></button>';
     });
     membersList.innerHTML=members.join("")||'<div class="directory-empty">No members found</div>';
     const countLabel=count===1?"1 member":`${count} members`;
@@ -1807,6 +1832,7 @@ async function ensureDirectory(){
     const rows=await db("users?select=id,full_name,email,department,role&is_active=eq.true&order=full_name.asc");
     directory=(rows||[]).filter(x=>x.full_name);
     directoryLoadedAt=Date.now();
+    void ensureProfilePhotos();
     const cache=readChatNameCache();
     directory.forEach(p=>{cache[String(p.id)]=p.full_name});
     writeChatNameCache(cache);
@@ -2008,7 +2034,7 @@ function openGroupMemberProfile(id,name){
   const person=directory.find(item=>String(item.id)===String(id))||{id:String(id),full_name:name||"Medha user"};
   selectedGroupMember=person;
   const fullName=person.full_name||name||"Medha user",self=String(person.id)===String(viewerId());
-  $("#member-profile-avatar").textContent=initialsFor(fullName);$("#member-profile-name").textContent=fullName;
+  $("#member-profile-avatar").innerHTML=esc(initialsFor(fullName))+photoImg(person.id);$("#member-profile-name").textContent=fullName;
   $("#member-profile-handle").textContent="@"+memberUsername(person,person.id);
   groupMemberDialog.querySelectorAll("[data-member-profile-action]").forEach(button=>{button.disabled=self;button.title=self?"This is you":""});
   if(!groupMemberDialog.open)groupMemberDialog.showModal();
@@ -3097,7 +3123,7 @@ function renderDirectory(query){
   list.innerHTML=matches.length?matches.map(p=>{
     const state=presenceFor(p.id);
     return `<button type="button" class="employee-option" data-person-id="${esc(p.id)}">
-      <span class="avatar-stack"><span class="person-avatar blue">${esc(initialsFor(p.full_name))}</span><i class="presence-dot ${state}" title="${state}"></i></span>
+      <span class="avatar-stack"><span class="person-avatar blue">${esc(initialsFor(p.full_name))}${photoImg(p.id)}</span><i class="presence-dot ${state}" title="${state}"></i></span>
       <span class="employee-copy"><strong>${esc(p.full_name)}</strong></span>
       <span class="employee-state ${state}">${state}</span>
     </button>`}).join("")
@@ -3131,7 +3157,7 @@ function renderGroupMembers(query=""){
   list.innerHTML=matches.length?matches.map(p=>{
     const chosen=selectedGroupMembers.includes(String(p.id));
     return `<button type="button" class="employee-option ${chosen?"selected":""}" data-group-person-id="${esc(p.id)}" aria-pressed="${chosen}">
-      <span class="person-avatar blue">${esc(initialsFor(p.full_name))}</span>
+      <span class="person-avatar blue">${esc(initialsFor(p.full_name))}${photoImg(p.id)}</span>
       <span class="employee-copy"><strong>${esc(p.full_name)}</strong></span>
       <span class="invite-check">${chosen?"\u2713":""}</span>
     </button>`}).join("")
@@ -3145,7 +3171,7 @@ function renderChosenMembers(){
   const chosen=selectedGroupMembers.map(id=>directory.find(p=>String(p.id)===String(id))).filter(Boolean);
   wrap.hidden=!chosen.length;
   wrap.innerHTML=chosen.map(p=>`<button type="button" class="member-chip" data-remove-member="${esc(p.id)}" title="Remove ${esc(p.full_name)}">
-    <span class="person-avatar blue">${esc(initialsFor(p.full_name))}</span>${esc(p.full_name)}<i aria-hidden="true">\u00d7</i></button>`).join("");
+    <span class="person-avatar blue">${esc(initialsFor(p.full_name))}${photoImg(p.id)}</span>${esc(p.full_name)}<i aria-hidden="true">\u00d7</i></button>`).join("");
   count.textContent=chosen.length?`${chosen.length} selected`:"None selected";
   count.classList.toggle("has-members",!!chosen.length);
   if(button)button.disabled=!chosen.length||!$("#group-chat-name").value.trim();
@@ -3724,13 +3750,13 @@ function renderForwardTargets(query=""){
   });
   const chatCards=choices.map(chat=>`
     <button type="button" class="employee-option" data-forward-to="${esc(chat.id)}">
-      <span class="person-avatar ${esc(chat.color||"blue")}">${esc(chat.initials||"?")}</span>
+      <span class="person-avatar ${esc(chat.color||"blue")}">${esc(chat.initials||"?")}${chat.kind==="group"?"":photoImg(chat.participantId)}</span>
       <span class="employee-copy"><strong>${esc(chat.name)}</strong></span>
       <span class="employee-state">${chat.kind==="group"?"Group":"Direct"}</span>
     </button>`).join("");
   const peopleCards=people.map(person=>`
     <button type="button" class="employee-option" data-forward-person="${esc(person.id)}">
-      <span class="person-avatar blue">${esc(initialsFor(person.full_name))}</span>
+      <span class="person-avatar blue">${esc(initialsFor(person.full_name))}${photoImg(person.id)}</span>
       <span class="employee-copy"><strong>${esc(person.full_name)}</strong><small>${esc(person.department||person.email||"")}</small></span>
       <span class="employee-state">New chat</span>
     </button>`).join("");
@@ -4193,7 +4219,7 @@ async function loadSuggestions(){const list=$("#suggestions-list");try{const [ev
 
 /* ---------- event invitees ---------- */
 
-const eventInvitees=new Set(),eventInviteeSearch=$("#event-invitees"),eventInviteeList=document.createElement("div");eventInviteeList.className="employee-list event-invitee-list";eventInviteeSearch.placeholder="Search Medha employees to invite...";eventInviteeSearch.after(eventInviteeList);function renderEventInvitees(query=""){const q=query.toLowerCase();const matches=directory.filter(p=>`${p.full_name} ${p.email||""} ${p.department||""}`.toLowerCase().includes(q));eventInviteeList.innerHTML=matches.length?matches.map(p=>`<button type="button" class="employee-option ${eventInvitees.has(p.id)?"selected":""}" data-event-person-id="${esc(p.id)}"><div class="person-avatar blue">${esc(initialsFor(p.full_name))}</div><div><strong>${esc(p.full_name)}</strong><small>${esc(p.department||"")} ${p.department&&p.email?" · ":""}${esc(p.email||"")}</small></div><span class="invite-check">${eventInvitees.has(p.id)?"✓":""}</span></button>`).join(""):"<div class=\"directory-empty\">No Medha employees found</div>"}eventInviteeSearch.addEventListener("input",e=>renderEventInvitees(e.target.value));eventInviteeList.addEventListener("click",e=>{const button=e.target.closest("[data-event-person-id]");if(!button)return;const id=button.dataset.eventPersonId;if(eventInvitees.has(id))eventInvitees.delete(id);else eventInvitees.add(id);eventInviteeSearch.value="";eventInviteeSearch.value=[...eventInvitees].join(",");renderEventInvitees("")});$("#new-event").onclick=async()=>{$("#event-dialog").showModal();eventInvitees.clear();eventInviteeSearch.value="";await loadEmployeeDirectory();renderEventInvitees("")};
+const eventInvitees=new Set(),eventInviteeSearch=$("#event-invitees"),eventInviteeList=document.createElement("div");eventInviteeList.className="employee-list event-invitee-list";eventInviteeSearch.placeholder="Search Medha employees to invite...";eventInviteeSearch.after(eventInviteeList);function renderEventInvitees(query=""){const q=query.toLowerCase();const matches=directory.filter(p=>`${p.full_name} ${p.email||""} ${p.department||""}`.toLowerCase().includes(q));eventInviteeList.innerHTML=matches.length?matches.map(p=>`<button type="button" class="employee-option ${eventInvitees.has(p.id)?"selected":""}" data-event-person-id="${esc(p.id)}"><div class="person-avatar blue">${esc(initialsFor(p.full_name))}${photoImg(p.id)}</div><div><strong>${esc(p.full_name)}</strong><small>${esc(p.department||"")} ${p.department&&p.email?" · ":""}${esc(p.email||"")}</small></div><span class="invite-check">${eventInvitees.has(p.id)?"✓":""}</span></button>`).join(""):"<div class=\"directory-empty\">No Medha employees found</div>"}eventInviteeSearch.addEventListener("input",e=>renderEventInvitees(e.target.value));eventInviteeList.addEventListener("click",e=>{const button=e.target.closest("[data-event-person-id]");if(!button)return;const id=button.dataset.eventPersonId;if(eventInvitees.has(id))eventInvitees.delete(id);else eventInvitees.add(id);eventInviteeSearch.value="";eventInviteeSearch.value=[...eventInvitees].join(",");renderEventInvitees("")});$("#new-event").onclick=async()=>{$("#event-dialog").showModal();eventInvitees.clear();eventInviteeSearch.value="";await loadEmployeeDirectory();renderEventInvitees("")};
 
 /* ---------- workspace views ---------- */
 
@@ -4262,7 +4288,7 @@ function renderSettings(){
   const name=currentAppUser?.full_name||currentAppUser?.name||streamClient?.user?.name||"Signed-in user";
   const email=currentAppUser?.email||streamClient?.user?.email||"";
   const avatar=$("#settings-avatar");
-  if(avatar){avatar.textContent=initialsFor(name);avatar.className="person-avatar blue large"}
+  if(avatar){avatar.innerHTML=esc(initialsFor(name))+photoImg(viewerId());avatar.className="person-avatar blue large"}
   if($("#settings-name"))$("#settings-name").textContent=name;
   if($("#settings-email"))$("#settings-email").textContent=email||"No email available";
   if($("#setting-sound"))$("#setting-sound").checked=soundEnabled();
@@ -4581,6 +4607,7 @@ async function initializeAuthorizedUser(user){
   if(!user)return;
   currentUserId=user.uid;
   try{firebaseIdToken=await user.getIdToken()}catch{firebaseIdToken=null}
+  void ensureProfilePhotos();
   void refreshWorkspaceMailAvailability(user);
   $("#current-user").textContent=user.displayName||user.email||"Authenticating…";
   /* The profile only fills in a name and initials already shown as a

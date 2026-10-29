@@ -2710,3 +2710,6 @@ body.share-open .share-work-menu{opacity:1;visibility:visible;transform:none;tra
 #calendar-grid i.is-busy { background: repeating-linear-gradient(135deg, color-mix(in srgb, currentColor 10%, transparent) 0 6px, color-mix(in srgb, currentColor 4%, transparent) 6px 12px) !important;
   color: var(--text-soft, #64748b) !important; border-color: color-mix(in srgb, currentColor 25%, transparent) !important; cursor: default; font-style: italic; }
 .calendar-back-mine { align-self: flex-start; width: auto; flex: none; }
+
+/* Profile pictures sit over the initials; a failed image removes itself. */
+.person-avatar,.profile-chip,.member-profile-avatar{position:relative;overflow:hidden}.avatar-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;background:var(--surface)}
