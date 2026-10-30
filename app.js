@@ -4594,6 +4594,9 @@ function finishSpaceLoading(message){
   if(spaceLoaderStatus&&message)spaceLoaderStatus.textContent=message;
   document.body.classList.remove("space-booting");
   spaceLaunchLoader?.setAttribute("aria-hidden","true");
+  /* A slow launch may have tripped the boot timeout, which raises the gate;
+     an authorized launch that finished must never leave it up. */
+  if(launchAuthorized)launchGate.hidden=true;
 }
 async function loadCurrentProfile(user){
   if(!user)return;
@@ -4632,7 +4635,13 @@ async function initializeAuthorizedUser(user){
      this the viewer was upserted under the placeholder name. It still runs in
      parallel with initializeStream above, so it costs no extra wait. */
   await profileReady;
-  await hydrateConversations();
+  /* With a cached conversation list already painted, lift the launch screen
+     now and let the server refresh finish behind the app - on a slow network
+     the full channel query was what pushed launches past the boot timeout.
+     Embeds and ?chat= launches still wait, because they open a specific chat. */
+  const hydrated=hydrateConversations();
+  if(conversations.length&&!embedMode&&!embedChatCid){hydrated.catch(()=>{});meetingsReady?.catch?.(()=>{});return finishBackgroundLaunch(user)}
+  await hydrated;
   /* A normal Space launch lands on the directory, not a previously opened
      thread. Hub notification embeds and a Hub chat-list click (?chat=<cid>)
      are the intentional exceptions. */
@@ -4651,6 +4660,11 @@ async function initializeAuthorizedUser(user){
   /* These finish after the launch screen lifts; without a catch a failed one
      would surface as an unhandled rejection. */
   [meetingsReady,opened].forEach(p=>p?.catch?.(()=>{}));
+  finishBackgroundLaunch(user);
+}
+/* Timers and push registration: the same whether the launch screen lifted on
+   cached conversations or after the server list arrived. */
+function finishBackgroundLaunch(user){
   if(syncTimer)clearInterval(syncTimer);
   syncTimer=setInterval(()=>{
     /* Stream's WebSocket delivers messages instantly. Presence is the only

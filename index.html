@@ -121,12 +121,18 @@
       }
     }
     /* Keep a failed module/CDN/API load from leaving the launch screen forever. */
+    /* Slow networks: say so at 15s, and only call it a failure at 45s. */
     window.setTimeout(() => {
       if (!document.body.classList.contains("space-booting")) return;
-      showBootFailure("Space could not connect. Check the local server and refresh.");
+      const status = document.querySelector("#space-loader-status");
+      if (status) status.textContent = "Still connecting… your network is slow, hang on.";
     }, 15000);
+    window.setTimeout(() => {
+      if (!document.body.classList.contains("space-booting")) return;
+      showBootFailure("Space is taking too long to connect. Check your connection and refresh.");
+    }, 45000);
   </script>
-  <script type="module" src="/app.js?v=hub-launch-11"></script>
+  <script type="module" src="/app.js?v=hub-launch-12"></script>
   <script type="module" src="/suggestions-details.js"></script>
 </body>
 </html>
