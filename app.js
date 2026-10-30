@@ -2,9 +2,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/fireba
 import { getAuth, onAuthStateChanged, onIdTokenChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { Buffer } from "https://esm.sh/buffer@6.0.3";
 import { StreamChat } from "https://esm.sh/stream-chat@9.52.0";
-import { StreamVideoClient, CallingState } from "https://esm.sh/@stream-io/video-client@latest";
 /* stream-chat's browser upload helper uses Buffer for multipart encoding. */
 globalThis.Buffer=Buffer;
+/* The video SDK is only needed once a call rings or starts. It used to be a
+   static import, so when esm.sh could not build it (408/500) the whole app
+   script failed and Space sat on its launch loader forever. Load it in the
+   background instead; chat never waits on it. */
+let StreamVideoClient,CallingState;
+const videoSdkReady=import("https://esm.sh/@stream-io/video-client@latest").then(mod=>{StreamVideoClient=mod.StreamVideoClient;CallingState=mod.CallingState;return true}).catch(error=>{console.warn("Stream Video SDK unavailable",error);return false});
 const firebaseApp=initializeApp({apiKey:"AIzaSyDhyDoFRrCXXEkoQ3i6wpqmNd8Po6p_KIw",authDomain:"medhaclockin.firebaseapp.com",projectId:"medhaclockin",storageBucket:"medhaclockin.firebasestorage.app",messagingSenderId:"458648237732",appId:"1:458648237732:web:aadb89db358e0cca7b9831"});
 const auth=getAuth(firebaseApp); let currentUserId=null; let currentAppUser=null; let launchAuthorized=false;
 const $=s=>document.querySelector(s); const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
@@ -3372,8 +3377,9 @@ async function enableCallMedia(call,mode){
   await activeCallMediaPromise;
   $("#toggle-call-mic").classList.toggle("off",call.microphone.state.status!=="enabled");$("#toggle-call-camera").classList.toggle("off",mode!=="video"||call.camera.state.status!=="enabled");
 }
-function setupVideoClient(body){
+async function setupVideoClient(body){
   if(videoClient)return;
+  if(!await videoSdkReady||videoClient)return;
   try{
     videoClient=new StreamVideoClient({apiKey:body.apiKey,user:body.user,token:body.token});
     const handleCalls=calls=>{if(incomingCall&&incomingCall.state.callingState!==CallingState.RINGING){dismissCallSurface();return}const call=calls.find(item=>!item.isCreatedByMe&&item.state.callingState===CallingState.RINGING);if(call&&incomingCall?.cid!==call.cid)showIncomingCall(call)};
@@ -3410,6 +3416,7 @@ async function startStreamCall(mode){
   startRingTone(false);
   try{
     callActivityMessageId=null;callActivityChannel=null;callActivityMode=mode;callActivityStartedAt=null;callActivityFinalized=false;
+    if(!await videoSdkReady)throw Error("Calling is unavailable right now. Try again shortly.");
     if(!videoClient)videoClient=new StreamVideoClient({apiKey:streamClient.key,user:streamClient.user,token:streamSessionToken});
     const members=[...(active.participantIds||[viewerId(),active.participantId]).filter(Boolean).map(id=>({user_id:String(id)}))];
     const callId="medha-"+crypto.randomUUID(),call=videoClient.call("default",callId);
