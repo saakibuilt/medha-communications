@@ -2713,3 +2713,51 @@ body.share-open .share-work-menu{opacity:1;visibility:visible;transform:none;tra
 
 /* Profile pictures sit over the initials; a failed image removes itself. */
 .person-avatar,.profile-chip,.member-profile-avatar{position:relative;overflow:hidden}.avatar-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;background:var(--surface)}
+
+/* Hub companion: just the conversation list and the selected conversation. */
+body.mini-space .rail,body.mini-space .calendar-sidebar,body.mini-space .details-panel,body.mini-space .sidebar-scrim,body.mini-space .sidebar-top,body.mini-space .sidebar-footer,body.mini-space .sidebar-tabs,body.mini-space .header-actions,body.mini-space .composer-tools,body.mini-space .share-work,body.mini-space #space-launch-loader,body.mini-space .mobile-view-menu,body.mini-space .chat-menu-btn,body.mini-space .chat-list-fab-wrap{display:none!important}
+body.mini-space,body.mini-space .app-shell{height:100dvh!important;min-height:0!important;display:block!important;background:var(--surface-sunken)!important}
+body.mini-space .chat-sidebar{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;transform:none!important;border:0!important;background:var(--surface-sunken)!important;display:flex!important;z-index:2!important;padding:8px!important}
+body.mini-space.chat-open .chat-sidebar{display:none!important}
+body.mini-space .main-area{display:none!important;height:100%!important;min-height:0!important}
+body.mini-space.chat-open .main-area{display:flex!important;flex-direction:column!important}
+body.mini-space .chat-back{display:block!important;font-size:25px!important}
+body.mini-space .conversation-header{padding:8px 12px!important;min-height:46px!important}
+body.mini-space .conversation-header .person-avatar{width:28px!important;height:28px!important}
+body.mini-space #conversation-name{font-size:13px!important}
+body.mini-space .message-area{padding:12px!important}
+body.mini-space .composer{margin:6px 10px 10px!important;padding:6px 8px!important;border-radius:12px!important;min-height:40px!important}
+body.mini-space .chat-search{margin:0 0 6px!important}
+body.mini-space .conversation{padding:10px!important;font-size:12px!important}
+
+body.mini-space .chat-item{border:0!important;background:transparent!important;box-shadow:none!important;border-radius:12px!important;padding:10px!important}
+body.mini-space .chat-item.active{background:var(--brand-soft-bg)!important}
+body.mini-space .chat-copy strong{color:var(--text)!important;font-size:12px!important}
+
+/* The list or messages are the only scroll surface, and only on overflow. */
+body.mini-space{overflow:hidden!important}
+body.mini-space .chat-sidebar{min-height:0!important;overflow:hidden!important}
+body.mini-space .chat-list{min-height:0!important;overflow-x:hidden!important;overflow-y:auto!important;flex:1!important}
+body.mini-space .conversation-header,body.mini-space .composer{flex-shrink:0!important}
+body.mini-space #chat-view{min-height:0!important;flex:1!important;overflow:hidden!important}
+body.mini-space .message-area{min-height:0!important;overflow-x:hidden!important;overflow-y:auto!important;flex:1!important}
+
+body.mini-space #chat-view.active-view{display:flex!important;flex-direction:column!important}
+
+body.mini-space{color:var(--text)!important;font-family:var(--font-sans),system-ui,sans-serif!important}
+body.mini-space .chat-item:hover{background:var(--surface-hover)!important}
+
+/* Hub companion: one full-width message row - typing field, AI and send
+   inline - with room at the left for the companion's floating apps button. */
+body.mini-space #chat-view.active-view .composer{display:flex!important;flex-wrap:wrap;align-items:flex-end;gap:4px;width:auto!important;max-width:none!important;margin:6px 10px max(10px,env(safe-area-inset-bottom)) 58px!important;padding:3px 4px 3px 0!important;min-height:44px!important;border-radius:22px!important;border:1px solid var(--border);background:var(--surface);box-shadow:none!important;overflow:visible}
+body.mini-space .composer>.reply-bar,body.mini-space .composer>.pending-attachments{flex:1 0 100%}
+body.mini-space .composer-input-row{flex:1 1 0;min-width:0;display:flex;align-items:flex-end}
+body.mini-space #chat-view.active-view .composer textarea,body.mini-space #chat-view.active-view .composer-input-row textarea{flex:1;min-width:0;width:100%;min-height:36px!important;padding:8px 6px 8px 14px!important;font-size:13px;line-height:1.45;background:transparent;color:var(--text)}
+body.mini-space #chat-view.active-view .composer-input-row .ai-reply-btn{position:static!important;flex:none;width:34px;height:34px;margin:0}
+body.mini-space #chat-view.active-view .composer-bottom{display:flex!important;position:static;flex:none;height:auto!important;padding:0!important}
+body.mini-space #chat-view.active-view .composer-bottom>span{display:none}
+body.mini-space #chat-view.active-view .send-button{position:relative!important;inset:auto!important;display:grid;place-items:center;width:34px;height:34px;min-width:34px;padding:0;border-radius:50%;background:var(--brand-solid-bright);box-shadow:none;color:transparent;font-size:0}
+body.mini-space #chat-view.active-view .send-button::after{content:"";position:absolute;inset:10px;width:14px;height:14px;background:var(--surface);clip-path:polygon(50% 0,100% 48%,68% 48%,68% 100%,32% 100%,32% 48%,0 48%)}
+body.mini-space #chat-view.active-view .send-button span{display:none}
+body.mini-space .chat-list{padding-bottom:58px!important}
+@media(pointer:coarse){body.mini-space #chat-view.active-view .composer{margin-left:64px!important}body.mini-space #chat-view.active-view .composer textarea{font-size:16px}}

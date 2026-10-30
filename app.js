@@ -60,6 +60,7 @@ function readLaunchToken(){
   embedMode=(hashParams.get("embed")||queryParams.get("embed"))==="1";
   embedChatCid=hashParams.get("chat")||queryParams.get("chat")||"";
   if(embedMode)document.body.classList.add("embed-chat");
+  if(queryParams.get("mini")==="1")document.body.classList.add("mini-space");
   const fromHash=hashParams.get("token");
   const fromQuery=queryParams.get("token");
   /* Medha Hub's primary Space launch is a path handoff:
@@ -3094,12 +3095,20 @@ $("#chat-actions").addEventListener("click",async e=>{
 /* Load earlier messages when scrolled to the top. */
 $("#message-area").addEventListener("scroll",async()=>{
   const area=$("#message-area");
+  /* A hidden pane (Hub companion app switch, list/chat swap) reports a top
+     scroll as it reappears; that is layout, not the reader scrolling up. */
+  if(!area.clientHeight)return;
   stickToBottom=area.scrollHeight-area.scrollTop-area.clientHeight<60;
   if(area.scrollTop>40||!active?.messagesLoaded||!active.hasMore||active.loadingMessages)return;
   const oldHeight=area.scrollHeight,oldTop=area.scrollTop;
   await loadChatPage(active,active.messageOffset);
   requestAnimationFrame(()=>{area.scrollTop=area.scrollHeight-oldHeight+oldTop});
 });
+
+/* Re-pin the newest message whenever the pane comes back from display:none
+   or is resized (companion window, keyboard); it otherwise reopens at the
+   oldest message. */
+{let shownHeight=0;new ResizeObserver(()=>{const area=$("#message-area"),height=area.clientHeight;if(height&&(!shownHeight||stickToBottom))scrollMessagesToEnd();shownHeight=height}).observe($("#message-area"))}
 
 /* ---------- new chat dialog ---------- */
 let directory=[],selectedEmployee=null;
