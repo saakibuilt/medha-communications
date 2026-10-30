@@ -4634,10 +4634,11 @@ async function initializeAuthorizedUser(user){
   await profileReady;
   await hydrateConversations();
   /* A normal Space launch lands on the directory, not a previously opened
-     thread. Hub notification embeds are the one intentional exception. */
+     thread. Hub notification embeds and a Hub chat-list click (?chat=<cid>)
+     are the intentional exceptions. */
   if(embedMode)openEmbedChat();
   const requestedEmbed=conversations.find(chat=>String(chat.cid)===String(embedChatCid)||String(chat.id)===String(embedChatCid));
-  const openId=embedMode?(active?.id||requestedEmbed?.id):null;
+  const openId=embedMode?(active?.id||requestedEmbed?.id):requestedEmbed?.id||null;
   /* The launch screen comes down once the conversation list is painted and
      the opened chat has whatever the cache holds. switchChat then refreshes
      that chat from the server behind the app, rather than in front of it -
