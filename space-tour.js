@@ -58,9 +58,8 @@
     await T.sleep(800);
     // "?" replays the guide any time; it starts on its own only the first time.
     const run = force => T.start({ key:`medha-space-tour-v1:${who}`, steps, onEnd:() => show("chat"), force });
-    // Keep the "?" clear of the message composer's send button.
-    document.documentElement.style.setProperty("--mt-help-bottom", "96px");
-    T.help(() => run(true));
+    T.help(() => run(true), { into:() => document.querySelector(".rail-bottom"), like:() => document.querySelector('.rail-item[data-view="settings"]'),
+      before:() => document.querySelector('.rail-bottom .rail-item[data-view="settings"]'), html:"<span>?</span>Guide" });
     run(false);
   })();
 })();

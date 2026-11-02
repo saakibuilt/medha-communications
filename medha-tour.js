@@ -43,6 +43,10 @@
   box-shadow:0 6px 18px rgba(0,0,0,.18);cursor:pointer;display:grid;place-items:center;padding:0}
 .mt-help:hover{background:var(--brand-solid-bright,#ce0505);color:#fff}
 @media print{.mt-help{display:none}}
+.mt-guide{cursor:pointer;text-decoration:none}
+.mt-guide.mt-plain{display:inline-flex;align-items:center;gap:6px;padding:6px 8px;color:inherit;font-size:14px;font-weight:600;opacity:.8}
+.mt-guide.mt-plain:hover{opacity:1;color:var(--brand-solid-bright,#ce0505)}
+.mt-guide-icon{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1.5px solid currentColor;font:800 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;opacity:.85}
 @media(pointer:coarse){.mt-pop button{min-height:44px}}
 [data-tour-demo]{outline:2px dashed var(--brand-solid-bright,#ce0505);outline-offset:2px}`;
 
@@ -63,6 +67,9 @@
   function start({ key, steps, onEnd, force = false }) {
     if (!key || (!force && seen(key)) || document.querySelector(".mt-layer")) return false;
     addStyle();
+    // Every tour ends on a step that always shows, so skipping a role's missing
+    // last steps lands here instead of on a step with nothing to point at.
+    steps = [...steps, { title:"You're all set", text:"Open <b>Guide</b> any time to see this again." }];
     let step = 0, target = null, run = 0, frame = 0;
     const layer = document.createElement("div");
     layer.className = "mt-layer";
@@ -152,15 +159,35 @@
     return node;
   }
 
-  // Floating "?" that runs the tour again on demand (one per page).
-  function help(run, label = "Show the guide") {
-    if (document.querySelector(".mt-help")) return;
+  /* "Guide" entry that replays the tour. With { into, like, html } it sits in the
+     app's own side menu as a link styled like `like` (a menu item); without a menu
+     it falls back to a small floating "?". Re-attaches if the app re-renders. */
+  function help(run, { into, like, html, before } = {}) {
     addStyle();
-    const button = document.createElement("button");
-    button.type = "button"; button.className = "mt-help"; button.textContent = "?";
-    button.title = label; button.setAttribute("aria-label", label);
-    button.addEventListener("click", () => run());
-    document.body.append(button);
+    const make = () => {
+      const menu = typeof into === "function" ? into() : into;
+      if (!menu) {
+        if (document.querySelector(".mt-help")) return;
+        const button = document.createElement("button");
+        button.type = "button"; button.className = "mt-help"; button.textContent = "?";
+        button.title = "Show the guide"; button.setAttribute("aria-label", "Show the guide");
+        button.addEventListener("click", () => run());
+        document.body.append(button);
+        return;
+      }
+      if (menu.querySelector(".mt-guide")) return;
+      const sample = typeof like === "function" ? like() : like;
+      const link = document.createElement("a");
+      link.href = "#"; link.setAttribute("role", "button");
+      link.className = sample ? `${sample.className.replace(/\b(active|current|is-active)\b/g, "")} mt-guide` : "mt-guide mt-plain";
+      link.title = "Show the guide for this page";
+      link.innerHTML = html || '<span class="mt-guide-icon" aria-hidden="true">?</span><span>Guide</span>';
+      link.addEventListener("click", event => { event.preventDefault(); run(); });
+      const anchor = typeof before === "function" ? before() : before;
+      anchor && anchor.parentElement === menu ? menu.insertBefore(link, anchor) : menu.append(link);
+    };
+    make();
+    setInterval(make, 2000);
   }
 
   window.MedhaTour = { start, wait, sleep, visible, mobile, seen, demo, clearDemos, help };
