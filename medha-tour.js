@@ -43,9 +43,15 @@
   box-shadow:0 6px 18px rgba(0,0,0,.18);cursor:pointer;display:grid;place-items:center;padding:0}
 .mt-help:hover{background:var(--brand-solid-bright,#ce0505);color:#fff}
 @media print{.mt-help{display:none}}
-.mt-guide{cursor:pointer;text-decoration:none}
-.mt-guide.mt-plain{display:inline-flex;align-items:center;gap:6px;padding:6px 8px;color:inherit;font-size:14px;font-weight:600;opacity:.8}
-.mt-guide.mt-plain:hover{opacity:1;color:var(--brand-solid-bright,#ce0505)}
+.mt-guide{display:inline-flex;align-items:center;gap:9px;align-self:flex-start;margin:10px 14px;padding:6px 14px 6px 6px;border-radius:999px;
+  border:1.5px dashed color-mix(in srgb,currentColor 55%,transparent);background:color-mix(in srgb,currentColor 7%,transparent);color:inherit;
+  font:700 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;text-decoration:none;transition:background .15s}
+.mt-guide:hover,.mt-guide:focus-visible{background:color-mix(in srgb,currentColor 16%,transparent);border-style:solid;outline:none}
+.mt-guide-icon{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:2px solid currentColor;font-size:14px;font-weight:900;line-height:1}
+.mt-guide.mt-push{margin-top:auto}
+.mt-guide.mt-compact{align-self:center;margin-left:auto;margin-right:auto;padding:6px;gap:0}
+.mt-guide.mt-compact span:last-child{display:none}
+.mt-guide.mt-rail{flex-direction:column;gap:3px;align-self:center;margin:6px auto;padding:6px 6px 5px;border-radius:14px;font-size:10.5px}
 .mt-guide-icon{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1.5px solid currentColor;font:800 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;opacity:.85}
 @media(pointer:coarse){.mt-pop button{min-height:44px}}
 [data-tour-demo]{outline:2px dashed var(--brand-solid-bright,#ce0505);outline-offset:2px}`;
@@ -69,7 +75,11 @@
     addStyle();
     // Every tour ends on a step that always shows, so skipping a role's missing
     // last steps lands here instead of on a step with nothing to point at.
-    steps = [...steps, { title:"You're all set", text:"Open <b>Guide</b> any time to see this again." }];
+    // Only the steps for this user: skip() rules a step out up front (e.g. a page this
+    // role doesn't have), and a step whose control turns out to be missing is dropped
+    // as the tour goes, so "Step 1 of N" counts what this user actually sees.
+    steps = [...steps.filter(item => { try { return !item.skip?.(); } catch { return true; } }),
+      { title:"You're all set", text:"Tap <b>? How to use</b> at the bottom of the menu any time to see this again." }];
     let step = 0, target = null, run = 0, frame = 0;
     const layer = document.createElement("div");
     layer.className = "mt-layer";
@@ -126,9 +136,10 @@
       // A step with find() but nothing to show for this user is skipped; a step
       // without find() is a centred message.
       if (steps[step].find && !visible(found)) {
-        const next = step + direction;
+        steps.splice(step, 1);
+        const next = direction > 0 ? step : step - 1;
         if (next >= 0 && next < steps.length) return go(next, direction);
-        found = null;
+        return go(Math.min(Math.max(step, 0), steps.length - 1), 1);
       }
       found?.scrollIntoView({ block:"center", inline:"nearest" });
       await sleep(250);
@@ -159,35 +170,37 @@
     return node;
   }
 
-  /* "Guide" entry that replays the tour. With { into, like, html } it sits in the
-     app's own side menu as a link styled like `like` (a menu item); without a menu
-     it falls back to a small floating "?". Re-attaches if the app re-renders. */
-  function help(run, { into, like, html, before } = {}) {
+  /* "How to use" help control that replays the tour: an outlined "?" with a label,
+     placed at the bottom of the app's menu (into/before), deliberately unlike the
+     menu items. rail:true stacks it for icon rails. Without a menu it falls back to
+     a small floating "?". Re-attaches if the app re-renders its menu. */
+  function help(run, { into, before, rail = false, push = false } = {}) {
     addStyle();
     const make = () => {
       const menu = typeof into === "function" ? into() : into;
       if (!menu) {
-        if (document.querySelector(".mt-help")) return;
+        if (document.querySelector(".mt-help, .mt-guide")) return;
         const button = document.createElement("button");
         button.type = "button"; button.className = "mt-help"; button.textContent = "?";
-        button.title = "Show the guide"; button.setAttribute("aria-label", "Show the guide");
+        button.title = "How to use this app"; button.setAttribute("aria-label", "How to use this app");
         button.addEventListener("click", () => run());
         document.body.append(button);
         return;
       }
-      if (menu.querySelector(".mt-guide")) return;
-      const sample = typeof like === "function" ? like() : like;
-      const link = document.createElement("a");
-      link.href = "#"; link.setAttribute("role", "button");
-      link.className = sample ? `${sample.className.replace(/\b(active|current|is-active)\b/g, "")} mt-guide` : "mt-guide mt-plain";
-      link.title = "Show the guide for this page";
-      link.innerHTML = html || '<span class="mt-guide-icon" aria-hidden="true">?</span><span>Guide</span>';
-      link.addEventListener("click", event => { event.preventDefault(); run(); });
+      const existing = menu.querySelector(".mt-guide");
+      // A collapsed (icon-only) menu shows just the "?".
+      if (existing) { existing.classList.toggle("mt-compact", menu.getBoundingClientRect().width < 140); return; }
+      const link = document.createElement("button");
+      link.type = "button";
+      link.className = `mt-guide${rail ? " mt-rail" : ""}${push ? " mt-push" : ""}`;
+      link.title = "How to use this app — step-by-step guide";
+      link.innerHTML = '<span class="mt-guide-icon" aria-hidden="true">?</span><span>How to use</span>';
+      link.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); run(); });
       const anchor = typeof before === "function" ? before() : before;
       anchor && anchor.parentElement === menu ? menu.insertBefore(link, anchor) : menu.append(link);
     };
     make();
-    setInterval(make, 2000);
+    setInterval(make, 1000);
   }
 
   window.MedhaTour = { start, wait, sleep, visible, mobile, seen, demo, clearDemos, help };

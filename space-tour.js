@@ -58,8 +58,8 @@
     await T.sleep(800);
     // "?" replays the guide any time; it starts on its own only the first time.
     const run = force => T.start({ key:`medha-space-tour-v1:${who}`, steps, onEnd:() => show("chat"), force });
-    T.help(() => run(true), { into:() => document.querySelector(".rail-bottom"), like:() => document.querySelector('.rail-item[data-view="settings"]'),
-      before:() => document.querySelector('.rail-bottom .rail-item[data-view="settings"]'), html:"<span>?</span>Guide" });
+    T.help(() => run(true), { into:() => document.querySelector(".rail-bottom"), rail:true,
+      before:() => document.querySelector('.rail-bottom .rail-item[data-view="settings"]') });
     run(false);
   })();
 })();
