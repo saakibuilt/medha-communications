@@ -56,6 +56,11 @@
     const who = $("#current-user")?.textContent.trim();
     if (!ready || !who || /authenticat|signed-in user/i.test(who)) return;
     await T.sleep(800);
-    T.start({ key:`medha-space-tour-v1:${who}`, steps, onEnd:() => show("chat") });
+    // "?" replays the guide any time; it starts on its own only the first time.
+    const run = force => T.start({ key:`medha-space-tour-v1:${who}`, steps, onEnd:() => show("chat"), force });
+    // Keep the "?" clear of the message composer's send button.
+    document.documentElement.style.setProperty("--mt-help-bottom", "96px");
+    T.help(() => run(true));
+    run(false);
   })();
 })();

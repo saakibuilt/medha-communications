@@ -5,8 +5,9 @@
    adds for illustration carries data-tour-demo and is removed when the tour
    ends. Shown once per key (per user, per browser).
 
-   MedhaTour.start({ key, steps:[{ title, text, mobileText?, find }] })
-   Shared copy: medha-activities, clockin, medha communications stream, medha-users. */
+   MedhaTour.start({ key, steps:[{ title, text, mobileText?, find }], force? })
+   MedhaTour.help(run) adds the floating "?" button that replays the tour.
+   Shared copy: clockin, medha communications stream, medha-users, medha-grants. */
 (() => {
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const visible = el => !!el && el.isConnected && el.getClientRects().length > 0;
@@ -37,6 +38,11 @@
 .mt-back{border:1px solid rgba(206,5,5,.3);background:transparent;color:inherit}
 .mt-next{border:0;background:var(--brand-solid-bright,#ce0505);color:#fff}
 .mt-pop button:disabled{opacity:.5;cursor:default}
+.mt-help{position:fixed;right:var(--mt-help-right,18px);bottom:var(--mt-help-bottom,18px);z-index:2147482000;width:36px;height:36px;border-radius:50%;
+  border:1px solid rgba(206,5,5,.25);background:var(--surface,#fff);color:var(--brand-solid-bright,#ce0505);font:800 17px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  box-shadow:0 6px 18px rgba(0,0,0,.18);cursor:pointer;display:grid;place-items:center;padding:0}
+.mt-help:hover{background:var(--brand-solid-bright,#ce0505);color:#fff}
+@media print{.mt-help{display:none}}
 @media(pointer:coarse){.mt-pop button{min-height:44px}}
 [data-tour-demo]{outline:2px dashed var(--brand-solid-bright,#ce0505);outline-offset:2px}`;
 
@@ -45,13 +51,18 @@
     docs.forEach(doc => doc?.querySelectorAll("[data-tour-demo]").forEach(node => node.remove()));
   }
 
-  function start({ key, steps, onEnd }) {
-    if (!key || seen(key) || document.querySelector(".mt-layer")) return false;
-    if (!document.getElementById("mt-style")) {
-      const style = document.createElement("style");
-      style.id = "mt-style"; style.textContent = CSS;
-      document.head.append(style);
-    }
+  function addStyle() {
+    if (document.getElementById("mt-style")) return;
+    const style = document.createElement("style");
+    style.id = "mt-style"; style.textContent = CSS;
+    document.head.append(style);
+  }
+  // A step without find() still points at something: the page's title.
+  const home = () => [...document.querySelectorAll("#page-title, .page-heading h1, main h1, h1")].find(visible) || null;
+
+  function start({ key, steps, onEnd, force = false }) {
+    if (!key || (!force && seen(key)) || document.querySelector(".mt-layer")) return false;
+    addStyle();
     let step = 0, target = null, run = 0, frame = 0;
     const layer = document.createElement("div");
     layer.className = "mt-layer";
@@ -103,7 +114,7 @@
       const ticket = ++run;
       step = to; render(true);
       let found = null;
-      try { found = await steps[step].find?.(); } catch { found = null; }
+      try { found = steps[step].find ? await steps[step].find() : home(); } catch { found = null; }
       if (ticket !== run) return;
       // A step with find() but nothing to show for this user is skipped; a step
       // without find() is a centred message.
@@ -141,5 +152,16 @@
     return node;
   }
 
-  window.MedhaTour = { start, wait, sleep, visible, mobile, seen, demo, clearDemos };
+  // Floating "?" that runs the tour again on demand (one per page).
+  function help(run, label = "Show the guide") {
+    if (document.querySelector(".mt-help")) return;
+    addStyle();
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "mt-help"; button.textContent = "?";
+    button.title = label; button.setAttribute("aria-label", label);
+    button.addEventListener("click", () => run());
+    document.body.append(button);
+  }
+
+  window.MedhaTour = { start, wait, sleep, visible, mobile, seen, demo, clearDemos, help };
 })();
