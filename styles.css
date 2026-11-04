@@ -2761,3 +2761,23 @@ body.mini-space #chat-view.active-view .send-button::after{content:"";position:a
 body.mini-space #chat-view.active-view .send-button span{display:none}
 body.mini-space .chat-list{padding-bottom:58px!important}
 @media(pointer:coarse){body.mini-space #chat-view.active-view .composer{margin-left:64px!important}body.mini-space #chat-view.active-view .composer textarea{font-size:16px}}
+
+/* Collapse the chat list to an icon rail - same arrow-toggle pattern as
+   Tasks' own sidebar collapse, so the shared Hub back button (which shrinks
+   to a round icon whenever it detects a narrow rail under it) does the same
+   here instead of always showing at full size. */
+.sidebar-collapse{display:grid;place-items:center;flex:none;width:34px;height:34px;border:1px solid var(--border);border-radius:50%;background:var(--surface);color:var(--text-secondary);cursor:pointer;transition:transform .2s ease,background .15s,color .15s}
+.sidebar-collapse:hover{background:var(--brand-solid-bright);color:var(--surface);border-color:var(--brand-solid-bright)}
+.sidebar-collapse svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.sidebar-collapse.is-collapsed{transform:rotate(180deg)}
+.app-shell.chat-sidebar-collapsed{grid-template-columns:80px 76px minmax(0,1fr) minmax(0,300px)}
+.chat-sidebar-collapsed .chat-sidebar{overflow:visible}
+.chat-sidebar-collapsed .sidebar-top{flex-direction:column;align-items:center;gap:10px;padding:20px 10px}
+.chat-sidebar-collapsed .sidebar-top h1,.chat-sidebar-collapsed .search-wrap,.chat-sidebar-collapsed .sidebar-tabs,.chat-sidebar-collapsed #current-user,.chat-sidebar-collapsed .chat-copy,.chat-sidebar-collapsed #new-group span,.chat-sidebar-collapsed #new-chat span{display:none}
+.chat-sidebar-collapsed .header-actions{flex-direction:column;gap:8px}
+.chat-sidebar-collapsed .chat-item{justify-content:center;padding:10px 4px}
+.chat-sidebar-collapsed .chat-list .search-result-heading{display:none}
+.chat-sidebar-collapsed .sidebar-footer{justify-content:center;padding:14px 6px}
+.chat-sidebar-collapsed .sidebar-footer button{margin-left:0}
+@media(max-width:1100px){.app-shell.chat-sidebar-collapsed{grid-template-columns:72px 76px minmax(420px,1fr)}}
+@media(max-width:760px){.app-shell.chat-sidebar-collapsed{grid-template-columns:58px minmax(0,1fr)}}

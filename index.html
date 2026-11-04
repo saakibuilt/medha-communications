@@ -15,7 +15,7 @@
        so a colour changed in Hub reaches this app without redeploying it. -->
   <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="https://medha-hub.web.app/theme.css">
-  <link rel="stylesheet" href="/styles.css?v=15">
+  <link rel="stylesheet" href="/styles.css?v=16">
   <script src="https://medha-hub.web.app/hub-back.js" defer></script>
 <script src="companion-theme.js"></script>
 </head>
@@ -57,7 +57,7 @@
     </aside>
 
     <aside class="chat-sidebar" id="chat-sidebar">
-      <div class="sidebar-top"><div><h1>Space</h1></div><div class="header-actions"><button class="icon-button icon-button-soft" id="new-group" title="Create group chat" aria-label="Create group chat"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3.1"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9.5" r="2.4"/><path d="M16.2 14.4A4.6 4.6 0 0 1 21 19"/><path d="M18.5 4.2v3.1"/><path d="M17 5.7h3"/></svg></button><button class="icon-button" id="new-chat" title="Start a new chat" aria-label="Start a new chat"><svg class="bubble-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6c-4.9 0-8.9 3.3-8.9 7.5 0 2.4 1.3 4.5 3.3 5.9.2 1.4-.6 2.8-1.7 3.7 1.7.1 3.5-.5 4.9-1.6 .8.2 1.6.3 2.4.3 4.9 0 8.9-3.3 8.9-7.5S16.9 3.6 12 3.6z" fill="currentColor" stroke="none"/><circle class="bubble-dot" cx="8.4" cy="11.1" r="1.05" stroke="none"/><circle class="bubble-dot" cx="12" cy="11.1" r="1.05" stroke="none"/><circle class="bubble-dot" cx="15.6" cy="11.1" r="1.05" stroke="none"/></svg></button></div></div>
+      <div class="sidebar-top"><div><h1>Space</h1></div><div class="header-actions"><button class="sidebar-collapse" id="sidebar-collapse" type="button" aria-label="Collapse menu" aria-expanded="true" title="Collapse menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button><button class="icon-button icon-button-soft" id="new-group" title="Create group chat" aria-label="Create group chat"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3.1"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9.5" r="2.4"/><path d="M16.2 14.4A4.6 4.6 0 0 1 21 19"/><path d="M18.5 4.2v3.1"/><path d="M17 5.7h3"/></svg></button><button class="icon-button" id="new-chat" title="Start a new chat" aria-label="Start a new chat"><svg class="bubble-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6c-4.9 0-8.9 3.3-8.9 7.5 0 2.4 1.3 4.5 3.3 5.9.2 1.4-.6 2.8-1.7 3.7 1.7.1 3.5-.5 4.9-1.6 .8.2 1.6.3 2.4.3 4.9 0 8.9-3.3 8.9-7.5S16.9 3.6 12 3.6z" fill="currentColor" stroke="none"/><circle class="bubble-dot" cx="8.4" cy="11.1" r="1.05" stroke="none"/><circle class="bubble-dot" cx="12" cy="11.1" r="1.05" stroke="none"/><circle class="bubble-dot" cx="15.6" cy="11.1" r="1.05" stroke="none"/></svg></button></div></div>
       <div class="search-wrap"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input id="chat-search" type="search" placeholder="Search chats"></div>
       <div class="sidebar-tabs"><button class="tab active">All</button><button class="tab">Unread</button><button class="tab">Pinned</button><button class="tab">Archived</button></div>
       <div class="chat-list" id="chat-list"></div>
@@ -133,7 +133,7 @@
       showBootFailure("Space is taking too long to connect. Check your connection and refresh.");
     }, 45000);
   </script>
-  <script type="module" src="/app.js?v=hub-launch-12"></script>
+  <script type="module" src="/app.js?v=hub-launch-13"></script>
   <script src="/medha-tour.js?v=4" defer></script>
   <script src="/space-tour.js?v=4" defer></script>
   <script type="module" src="/suggestions-details.js"></script>

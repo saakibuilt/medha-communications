@@ -3149,6 +3149,26 @@ function renderDirectory(query){
     </button>`}).join("")
     :'<div class="directory-empty">No people found</div>';
 }
+// Collapse the chat list to an icon-only rail (same pattern as Tasks' own
+// sidebar collapse) so the shared Hub back button - which shrinks to a
+// round icon whenever it detects a narrow rail under it - has one here too.
+(function(){
+  const SIDEBAR_KEY="medhaSpaceSidebarCollapsed";
+  const shell=document.querySelector(".app-shell");
+  const collapseButton=$("#sidebar-collapse");
+  if(!shell||!collapseButton)return;
+  function setCollapsed(collapsed){
+    shell.classList.toggle("chat-sidebar-collapsed",collapsed);
+    collapseButton.classList.toggle("is-collapsed",collapsed);
+    collapseButton.setAttribute("aria-expanded",String(!collapsed));
+    collapseButton.setAttribute("aria-label",collapsed?"Expand menu":"Collapse menu");
+    collapseButton.title=collapsed?"Expand menu":"Collapse menu";
+    try{localStorage.setItem(SIDEBAR_KEY,collapsed?"1":"0")}catch(e){}
+    window.dispatchEvent(new Event("resize"));
+  }
+  collapseButton.addEventListener("click",()=>setCollapsed(!shell.classList.contains("chat-sidebar-collapsed")));
+  try{if(localStorage.getItem(SIDEBAR_KEY)==="1")setCollapsed(true)}catch(e){}
+})();
 $("#new-chat").addEventListener("click",async()=>{
   selectedEmployee=null;
   $("#new-chat-person").value="";
