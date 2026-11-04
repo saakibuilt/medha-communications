@@ -2002,30 +2002,36 @@ async function openDirectChat(person,openingText){
     if(streamClient){
       const channel=streamClient.channel("messaging",id,{members:[me,otherId]});
       chat={id,cid:channel.cid,name,participantId:otherId,kind:"direct",initials:initialsFor(name),color:"blue",team:"",preview:"",updatedAt:new Date().toISOString(),time:"Now",unread:0,messages:[],messagesLoaded:false,messageOffset:0,hasMore:true,streamChannel:channel};
-      streamChannels.set(channel.cid,channel);conversations.unshift(chat);active=chat;
-      await watchStreamChannel(chat);
-      renderList();renderMessages();scrollMessagesToEnd();
-      return chat;
+      streamChannels.set(channel.cid,channel);conversations.unshift(chat);
+    } else {
+      /* The thread may already exist from the other side. Look it up by the
+         deterministic key so existing history is shown, not a blank chat. */
+      const existing=await db(`medha_communications_conversations?id=eq.${encodeURIComponent(id)}&select=cid,last_message,updated_at`);
+      const found=existing?.[0];
+      chat={id,cid:found?.cid,name,participantId:otherId,kind:"direct",
+        initials:initialsFor(name),color:"blue",team:"",
+        preview:found?.last_message||"",
+        updatedAt:found?.updated_at||new Date().toISOString(),time:"Now",unread:0,
+        messages:[],messagesLoaded:!found,messageOffset:0,hasMore:!!found};
+      conversations.unshift(chat);
     }
-    /* The thread may already exist from the other side. Look it up by the
-       deterministic key so existing history is shown, not a blank chat. */
-    const existing=await db(`medha_communications_conversations?id=eq.${encodeURIComponent(id)}&select=cid,last_message,updated_at`);
-    const found=existing?.[0];
-    chat={id,cid:found?.cid,name,participantId:otherId,kind:"direct",
-      initials:initialsFor(name),color:"blue",team:"",
-      preview:found?.last_message||"",
-      updatedAt:found?.updated_at||new Date().toISOString(),time:"Now",unread:0,
-      messages:[],messagesLoaded:!found,messageOffset:0,hasMore:!!found};
-    conversations.unshift(chat);
   }
+  /* Open instantly: show the panel (even empty, even before Stream confirms
+     the channel) the moment a user is clicked or a new chat is started.
+     Everything below is a background refinement - watching the channel,
+     paging in history, sending an opening message - that re-renders once
+     it resolves instead of making the click wait on a round-trip first. */
   active=chat;
+  renderList();renderMessages();scrollMessagesToEnd();
   if(streamClient)await watchStreamChannel(chat);
   if(!chat.messagesLoaded&&chat.cid)await loadChatPage(chat,0);
   if(openingText&&openingText.trim()){
     const saved=await persistMessage(chat,openingText,[]);
     if(saved&&!chat.messages.some(m=>m.id===saved.id))chat.messages.push(saved);
   }
-  renderList();renderMessages();scrollMessagesToEnd();
+  // A fast second click while this was still loading must not snap the
+  // view back to a chat the user has already clicked away from.
+  if(active===chat){renderList();renderMessages();scrollMessagesToEnd();}
   return chat;
 }
 
