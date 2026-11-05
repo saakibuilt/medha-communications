@@ -4096,6 +4096,26 @@ $("#gif-results").addEventListener("click",async e=>{
 /* ---------- calendar ---------- */
 
 let meetings=[];let calendarCursor=new Date();
+// Medha Hub's holiday calendar, shown as a tag on top of the day cell -
+// never editable/deletable here, unlike a real meeting bar below it.
+let holidayEvents=[];
+const HOLIDAY_CALENDAR_URL="https://medha-users.vercel.app/api/hub-announcements?resource=holiday-calendar";
+async function loadHolidayEvents(){
+  try{
+    const response=await fetch(HOLIDAY_CALENDAR_URL,{cache:"no-store"});
+    const body=await response.json().catch(()=>({}));
+    const pad=n=>String(n).padStart(2,"0");
+    const out=[];
+    for(const item of body.calendar||[]){
+      const start=new Date(`${item.start_date}T12:00:00`),end=new Date(`${item.end_date||item.start_date}T12:00:00`);
+      if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime())||end<start)continue;
+      for(const d=new Date(start);d<=end;d.setDate(d.getDate()+1))
+        out.push({date:`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,title:item.title});
+    }
+    holidayEvents=out;
+    renderCalendar();
+  }catch{}
+}
 /* Viewing a colleague's calendar ("View <name>'s calendar"): their meetings live in
    their own list so presence, invitations and the sidebar keep using yours. */
 let calendarSubject=null,subjectMeetings=[];
@@ -4148,7 +4168,8 @@ function renderCalendar(){
   for(let d=1;d<=last;d++){
     const key=dayKey(new Date(y,m,d));
     const items=calendarItems().filter(x=>coversDay(x,key));
-    cells.push(`<div class="${key===todayKey?"today":""}" data-day="${key}">${d}${items.map(x=>{
+    const dayHolidays=holidayEvents.filter(h=>h.date===key);
+    cells.push(`<div class="${key===todayKey?"today":""}" data-day="${key}">${d}${dayHolidays.map(h=>`<b class="calendar-holiday-tag" title="${esc(h.title)}">${esc(h.title)}</b>`).join("")}${items.map(x=>{
       const s=new Date(x.start),e=new Date(x.end||x.start);
       const multi=dayKey(s)!==dayKey(e);
       const monthStart=new Date(y,m,1),monthEnd=new Date(y,m+1,0);
@@ -4665,6 +4686,7 @@ async function initializeAuthorizedUser(user){
   /* Meetings feed the calendar, which is not on screen when Space opens.
      Awaiting it here added a Supabase round-trip to every launch. */
   const meetingsReady=loadMeetings();
+  loadHolidayEvents();
   /* ensureStreamUsers inside hydrateConversations publishes display names and
      reads currentAppUser, so the profile has to have landed by then - without
      this the viewer was upserted under the placeholder name. It still runs in
