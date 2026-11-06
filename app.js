@@ -2638,6 +2638,20 @@ $("#file-input").addEventListener("change",async e=>{
   const files=[...e.target.files];e.target.value="";
   await Promise.all(files.map(queueAttachment));
 });
+/* A screenshot or copied image has no real filename, just a generic one
+   (or none) from the OS/browser - stamp a unique one so the attachment
+   tray and the eventual upload path never show a blank/duplicate name. */
+function namedPastedFile(file){
+  if(file.name&&!/^image\.(png|jpe?g|gif|webp)$/i.test(file.name))return file;
+  const ext=(file.type.split("/")[1]||"png").replace("jpeg","jpg");
+  return new File([file],`pasted-${Date.now()}.${ext}`,{type:file.type});
+}
+messageInput.addEventListener("paste",e=>{
+  const files=[...(e.clipboardData?.items||[])].filter(item=>item.kind==="file").map(item=>item.getAsFile()).filter(Boolean);
+  if(!files.length)return;
+  e.preventDefault();
+  files.map(namedPastedFile).forEach(queueAttachment);
+});
 
 let sending=false;
 $("#composer").addEventListener("submit",async e=>{
