@@ -2799,8 +2799,24 @@ body.mini-space .chat-list{padding-bottom:58px!important}
    recolored amber like the single-day holiday tag above instead of gray. */
 .calendar-grid i.calendar-holiday-span{background:var(--warning-bg,#fef3c7);color:var(--warning-fg,#b45309)}
 
-/* Space mounts the shared Medha Calendar (medha-hub.web.app/medha-calendar.js),
-   the same component as Hub's popup and /holidays. */
-.space-medha-calendar{height:min(880px,calc(100dvh - 170px));min-height:620px;margin:0 6% 40px;overflow:hidden;border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow)}
-@media(max-width:720px){.space-medha-calendar{height:auto;min-height:0;margin:0 10px 24px}}
-#calendar-view #new-event{display:none}
+/* Space's calendar view is only the shared Medha Calendar
+   (medha-hub.web.app/medha-calendar.js) - the same component as Hub's popup,
+   Mailbox and /holidays. No old grid and no side event list. */
+#calendar-view .calendar-layout{display:none!important}
+#calendar-view #new-event{display:none!important}
+#calendar-view:not(.is-subject) .page-head{display:none}
+#calendar-view .page-head{padding:20px clamp(14px,3vw,40px) 12px}
+#calendar-view.active-view{display:flex;flex-direction:column;overflow:hidden}
+.space-medha-calendar{flex:1 1 auto;min-height:0;margin:clamp(8px,1.6vw,22px) clamp(8px,2vw,28px);overflow:hidden;border:1px solid var(--border);border-radius:20px;background:var(--surface);box-shadow:var(--shadow)}
+body .app-shell.calendar-mode.calendar-mode .calendar-sidebar,
+body .app-shell.calendar-mode.calendar-mode:has(#calendar-view.active-view) .calendar-sidebar{display:none!important}
+@media(min-width:1025px){
+  body .app-shell.calendar-mode.calendar-mode,
+  body .app-shell.calendar-mode.calendar-mode:has(#calendar-view.active-view){grid-template-columns:80px 0 minmax(0,1fr) 0!important}
+  body .app-shell.calendar-mode.calendar-mode .main-area{grid-column:3!important}
+}
+@media(max-width:1024px){
+  body .app-shell.calendar-mode.calendar-mode,
+  body .app-shell.calendar-mode.calendar-mode:has(#calendar-view.active-view){grid-template-rows:minmax(0,1fr)!important}
+  .space-medha-calendar{margin:6px;border-radius:16px}
+}
