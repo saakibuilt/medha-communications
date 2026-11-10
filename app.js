@@ -5106,3 +5106,40 @@ async function viewPersonCalendar(id,name){
   await loadSubjectMeetings();
   if(calendarSubject&&String(calendarSubject.id)===String(id))renderCalendar();
 }
+
+/* ---------- shared Medha Calendar ----------
+   Space shows the same calendar component as Hub's popup and /holidays
+   (medha-hub.web.app/medha-calendar.js): identical look, tags and behaviour.
+   Space's own meetings (and a colleague's, when viewing theirs) feed it; "+"
+   and Edit open Space's own meeting dialog so invitees still work. */
+let spaceCalendar=null,spaceHolidaysPromise=null;
+function mountSpaceCalendar(){
+  const M=window.MedhaCalendar,host=$("#medha-calendar");
+  if(spaceCalendar||!M||!host)return;
+  spaceCalendar=M.mount(host,{
+    getUid:()=>viewerId(),
+    sources:[
+      ()=>spaceHolidaysPromise||(spaceHolidaysPromise=M.loaders.holidays()),
+      M.loaders.zimbra,
+      ()=>calendarItems().map(x=>({...M.meetingEvent(x),title:x.busy?"Busy":(x.title||"Untitled event")})),
+    ],
+    onAdd:dateKey=>{
+      $("#new-event").click();
+      $("#event-start").value=`${dateKey}T09:00`;
+      $("#event-end").value=`${dateKey}T10:00`;
+    },
+    eventActions:e=>{
+      const meeting=e.raw;
+      if(e.kind!=="space"||!meeting||meeting.busy||String(meeting.created_by)!==String(viewerId()))return [];
+      return [
+        {label:"Edit",onClick:async()=>{try{const rows=await db(`medha_communications_meetings?id=eq.${encodeURIComponent(meeting.id)}&select=id,title,start_at,end_at,invitee_ids,location`);openMeetingEditor({...meeting,...(rows?.[0]||{}),start:rows?.[0]?.start_at||meeting.start,end:rows?.[0]?.end_at||meeting.end})}catch{openMeetingEditor(meeting)}}},
+        {label:"Delete",danger:true,onClick:()=>deleteMeeting(meeting)},
+      ];
+    },
+  });
+}
+{
+  const renderOwnCalendar=renderCalendar;
+  renderCalendar=function(){renderOwnCalendar();mountSpaceCalendar();spaceCalendar?.reload()};
+  mountSpaceCalendar();
+}
