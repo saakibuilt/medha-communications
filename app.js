@@ -5112,7 +5112,7 @@ async function viewPersonCalendar(id,name){
    (medha-hub.web.app/medha-calendar.js): identical look, tags and behaviour.
    Space's own meetings (and a colleague's, when viewing theirs) feed it; "+"
    and Edit open Space's own meeting dialog so invitees still work. */
-let spaceCalendar=null,spaceHolidaysPromise=null;
+let spaceCalendar=null,spaceHolidaysPromise=null,spaceZimbraPromise=null,spaceZimbraAt=0;
 function mountSpaceCalendar(){
   const M=window.MedhaCalendar,host=$("#medha-calendar");
   if(spaceCalendar||!M||!host)return;
@@ -5120,9 +5120,10 @@ function mountSpaceCalendar(){
     getUid:()=>viewerId(),
     sources:[
       ()=>spaceHolidaysPromise||(spaceHolidaysPromise=M.loaders.holidays()),
-      M.loaders.zimbra,
+      ()=>{if(!spaceZimbraPromise||Date.now()-spaceZimbraAt>300000){spaceZimbraAt=Date.now();spaceZimbraPromise=M.loaders.zimbraViaHub()}return spaceZimbraPromise},
       ()=>calendarItems().map(x=>({...M.meetingEvent(x),title:x.busy?"Busy":(x.title||"Untitled event")})),
     ],
+    notice:()=>window.opener&&!window.opener.closed?"":(()=>{try{return localStorage.getItem("medhaCalendarZimbraCache")?"":"Open Space from Medha Hub to also see your mailbox meetings here."}catch{return ""}})(),
     onAdd:dateKey=>{
       $("#new-event").click();
       $("#event-start").value=`${dateKey}T09:00`;
