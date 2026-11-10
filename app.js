@@ -4113,16 +4113,17 @@ let meetings=[];let calendarCursor=new Date();
 // Medha Hub's holiday calendar, shown as a tag on top of the day cell -
 // never editable/deletable here, unlike a real meeting bar below it.
 let holidayEvents=[];
-/* Which tag categories are shown on the grid; both on by default. */
-let calendarTagFilter={meeting:true,holiday:true};
-$("#calendar-tag-filters")?.addEventListener("click",event=>{
-  const chip=event.target.closest("[data-tag-filter]");
-  if(!chip)return;
-  const tag=chip.dataset.tagFilter;
-  calendarTagFilter[tag]=!calendarTagFilter[tag];
-  chip.classList.toggle("active",calendarTagFilter[tag]);
+/* Which single tag is shown on the grid; "all" shows everything. Only
+   "meeting" and "holiday" have real data in this app today - "birthday",
+   "event" and "other" are offered for consistency with the other Medha
+   calendars but have no matching data source here, so picking one just
+   renders an empty grid rather than fabricating entries. */
+let calendarTagSelected="all";
+$("#calendar-tag-select")?.addEventListener("change",event=>{
+  calendarTagSelected=event.target.value;
   renderCalendar();
 });
+const calendarTagShown=tag=>calendarTagSelected==="all"||calendarTagSelected===tag;
 const HOLIDAY_CALENDAR_URL="https://medha-users.vercel.app/api/hub-announcements?resource=holiday-calendar";
 async function loadHolidayEvents(){
   try{
@@ -4191,8 +4192,8 @@ function renderCalendar(){
   for(let i=0;i<first;i++)cells.push('<div class="muted"></div>');
   for(let d=1;d<=last;d++){
     const key=dayKey(new Date(y,m,d));
-    const items=calendarTagFilter.meeting?calendarItems().filter(x=>coversDay(x,key)):[];
-    const dayHolidays=calendarTagFilter.holiday?holidayEvents.filter(h=>h.date===key):[];
+    const items=calendarTagShown("meeting")?calendarItems().filter(x=>coversDay(x,key)):[];
+    const dayHolidays=calendarTagShown("holiday")?holidayEvents.filter(h=>h.date===key):[];
     cells.push(`<div class="${key===todayKey?"today":""}" data-day="${key}">${d}${dayHolidays.map(h=>`<b class="calendar-holiday-tag" title="${esc(h.title)}">${esc(h.title)}</b>`).join("")}${items.map(x=>{
       const s=new Date(x.start),e=new Date(x.end||x.start);
       const multi=dayKey(s)!==dayKey(e);
@@ -4278,16 +4279,31 @@ $("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth
 (function(){
   const grid=$("#calendar-grid");
   if(!grid)return;
-  let wheelLocked=false;
+  /* One physical scroll gesture - even with long trackpad momentum firing
+     many wheel events - must move exactly one month. A fixed-length lock
+     isn't enough: momentum can keep firing past it. Instead every wheel
+     event while locked refreshes a short quiet-timer, and the lock only
+     lifts once wheel events have been silent for that window AND the
+     slide animation has settled, whichever is later. */
+  let wheelLocked=false,quietTimer=null,animDone=true;
+  const QUIET_MS=200;
+  const tryUnlock=()=>{if(animDone&&!quietTimer)wheelLocked=false};
   grid.addEventListener("wheel",event=>{
     event.preventDefault();
-    if(wheelLocked)return;
+    if(wheelLocked){
+      clearTimeout(quietTimer);
+      quietTimer=setTimeout(()=>{quietTimer=null;tryUnlock()},QUIET_MS);
+      return;
+    }
     const dir=event.deltaY>0?1:event.deltaY<0?-1:0;
     if(!dir)return;
     const step=()=>{calendarCursor.setMonth(calendarCursor.getMonth()+dir);renderCalendar()};
     const reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if(reduceMotion){step();return}
     wheelLocked=true;
+    animDone=reduceMotion;
+    clearTimeout(quietTimer);
+    quietTimer=setTimeout(()=>{quietTimer=null;tryUnlock()},QUIET_MS);
+    if(reduceMotion){step();tryUnlock();return}
     grid.classList.remove("calendar-slide-in-left","calendar-slide-in-right");
     grid.classList.add(dir>0?"calendar-slide-out-left":"calendar-slide-out-right");
     setTimeout(()=>{
@@ -4297,8 +4313,9 @@ $("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth
       requestAnimationFrame(()=>requestAnimationFrame(()=>{
         grid.classList.remove("calendar-slide-in-left","calendar-slide-in-right");
         sizeCalendarSpans();
+        animDone=true;
+        tryUnlock();
       }));
-      setTimeout(()=>{wheelLocked=false},280);
     },260);
   },{passive:false});
 })();$("#new-event").onclick=()=>$("#event-dialog").showModal();$("#event-form").addEventListener("submit",async e=>{if(e.submitter?.value==="cancel"){e.target.closest("dialog").close();return}e.preventDefault();if(!currentUserId){toast("Sign in to create meetings");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db("medha_communications_meetings",{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean),created_by:currentUserId})});$("#event-dialog").close();e.target.reset();await loadMeetings();toast("Meeting created")}catch(err){toast(err.message)}});

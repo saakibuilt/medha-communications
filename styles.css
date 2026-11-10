@@ -628,12 +628,7 @@ dialog:not([open]){display:none!important}
    day cell - that made the first column balloon and the rest collapse.
    sizeCalendarSpans() in app.js sets left/top/width from the real cell
    geometry once layout has settled. */
-.calendar-tag-filters{display:flex;gap:6px;margin-left:12px}
-.calendar-tag-chip{display:flex;align-items:center;gap:5px;border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:999px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer}
-.calendar-tag-chip i{display:block;width:8px;height:8px;border-radius:50%;background:var(--border-strong)}
-.calendar-tag-chip[data-tag-filter="meeting"] i{background:#9ca3af}
-.calendar-tag-chip[data-tag-filter="holiday"] i{background:#f59e0b}
-.calendar-tag-chip.active{color:var(--slate-800);border-color:var(--brand-tint-strong);background:var(--brand-soft-bg)}
+.calendar-tag-select{margin-left:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:999px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer}
 .icon-button-danger{border:1px solid var(--border);background:var(--surface);color:var(--tint-rose-fg);border-radius:8px;width:36px;height:36px;font-size:16px;cursor:pointer;margin-left:auto}
 .icon-button-danger:hover{background:var(--tint-rose-bg,color-mix(in srgb, var(--tint-rose-fg) 12%, transparent))}
 .calendar-grid{position:relative}
