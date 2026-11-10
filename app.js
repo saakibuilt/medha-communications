@@ -4132,7 +4132,10 @@ async function loadHolidayEvents(){
     // The live endpoint only ever wraps this list as `holidays` - `calendar`
     // never exists on the response. Checking both means this keeps working
     // if the API's key ever changes back, instead of silently going empty.
-    const calendar=Array.isArray(body.calendar)?body.calendar:Array.isArray(body.holidays)?body.holidays:[];
+    // `body.holidays` is exactly what HR/Admin saved in Medha Users -
+    // nothing else. `body.calendar` also exists on this endpoint but mixes
+    // in that app's own built-in catalog, which must never show up here.
+    const calendar=Array.isArray(body.holidays)?body.holidays:[];
     const out=[];
     const thisYear=new Date().getFullYear();
     // Kept as start/end ranges (not exploded into one entry per covered day)
