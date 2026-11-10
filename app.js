@@ -4285,15 +4285,23 @@ $("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth
      event while locked refreshes a short quiet-timer, and the lock only
      lifts once wheel events have been silent for that window AND the
      slide animation has settled, whichever is later. */
-  let wheelLocked=false,quietTimer=null,animDone=true;
-  const QUIET_MS=200;
-  const tryUnlock=()=>{if(animDone&&!quietTimer)wheelLocked=false};
+  let wheelLocked=false,quietTimer=null,animDone=true,lockDeadline=0;
+  const QUIET_MS=200,MAX_LOCK_MS=480;
+  /* A continuous two-finger scroll (not a discrete flick) never goes quiet
+     for 200ms, so relying on silence alone to unlock left the calendar stuck
+     on one month for as long as the user kept scrolling. A hard deadline
+     guarantees the lock always releases a bit after the animation finishes,
+     regardless of whether wheel events are still arriving. */
+  const tryUnlock=()=>{if((animDone&&!quietTimer)||Date.now()>=lockDeadline){wheelLocked=false;quietTimer=null}};
   grid.addEventListener("wheel",event=>{
     event.preventDefault();
     if(wheelLocked){
-      clearTimeout(quietTimer);
-      quietTimer=setTimeout(()=>{quietTimer=null;tryUnlock()},QUIET_MS);
-      return;
+      tryUnlock();
+      if(wheelLocked){
+        clearTimeout(quietTimer);
+        quietTimer=setTimeout(()=>{quietTimer=null;tryUnlock()},QUIET_MS);
+        return;
+      }
     }
     const dir=event.deltaY>0?1:event.deltaY<0?-1:0;
     if(!dir)return;
@@ -4301,6 +4309,7 @@ $("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth
     const reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches;
     wheelLocked=true;
     animDone=reduceMotion;
+    lockDeadline=Date.now()+MAX_LOCK_MS;
     clearTimeout(quietTimer);
     quietTimer=setTimeout(()=>{quietTimer=null;tryUnlock()},QUIET_MS);
     if(reduceMotion){step();tryUnlock();return}
