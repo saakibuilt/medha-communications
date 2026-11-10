@@ -4129,13 +4129,26 @@ async function loadHolidayEvents(){
   try{
     const response=await fetch(HOLIDAY_CALENDAR_URL,{cache:"no-store"});
     const body=await response.json().catch(()=>({}));
+    // The live endpoint only ever wraps this list as `holidays` - `calendar`
+    // never exists on the response. Checking both means this keeps working
+    // if the API's key ever changes back, instead of silently going empty.
+    const calendar=Array.isArray(body.calendar)?body.calendar:Array.isArray(body.holidays)?body.holidays:[];
     const pad=n=>String(n).padStart(2,"0");
+    const dkey=(y,mo,d)=>`${y}-${pad(mo+1)}-${pad(d)}`;
     const out=[];
-    for(const item of body.calendar||[]){
+    const thisYear=new Date().getFullYear();
+    for(const item of calendar){
+      if(item.type==="birthday"){
+        const [,month,day]=(item.start_date||"").split("-");
+        if(!month||!day)continue;
+        for(let y=thisYear-2;y<=thisYear+5;y++)
+          out.push({date:dkey(y,Number(month)-1,Number(day)),title:`🎂 ${item.title}`,type:"birthday"});
+        continue;
+      }
       const start=new Date(`${item.start_date}T12:00:00`),end=new Date(`${item.end_date||item.start_date}T12:00:00`);
       if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime())||end<start)continue;
       for(const d=new Date(start);d<=end;d.setDate(d.getDate()+1))
-        out.push({date:`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,title:item.title});
+        out.push({date:dkey(d.getFullYear(),d.getMonth(),d.getDate()),title:item.title,type:["event","other","birthday"].includes(item.type)?item.type:"holiday"});
     }
     holidayEvents=out;
     renderCalendar();
@@ -4193,7 +4206,7 @@ function renderCalendar(){
   for(let d=1;d<=last;d++){
     const key=dayKey(new Date(y,m,d));
     const items=calendarTagShown("meeting")?calendarItems().filter(x=>coversDay(x,key)):[];
-    const dayHolidays=calendarTagShown("holiday")?holidayEvents.filter(h=>h.date===key):[];
+    const dayHolidays=holidayEvents.filter(h=>h.date===key&&calendarTagShown(h.type||"holiday"));
     cells.push(`<div class="${key===todayKey?"today":""}" data-day="${key}">${d}${dayHolidays.map(h=>`<b class="calendar-holiday-tag" title="${esc(h.title)}">${esc(h.title)}</b>`).join("")}${items.map(x=>{
       const s=new Date(x.start),e=new Date(x.end||x.start);
       const multi=dayKey(s)!==dayKey(e);
