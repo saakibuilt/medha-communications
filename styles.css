@@ -2794,3 +2794,7 @@ body.mini-space .chat-list{padding-bottom:58px!important}
 /* Medha Hub holidays overlaid on the calendar - a tag, not a meeting bar:
    no edit/delete controls, amber like the Holiday Calendar page and Mailbox use. */
 .calendar-holiday-tag{display:block;margin-top:5px;padding:3px 4px;border-radius:4px;background:var(--warning-bg,#fef3c7);color:var(--warning-fg,#b45309);font-size:9px;font-weight:700;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* A multi-day holiday/birthday/event uses the same spanning-bar mechanism
+   as a multi-day meeting (one centered tag stretched across its days), just
+   recolored amber like the single-day holiday tag above instead of gray. */
+.calendar-grid i.calendar-holiday-span{background:var(--warning-bg,#fef3c7);color:var(--warning-fg,#b45309)}

@@ -4133,22 +4133,25 @@ async function loadHolidayEvents(){
     // never exists on the response. Checking both means this keeps working
     // if the API's key ever changes back, instead of silently going empty.
     const calendar=Array.isArray(body.calendar)?body.calendar:Array.isArray(body.holidays)?body.holidays:[];
-    const pad=n=>String(n).padStart(2,"0");
-    const dkey=(y,mo,d)=>`${y}-${pad(mo+1)}-${pad(d)}`;
     const out=[];
     const thisYear=new Date().getFullYear();
+    // Kept as start/end ranges (not exploded into one entry per covered day)
+    // so a multi-day holiday can render as a single spanning bar in
+    // renderCalendar(), the same way a multi-day meeting already does,
+    // instead of a separate chip repeated on every day it covers.
     for(const item of calendar){
       if(item.type==="birthday"){
         const [,month,day]=(item.start_date||"").split("-");
         if(!month||!day)continue;
-        for(let y=thisYear-2;y<=thisYear+5;y++)
-          out.push({date:dkey(y,Number(month)-1,Number(day)),title:`🎂 ${item.title}`,type:"birthday"});
+        for(let y=thisYear-2;y<=thisYear+5;y++){
+          const iso=`${y}-${month}-${day}`;
+          out.push({start:`${iso}T00:00:00`,end:`${iso}T23:59:59`,title:`🎂 ${item.title}`,type:"birthday"});
+        }
         continue;
       }
       const start=new Date(`${item.start_date}T12:00:00`),end=new Date(`${item.end_date||item.start_date}T12:00:00`);
       if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime())||end<start)continue;
-      for(const d=new Date(start);d<=end;d.setDate(d.getDate()+1))
-        out.push({date:dkey(d.getFullYear(),d.getMonth(),d.getDate()),title:item.title,type:["event","other","birthday"].includes(item.type)?item.type:"holiday"});
+      out.push({start:`${item.start_date}T00:00:00`,end:`${item.end_date||item.start_date}T23:59:59`,title:item.title,type:["event","other","birthday"].includes(item.type)?item.type:"holiday"});
     }
     holidayEvents=out;
     renderCalendar();
@@ -4186,6 +4189,42 @@ function sizeCalendarSpans(){
   });
 }
 
+/* Builds one multi-day spanning bar segment for this day cell - shared by
+   meetings and multi-day holidays so both render identically (one centered
+   tag stretched across the days it covers, breaking cleanly at each week
+   row) instead of holidays repeating a separate chip on every day. */
+function spanTagHtml(x,key,y,m,dayKey,opts){
+  const s=new Date(x.start),e=new Date(x.end||x.start);
+  const multi=dayKey(s)!==dayKey(e);
+  const monthStart=new Date(y,m,1),monthEnd=new Date(y,m+1,0);
+  const segmentStart=multi&&s<monthStart?monthStart:s;
+  const segmentEnd=multi&&e>monthEnd?monthEnd:e;
+  const segmentStartKey=dayKey(segmentStart),segmentEndKey=dayKey(segmentEnd);
+  const isStart=segmentStartKey===key,isEnd=segmentEndKey===key;
+  const weekday=(new Date(key+"T00:00:00").getDay()+6)%7;
+  const rowStart=isStart||weekday===0;
+  const rowEnd=isEnd||weekday===6;
+  if(multi&&!rowStart)return "";
+  const span=multi?` span${rowStart?" span-start":""}${rowEnd?" span-end":""}${!rowStart&&!rowEnd?" span-mid":""}`:"";
+  const range=multi?` (${s.toLocaleDateString([],{month:"short",day:"numeric"})} – ${e.toLocaleDateString([],{month:"short",day:"numeric"})})`:"";
+  let daysInRow=1;
+  if(multi&&rowStart){
+    const endKey=segmentEndKey;
+    const probe=new Date(key+"T00:00:00");
+    daysInRow=0;
+    while(dayKey(probe)<=endKey){
+      daysInRow++;
+      if(((probe.getDay()+6)%7)===6)break;
+      probe.setDate(probe.getDate()+1);
+    }
+    daysInRow=Math.max(1,daysInRow);
+  }
+  const label=(!multi||rowStart)?esc(x.title):"";
+  const style=multi&&rowStart&&daysInRow>1?` style="--span-days:${daysInRow}" data-span-days="${daysInRow}"`:"";
+  const controls=opts.controls?opts.controls(x,multi,rowStart):"";
+  const extraClass=opts.extraClass?` ${opts.extraClass(x)}`:"";
+  return `<i class="${(span+extraClass).trim()}"${style} title="${esc(x.title)}${esc(range)}" ${opts.idAttr(x)}><span class="calendar-event-label">${label}</span>${controls}</i>`;
+}
 function renderCalendar(){
   const y=calendarCursor.getFullYear(),m=calendarCursor.getMonth();
   $("#calendar-month").textContent=calendarCursor.toLocaleDateString([],{month:"long",year:"numeric"});
@@ -4206,46 +4245,21 @@ function renderCalendar(){
   for(let d=1;d<=last;d++){
     const key=dayKey(new Date(y,m,d));
     const items=calendarTagShown("meeting")?calendarItems().filter(x=>coversDay(x,key)):[];
-    const dayHolidays=holidayEvents.filter(h=>h.date===key&&calendarTagShown(h.type||"holiday"));
-    cells.push(`<div class="${key===todayKey?"today":""}" data-day="${key}">${d}${dayHolidays.map(h=>`<b class="calendar-holiday-tag" title="${esc(h.title)}">${esc(h.title)}</b>`).join("")}${items.map(x=>{
-      const s=new Date(x.start),e=new Date(x.end||x.start);
-      const multi=dayKey(s)!==dayKey(e);
-      const monthStart=new Date(y,m,1),monthEnd=new Date(y,m+1,0);
-      /* Clamp the visible segment so events that began before this month or
-         end after it still get a bar starting/ending inside this grid. */
-      const segmentStart=multi&&s<monthStart?monthStart:s;
-      const segmentEnd=multi&&e>monthEnd?monthEnd:e;
-      const segmentStartKey=dayKey(segmentStart),segmentEndKey=dayKey(segmentEnd);
-      const isStart=segmentStartKey===key,isEnd=segmentEndKey===key;
-      const weekday=(new Date(key+"T00:00:00").getDay()+6)%7;   /* Mon = 0 */
-      /* The bar restarts on each calendar row, so a span crossing a week
-         boundary gets a fresh rounded edge and its own label. */
-      const rowStart=isStart||weekday===0;
-      const rowEnd=isEnd||weekday===6;
-      /* Only the first cell of each weekly segment owns the visible tag.
-         Continuation dates are deliberately empty, not blank tag elements. */
-      if(multi&&!rowStart)return "";
-      const span=multi?` span${rowStart?" span-start":""}${rowEnd?" span-end":""}${!rowStart&&!rowEnd?" span-mid":""}`:"";
-      const range=multi?` (${s.toLocaleDateString([],{month:"short",day:"numeric"})} – ${e.toLocaleDateString([],{month:"short",day:"numeric"})})`:"";
-      /* How many days this run covers in this week row, so the label can be
-         centred over the whole strip instead of just its first day. */
-      let daysInRow=1;
-      if(multi&&rowStart){
-        const endKey=segmentEndKey;
-        const probe=new Date(key+"T00:00:00");
-        daysInRow=0;
-        while(dayKey(probe)<=endKey){
-          daysInRow++;
-          if(((probe.getDay()+6)%7)===6)break;
-          probe.setDate(probe.getDate()+1);
-        }
-        daysInRow=Math.max(1,daysInRow);
-      }
-      const label=(!multi||rowStart)?esc(x.title):"";
-      const style=multi&&rowStart&&daysInRow>1?` style="--span-days:${daysInRow}" data-span-days="${daysInRow}"`:"";
-      const controls=(!multi||rowStart)&&(!calendarSubject||String(x.created_by)===String(viewerId()))?`<span class="calendar-event-actions"><button type="button" data-edit-meeting="${esc(x.id||"")}" aria-label="Edit ${esc(x.title)}" title="Edit event">✎</button><button type="button" data-delete-meeting="${esc(x.id||"")}" aria-label="Delete ${esc(x.title)}" title="Delete event">×</button></span>`:"";
-      return `<i class="${(span+(x.busy?" is-busy":"")).trim()}"${style} title="${esc(x.title)}${esc(range)}" data-meeting-id="${esc(x.id||"")}"><span class="calendar-event-label">${label}</span>${controls}</i>`;
-    }).join("")}</div>`);
+    const shownHolidays=holidayEvents.filter(h=>coversDay(h,key)&&calendarTagShown(h.type||"holiday"));
+    const multiHolidays=shownHolidays.filter(h=>dayKey(new Date(h.start))!==dayKey(new Date(h.end||h.start)));
+    const singleHolidays=shownHolidays.filter(h=>dayKey(new Date(h.start))===dayKey(new Date(h.end||h.start)));
+    const meetingTags=items.map(x=>spanTagHtml(x,key,y,m,dayKey,{
+      extraClass:x=>x.busy?"is-busy":"",
+      idAttr:x=>`data-meeting-id="${esc(x.id||"")}"`,
+      controls:(x,multi,rowStart)=>(!multi||rowStart)&&(!calendarSubject||String(x.created_by)===String(viewerId()))?`<span class="calendar-event-actions"><button type="button" data-edit-meeting="${esc(x.id||"")}" aria-label="Edit ${esc(x.title)}" title="Edit event">✎</button><button type="button" data-delete-meeting="${esc(x.id||"")}" aria-label="Delete ${esc(x.title)}" title="Delete event">×</button></span>`:"",
+    })).join("");
+    const holidayTags=singleHolidays.map(h=>`<b class="calendar-holiday-tag" title="${esc(h.title)}">${esc(h.title)}</b>`).join("")
+      +multiHolidays.map(h=>spanTagHtml(h,key,y,m,dayKey,{
+        extraClass:()=>"calendar-holiday-span",
+        idAttr:h=>`data-holiday-id="${esc(h.id||h.title)}"`,
+        controls:()=>"",
+      })).join("");
+    cells.push(`<div class="${key===todayKey?"today":""}" data-day="${key}">${d}${holidayTags}${meetingTags}</div>`);
   }
   $("#calendar-grid").innerHTML=cells.join("")||'<div class="empty-state">No scheduled meetings.</div>';
   sizeCalendarSpans();
