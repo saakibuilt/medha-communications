@@ -4113,6 +4113,16 @@ let meetings=[];let calendarCursor=new Date();
 // Medha Hub's holiday calendar, shown as a tag on top of the day cell -
 // never editable/deletable here, unlike a real meeting bar below it.
 let holidayEvents=[];
+/* Which tag categories are shown on the grid; both on by default. */
+let calendarTagFilter={meeting:true,holiday:true};
+$("#calendar-tag-filters")?.addEventListener("click",event=>{
+  const chip=event.target.closest("[data-tag-filter]");
+  if(!chip)return;
+  const tag=chip.dataset.tagFilter;
+  calendarTagFilter[tag]=!calendarTagFilter[tag];
+  chip.classList.toggle("active",calendarTagFilter[tag]);
+  renderCalendar();
+});
 const HOLIDAY_CALENDAR_URL="https://medha-users.vercel.app/api/hub-announcements?resource=holiday-calendar";
 async function loadHolidayEvents(){
   try{
@@ -4181,8 +4191,8 @@ function renderCalendar(){
   for(let i=0;i<first;i++)cells.push('<div class="muted"></div>');
   for(let d=1;d<=last;d++){
     const key=dayKey(new Date(y,m,d));
-    const items=calendarItems().filter(x=>coversDay(x,key));
-    const dayHolidays=holidayEvents.filter(h=>h.date===key);
+    const items=calendarTagFilter.meeting?calendarItems().filter(x=>coversDay(x,key)):[];
+    const dayHolidays=calendarTagFilter.holiday?holidayEvents.filter(h=>h.date===key):[];
     cells.push(`<div class="${key===todayKey?"today":""}" data-day="${key}">${d}${dayHolidays.map(h=>`<b class="calendar-holiday-tag" title="${esc(h.title)}">${esc(h.title)}</b>`).join("")}${items.map(x=>{
       const s=new Date(x.start),e=new Date(x.end||x.start);
       const multi=dayKey(s)!==dayKey(e);
@@ -4910,15 +4920,24 @@ function meetingDetailsText(meeting){
   const invitees=(meeting.invitee_ids||[]).map(id=>directory.find(person=>String(person.id)===String(id))?.full_name||String(id)).filter(Boolean);
   return {date,time,creator:creator?.full_name||(String(meeting.created_by)===String(viewerId())?currentAppUser?.full_name:"Unknown employee")||"Unknown employee",invitees:invitees.length?invitees.join(", "):"No invitees"};
 }
+let currentDetailsMeeting=null;
 function openMeetingDetails(meeting){
   const details=meetingDetailsText(meeting);
+  currentDetailsMeeting=meeting;
   $("#event-details-title").textContent=meeting.title||"Untitled event";
   $("#event-details-when").textContent=details.date+" · "+details.time;
   $("#event-details-location").textContent=meeting.location||"No location";
   $("#event-details-creator").textContent=details.creator;
   $("#event-details-invitees").textContent=details.invitees;
+  const canDelete=!calendarSubject||String(meeting.created_by)===String(viewerId());
+  $("#delete-event-details").style.display=canDelete?"":"none";
   $("#event-details-dialog").showModal();
 }
+$("#delete-event-details")?.addEventListener("click",async()=>{
+  if(!currentDetailsMeeting)return;
+  await deleteMeeting(currentDetailsMeeting);
+  $("#event-details-dialog").close();
+});
 async function deleteMeeting(meeting){
   if(!meeting||!confirm(`Delete “${meeting.title||"this event"}”?`))return;
   try{
