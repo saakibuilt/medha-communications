@@ -464,6 +464,12 @@ dialog .employee-list,dialog .event-invitee-list{max-height:34dvh;overflow:auto}
 .calendar-grid i[data-meeting-id]{position:relative;display:flex;align-items:center;gap:4px;min-width:0;padding-right:4px}
 .calendar-event-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 .calendar-event-actions{display:flex;gap:2px;margin-left:auto;opacity:0;transition:opacity .16s ease;flex:none}
+#calendar-grid{transition:transform .26s cubic-bezier(.22,.61,.36,1),opacity .26s cubic-bezier(.22,.61,.36,1)}
+#calendar-grid.calendar-slide-out-left{transform:translateX(-26px);opacity:0}
+#calendar-grid.calendar-slide-out-right{transform:translateX(26px);opacity:0}
+#calendar-grid.calendar-slide-in-left{transform:translateX(-26px);opacity:0}
+#calendar-grid.calendar-slide-in-right{transform:translateX(26px);opacity:0}
+@media(prefers-reduced-motion:reduce){#calendar-grid{transition:none}}
 .calendar-grid i[data-meeting-id]:hover .calendar-event-actions,.calendar-grid i[data-meeting-id]:focus-within .calendar-event-actions{opacity:1}
 .calendar-event-actions button{display:grid;place-items:center;width:20px;height:20px;padding:0;border:0;border-radius:5px;background:color-mix(in srgb, var(--surface) 72%, transparent);color:currentColor;font:inherit;font-size:13px;line-height:1;cursor:pointer}
 .calendar-event-actions button:hover{background:var(--surface);color:var(--brand-solid-bright)}

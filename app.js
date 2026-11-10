@@ -4272,7 +4272,36 @@ async function loadMeetings(){
     if(typeof refreshContactPresence==="function")refreshContactPresence();
   }catch{meetings=[];renderCalendar();renderInvitedMeetings()}
 }
-$("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);renderCalendar()};$("#calendar-next").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);renderCalendar()};$("#calendar-today").onclick=()=>{calendarCursor=new Date();renderCalendar()};$("#new-event").onclick=()=>$("#event-dialog").showModal();$("#event-form").addEventListener("submit",async e=>{if(e.submitter?.value==="cancel"){e.target.closest("dialog").close();return}e.preventDefault();if(!currentUserId){toast("Sign in to create meetings");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db("medha_communications_meetings",{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean),created_by:currentUserId})});$("#event-dialog").close();e.target.reset();await loadMeetings();toast("Meeting created")}catch(err){toast(err.message)}});
+$("#calendar-prev").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);renderCalendar()};$("#calendar-next").onclick=()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);renderCalendar()};$("#calendar-today").onclick=()=>{calendarCursor=new Date();renderCalendar()};
+/* Scrolling over the grid pages between months, sliding the old month out and
+   the new one in like a swipe, instead of an instant redraw. */
+(function(){
+  const grid=$("#calendar-grid");
+  if(!grid)return;
+  let wheelLocked=false;
+  grid.addEventListener("wheel",event=>{
+    event.preventDefault();
+    if(wheelLocked)return;
+    const dir=event.deltaY>0?1:event.deltaY<0?-1:0;
+    if(!dir)return;
+    const step=()=>{calendarCursor.setMonth(calendarCursor.getMonth()+dir);renderCalendar()};
+    const reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if(reduceMotion){step();return}
+    wheelLocked=true;
+    grid.classList.remove("calendar-slide-in-left","calendar-slide-in-right");
+    grid.classList.add(dir>0?"calendar-slide-out-left":"calendar-slide-out-right");
+    setTimeout(()=>{
+      step();
+      grid.classList.remove("calendar-slide-out-left","calendar-slide-out-right");
+      grid.classList.add(dir>0?"calendar-slide-in-right":"calendar-slide-in-left");
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        grid.classList.remove("calendar-slide-in-left","calendar-slide-in-right");
+        sizeCalendarSpans();
+      }));
+      setTimeout(()=>{wheelLocked=false},280);
+    },260);
+  },{passive:false});
+})();$("#new-event").onclick=()=>$("#event-dialog").showModal();$("#event-form").addEventListener("submit",async e=>{if(e.submitter?.value==="cancel"){e.target.closest("dialog").close();return}e.preventDefault();if(!currentUserId){toast("Sign in to create meetings");return}const title=$("#event-title").value.trim(),start=$("#event-start").value,end=$("#event-end").value;if(new Date(end)<=new Date(start)){toast("End time must be after start time");return}try{await db("medha_communications_meetings",{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify({title,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString(),invitee_ids:$("#event-invitees").value.split(",").map(x=>x.trim()).filter(Boolean),created_by:currentUserId})});$("#event-dialog").close();e.target.reset();await loadMeetings();toast("Meeting created")}catch(err){toast(err.message)}});
 function openEventForCalendarDate(day){const date=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),day,9,0);const end=new Date(date);end.setHours(10);const localValue=value=>{const pad=n=>String(n).padStart(2,"0");return `${value.getFullYear()}-${pad(value.getMonth()+1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`};$("#event-form").reset();$("#event-start").value=localValue(date);$("#event-end").value=localValue(end);$("#event-dialog").showModal()}
 $("#calendar-grid").addEventListener("dblclick",event=>{const cell=event.target.closest("#calendar-grid>div");if(!cell||cell.classList.contains("muted"))return;const first=(new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1).getDay()+6)%7;const day=[...$("#calendar-grid").children].indexOf(cell)-first+1;if(day>0)openEventForCalendarDate(day)});
 document.querySelectorAll("#event-start,#event-end").forEach(input=>input.addEventListener("click",()=>input.showPicker?.()));document.querySelectorAll("dialog .close-dialog").forEach(button=>button.addEventListener("click",()=>button.closest("dialog").close()));
