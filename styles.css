@@ -2885,3 +2885,9 @@ body .app-shell.calendar-mode.calendar-mode:has(#calendar-view.active-view) .cal
 @media(max-width:1024px){.rail .menu-clock{display:none}}
 
 @media(min-width:1025px){.rail-collapsed .rail .rail-label{display:none}}
+
+/* Shared highlighted guide control across Medha apps. */
+.rail .mt-guide{box-sizing:border-box;min-height:40px;border:1px dashed color-mix(in srgb,var(--text) 40%,transparent);border-radius:12px;background:color-mix(in srgb,var(--text) 3%,transparent);color:var(--text);font-size:12px;font-weight:600}
+.rail .mt-guide:hover,.rail .mt-guide:focus-visible{border:1px dashed color-mix(in srgb,var(--text) 65%,transparent);background:color-mix(in srgb,var(--text) 7%,transparent);color:var(--text)}
+.rail .mt-guide:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.rail .mt-guide-icon{box-sizing:border-box;display:grid;place-items:center;flex:none;width:16px;height:16px;border:1.5px solid currentColor;border-radius:50%;font-size:10px;font-weight:800;line-height:1}
