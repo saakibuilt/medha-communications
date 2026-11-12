@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="https://medha-hub.web.app/theme.css">
-  <link rel="stylesheet" href="/styles.css?v=19">
+  <link rel="stylesheet" href="/styles.css?v=20">
   <link rel="stylesheet" href="https://medha-hub.web.app/medha-calendar.css?v=6">
   <script src="https://medha-hub.web.app/hub-back.js" defer></script>
 <script src="companion-theme.js"></script>
@@ -48,6 +48,7 @@
     <aside class="rail">
       <div class="brand"><img class="brand-logo" src="/medha-circular.png" alt="Medha"><span class="rail-label"><span>Space</span></span></div>
       <button class="rail-collapse" id="rail-collapse" type="button" aria-label="Collapse menu" aria-expanded="true" title="Collapse menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <div class="menu-clock" aria-label="Local time"><div class="menu-clock-time"><span data-clock-time></span><span class="menu-clock-period" data-clock-period></span></div><div class="menu-clock-date" data-clock-date></div><div class="menu-clock-bar"><span data-clock-progress></span></div></div>
       <nav class="rail-nav" aria-label="Main navigation">
         <a class="rail-hub" href="https://medha-hub.web.app/" data-hub-back="" aria-label="Back to Medha Hub"><span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></span><span class="rail-label"><span>Medha Hub</span></span></a>
         <button class="rail-item" data-rail-filter="favorites" aria-label="Favorites"><span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/></svg></span><span class="rail-label"><span>Favorites</span></span></button>
@@ -144,5 +145,6 @@
   <script src="/medha-tour.js?v=4" defer></script>
   <script src="/space-tour.js?v=5" defer></script>
   <script type="module" src="/suggestions-details.js"></script>
+  <script src="menu-clock.js" defer></script>
 </body>
 </html>

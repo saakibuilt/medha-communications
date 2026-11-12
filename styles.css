@@ -2873,3 +2873,13 @@ body .app-shell.calendar-mode.calendar-mode:has(#calendar-view.active-view) .cal
 @media(min-width:1025px) and (prefers-reduced-motion:reduce){.app-shell,.rail .brand,.rail .rail-nav,.rail .rail-bottom,.rail .rail-item,.rail .rail-label,.rail-collapse svg{transition:none}}
 /* Phones use Hub's floating button; the sheet must not get an extra cell. */
 @media(max-width:1024px){.rail .rail-nav>.rail-hub,.rail .rail-hub,.rail .rail-collapse{display:none!important}}
+
+.menu-clock{padding:18px 24px;font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums;color:var(--text);border-bottom:1px solid color-mix(in srgb,var(--text) 8%,transparent)}
+.menu-clock-time{font-size:26px;font-weight:600;letter-spacing:-.04em;line-height:1}
+.menu-clock-period{margin-left:6px;font-size:12px;font-weight:500;letter-spacing:normal;opacity:.6}
+.menu-clock-date{margin-top:6px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.65}
+.menu-clock-bar{height:2px;margin-top:10px;background:color-mix(in srgb,var(--text) 10%,transparent);overflow:hidden}
+.menu-clock-bar span{display:block;height:100%;background:linear-gradient(90deg,transparent,var(--brand-solid-bright));transition:width 1s linear}
+
+@media(min-width:1025px){.rail-collapsed .menu-clock{display:none}}
+@media(max-width:1024px){.rail .menu-clock{display:none}}
