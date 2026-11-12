@@ -2507,10 +2507,17 @@ function openAttachmentPreview(attachment){
     ||["png","jpg","jpeg","gif","webp","svg","avif","heic"].includes(ext);
   const isVideo=["mp4","webm","mov","m4v"].includes(ext);
   const isAudio=["mp3","wav","m4a","aac","ogg","flac"].includes(ext);
+  const isPdf=ext==="pdf";
+  // Office docs can't render in a bare iframe, but Office Online's viewer
+  // embeds them read-only from any public URL - no account or upload needed
+  // on our side, since the attachment URL is already public.
+  const isOfficeDoc=["doc","docx","xls","xlsx","ppt","pptx"].includes(ext);
   $("#preview-body").innerHTML=isImage
     ?`<img src="${esc(attachment.url)}" alt="${esc(name)}">`
     :isVideo?`<video src="${esc(attachment.url)}" controls playsinline></video>`
     :isAudio?`<audio src="${esc(attachment.url)}" controls></audio>`
+    :isPdf?`<iframe class="preview-frame" src="${esc(attachment.url)}" title="${esc(name)}" loading="lazy"></iframe>`
+    :isOfficeDoc?`<iframe class="preview-frame" src="https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(attachment.url)}" title="${esc(name)}" loading="lazy"></iframe>`
     :`<div class="preview-fallback"><span class="preview-glyph">${fileGlyph(name,attachment.kind)}</span>
         <strong>${esc(name)}</strong>
         <p>${esc(fileSizeLabel(attachment.size)||"This file type cannot be shown here.")}</p>
