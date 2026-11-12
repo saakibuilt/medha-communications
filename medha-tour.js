@@ -44,7 +44,7 @@
 .mt-help:hover{background:var(--brand-solid-bright,#ce0505);color:#fff}
 @media print{.mt-help{display:none}}
 .mt-guide{display:inline-flex;align-items:center;gap:9px;align-self:flex-start;margin:10px 14px;padding:6px 14px 6px 6px;border-radius:999px;
-  border:1.5px dashed color-mix(in srgb,currentColor 55%,transparent);background:color-mix(in srgb,currentColor 7%,transparent);color:inherit;
+  border:1.5px dashed color-mix(in srgb,currentColor 55%,transparent);background:color-mix(in srgb,currentColor 7%,transparent);color:var(--text,#111);
   font:700 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;text-decoration:none;transition:background .15s}
 .mt-guide:hover,.mt-guide:focus-visible{background:color-mix(in srgb,currentColor 16%,transparent);border-style:solid;outline:none}
 .mt-guide-icon{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:2px solid currentColor;font-size:14px;font-weight:900;line-height:1}
@@ -52,7 +52,7 @@
 .mt-guide.mt-compact{align-self:center;margin-left:auto;margin-right:auto;padding:6px;gap:0}
 .mt-guide.mt-compact span:last-child{display:none}
 .mt-guide.mt-rail{flex-direction:column;gap:3px;align-self:center;margin:6px auto;padding:6px 6px 5px;border-radius:14px;font-size:10.5px}
-.mt-guide-icon{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1.5px solid currentColor;font:800 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;opacity:.85}
+/* Same "?" as Tasks everywhere: color:var(--text) flips with the theme on its own, no separate dark-mode patch needed. */.mt-guide-icon{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 @media(pointer:coarse){.mt-pop button{min-height:44px}}
 [data-tour-demo]{outline:2px dashed var(--brand-solid-bright,#ce0505);outline-offset:2px}`;
 
