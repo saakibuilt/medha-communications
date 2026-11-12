@@ -2461,6 +2461,11 @@ document.body.append(attachmentPreview);
 attachmentPreview.querySelector("#preview-close").addEventListener("click",()=>attachmentPreview.close());
 /* Clicking the backdrop closes, matching how every other lightbox behaves. */
 attachmentPreview.addEventListener("click",e=>{if(e.target===attachmentPreview)attachmentPreview.close()});
+/* The PDF branch below loads the file into a blob: URL so it renders
+   instead of downloading; release it whenever the dialog closes (for any
+   reason - the × button, backdrop click, or Esc) so it doesn't leak. */
+let previewBlobUrl=null;
+attachmentPreview.addEventListener("close",()=>{ if(previewBlobUrl){URL.revokeObjectURL(previewBlobUrl);previewBlobUrl=null} });
 /* Stamps the viewer's own Firebase ID token onto a Medha app URL so the
    embedded page can authenticate. Never stored, never sent to the channel. */
 async function medhaEmbedUrl(raw){
@@ -2512,11 +2517,31 @@ function openAttachmentPreview(attachment){
   // embeds them read-only from any public URL - no account or upload needed
   // on our side, since the attachment URL is already public.
   const isOfficeDoc=["doc","docx","xls","xlsx","ppt","pptx"].includes(ext);
+  if(previewBlobUrl){URL.revokeObjectURL(previewBlobUrl);previewBlobUrl=null}
+  if(isPdf){
+    // The file's own URL commonly serves Content-Disposition: attachment
+    // (that's what makes the Download button work), which also means an
+    // iframe pointed straight at it triggers a download instead of
+    // rendering the PDF. Fetching it as a blob and pointing the iframe at
+    // that local blob: URL has no such header, so it renders normally.
+    $("#preview-body").innerHTML=`<div class="preview-fallback"><strong>Loading preview…</strong></div>`;
+    attachmentPreview.showModal();
+    fetch(attachment.url).then(r=>{if(!r.ok)throw new Error();return r.blob()}).then(blob=>{
+      previewBlobUrl=URL.createObjectURL(blob.type==="application/pdf"?blob:new Blob([blob],{type:"application/pdf"}));
+      $("#preview-body").innerHTML=`<iframe class="preview-frame" src="${esc(previewBlobUrl)}" title="${esc(name)}"></iframe>`;
+    }).catch(()=>{
+      $("#preview-body").innerHTML=`<div class="preview-fallback"><span class="preview-glyph">${fileGlyph(name,attachment.kind)}</span>
+          <strong>${esc(name)}</strong>
+          <p>Could not load a preview.</p>
+          <a class="primary-button" href="${esc(attachment.url)}" target="_blank" rel="noopener">Open file</a>
+        </div>`;
+    });
+    return;
+  }
   $("#preview-body").innerHTML=isImage
     ?`<img src="${esc(attachment.url)}" alt="${esc(name)}">`
     :isVideo?`<video src="${esc(attachment.url)}" controls playsinline></video>`
     :isAudio?`<audio src="${esc(attachment.url)}" controls></audio>`
-    :isPdf?`<iframe class="preview-frame" src="${esc(attachment.url)}" title="${esc(name)}" loading="lazy"></iframe>`
     :isOfficeDoc?`<iframe class="preview-frame" src="https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(attachment.url)}" title="${esc(name)}" loading="lazy"></iframe>`
     :`<div class="preview-fallback"><span class="preview-glyph">${fileGlyph(name,attachment.kind)}</span>
         <strong>${esc(name)}</strong>
