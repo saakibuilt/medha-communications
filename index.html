@@ -13,9 +13,12 @@
   <!-- Colours come from one file in Medha Hub. The local copy is a generated
        fallback (scripts-sync-theme.mjs); the live file loads after it and wins,
        so a colour changed in Hub reaches this app without redeploying it. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="https://medha-hub.web.app/theme.css">
-  <link rel="stylesheet" href="/styles.css?v=18">
+  <link rel="stylesheet" href="/styles.css?v=19">
   <link rel="stylesheet" href="https://medha-hub.web.app/medha-calendar.css?v=6">
   <script src="https://medha-hub.web.app/hub-back.js" defer></script>
 <script src="companion-theme.js"></script>
@@ -43,18 +46,20 @@
   <div id="launch-gate" class="launch-gate" hidden><div><strong>Open Space from Medha Hub</strong><p>This app requires an authenticated Medha Hub launch.</p></div></div>
   <div class="app-shell">
     <aside class="rail">
-      <div class="brand"><img class="brand-logo" src="/medha-circular.png" alt="Medha"><span>Medha</span></div>
+      <div class="brand"><img class="brand-logo" src="/medha-circular.png" alt="Medha"><span class="rail-label"><span>Space</span></span></div>
+      <button class="rail-collapse" id="rail-collapse" type="button" aria-label="Collapse menu" aria-expanded="true" title="Collapse menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
       <nav class="rail-nav" aria-label="Main navigation">
-        <button class="rail-item" data-rail-filter="favorites" aria-label="Favorites"><span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/></svg></span>Favorites</button>
-        <button class="rail-item active" data-view="chat"><span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 5.5h13.6a2.2 2.2 0 0 1 2.2 2.2v7.1a2.2 2.2 0 0 1-2.2 2.2h-7l-4.7 3v-3H5.2A2.2 2.2 0 0 1 3 14.8V7.7a2.2 2.2 0 0 1 2.2-2.2Z"/><path d="M7.6 10.8h.01M12 10.8h.01M16.4 10.8h.01"/></svg></span>Chat</button>
-        <button class="rail-item" data-view="calendar"><span>▦</span>Calendar</button>
-        <button class="rail-item workspace-launcher" id="workspace-launcher" type="button" title="Open Medha apps" aria-label="Open Medha apps" aria-expanded="false" aria-controls="workspace-menu"><span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.4"/><rect x="14" y="4" width="6" height="6" rx="1.4"/><rect x="4" y="14" width="6" height="6" rx="1.4"/><path d="M14 17h6M17 14v6"/></svg></span>Apps</button>
+        <a class="rail-hub" href="https://medha-hub.web.app/" data-hub-back="" aria-label="Back to Medha Hub"><span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></span><span class="rail-label"><span>Medha Hub</span></span></a>
+        <button class="rail-item" data-rail-filter="favorites" aria-label="Favorites"><span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/></svg></span><span class="rail-label"><span>Favorites</span></span></button>
+        <button class="rail-item active" data-view="chat"><span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 5.5h13.6a2.2 2.2 0 0 1 2.2 2.2v7.1a2.2 2.2 0 0 1-2.2 2.2h-7l-4.7 3v-3H5.2A2.2 2.2 0 0 1 3 14.8V7.7a2.2 2.2 0 0 1 2.2-2.2Z"/><path d="M7.6 10.8h.01M12 10.8h.01M16.4 10.8h.01"/></svg></span><span class="rail-label"><span>Chat</span></span></button>
+        <button class="rail-item" data-view="calendar"><span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></span><span class="rail-label"><span>Calendar</span></span></button>
+        <button class="rail-item workspace-launcher" id="workspace-launcher" type="button" title="Open Medha apps" aria-label="Open Medha apps" aria-expanded="false" aria-controls="workspace-menu"><span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.4"/><rect x="14" y="4" width="6" height="6" rx="1.4"/><rect x="4" y="14" width="6" height="6" rx="1.4"/><path d="M14 17h6M17 14v6"/></svg></span><span class="rail-label"><span>Apps</span></span></button>
         <div class="workspace-menu" id="workspace-menu" role="menu" aria-label="Medha apps" hidden><button type="button" role="menuitem" data-workspace-app="tasks"><span class="workspace-menu-icon workspace-menu-icon--tasks"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M8.5 9h7M8.5 13h7M8.5 17h4"/></svg></span><span><strong>Tasks</strong><small>Open your task desk</small></span><i>↗</i></button><button type="button" role="menuitem" data-workspace-app="warehouse"><span class="workspace-menu-icon workspace-menu-icon--warehouse"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 9.5 12 4l8.5 5.5v10.2a1.3 1.3 0 0 1-1.3 1.3H4.8a1.3 1.3 0 0 1-1.3-1.3V9.5Z"/><path d="M8 21v-6h8v6M8 10h.01M12 10h.01M16 10h.01"/></svg></span><span><strong>Warehouse</strong><small>Check inventory and shipments</small></span><i>↗</i></button><button type="button" role="menuitem" data-workspace-app="mail" id="workspace-mail" hidden><span class="workspace-menu-icon workspace-menu-icon--mail"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><span><strong>Mail</strong><small>Open your connected mailbox</small></span><i>↗</i></button></div>
         
         
         
       </nav>
-      <div class="rail-bottom"><button class="rail-item" data-view="settings"><span>⚙</span>Settings</button><button class="profile-chip" id="current-user-initials" title="Current user"></button></div>
+      <div class="rail-bottom"><button class="rail-item" data-view="settings"><span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span><span class="rail-label"><span>Settings</span></span></button><button class="profile-chip" id="current-user-initials" title="Current user"></button></div>
     </aside>
 
     <aside class="chat-sidebar" id="chat-sidebar">
@@ -135,9 +140,9 @@
     }, 45000);
   </script>
   <script src="https://medha-hub.web.app/medha-calendar.js?v=5"></script>
-  <script type="module" src="/app.js?v=hub-launch-16"></script>
+  <script type="module" src="/app.js?v=hub-launch-17"></script>
   <script src="/medha-tour.js?v=4" defer></script>
-  <script src="/space-tour.js?v=4" defer></script>
+  <script src="/space-tour.js?v=5" defer></script>
   <script type="module" src="/suggestions-details.js"></script>
 </body>
 </html>

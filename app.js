@@ -2284,6 +2284,8 @@ function animateActiveView(){
 /* Runs after each item's own onclick (bubbling), so the view has already
    switched by the time the sheet closes and the page animates in. */
 $(".rail").addEventListener("click",e=>{
+  const hub=e.target.closest(".rail-hub");
+  if(hub){const shared=document.getElementById("medha-hub-back");if(shared){e.preventDefault();shared.click()}return}
   if(!isMobile())return;
   const item=e.target.closest(".rail-item");
   if(!item||item.id==="workspace-launcher")return;
@@ -2324,6 +2326,20 @@ mobileQuery.addEventListener("change",()=>{
   else if(!document.body.classList.contains("rail-sheet-open"))$(".rail").setAttribute("aria-hidden","true");
 });
 if(isMobile())$(".rail").setAttribute("aria-hidden","true");
+/* Desktop rail collapse (icon-only), remembered like ClockIn's sidebar. */
+{
+  const RAIL_KEY="medhaSpaceRailCollapsed",shell=$(".app-shell"),toggle=$("#rail-collapse");
+  const apply=on=>{
+    shell.classList.toggle("rail-collapsed",on);
+    if(toggle){toggle.setAttribute("aria-expanded",String(!on));toggle.title=toggle.ariaLabel=on?"Expand menu":"Collapse menu"}
+  };
+  let stored=false;try{stored=localStorage.getItem(RAIL_KEY)==="1"}catch{}
+  apply(stored);
+  toggle?.addEventListener("click",()=>{
+    const on=!shell.classList.contains("rail-collapsed");
+    apply(on);try{localStorage.setItem(RAIL_KEY,on?"1":"0")}catch{}
+  });
+}
 /* The conversation list is the first page on a phone, and the rail used to sit
    beside it in the same drawer. Now the rail is a sheet, the list needs its
    own way to open it. */
