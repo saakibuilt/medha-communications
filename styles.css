@@ -2883,3 +2883,5 @@ body .app-shell.calendar-mode.calendar-mode:has(#calendar-view.active-view) .cal
 
 @media(min-width:1025px){.rail-collapsed .menu-clock{display:none}}
 @media(max-width:1024px){.rail .menu-clock{display:none}}
+
+@media(min-width:1025px){.rail-collapsed .rail .rail-label{display:none}}
