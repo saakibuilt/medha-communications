@@ -2891,3 +2891,12 @@ body .app-shell.calendar-mode.calendar-mode:has(#calendar-view.active-view) .cal
 .rail .mt-guide:hover,.rail .mt-guide:focus-visible{border:1px dashed color-mix(in srgb,var(--text) 65%,transparent);background:color-mix(in srgb,var(--text) 7%,transparent);color:var(--text)}
 .rail .mt-guide:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .rail .mt-guide-icon{box-sizing:border-box;display:grid;place-items:center;flex:none;width:16px;height:16px;border:1.5px solid currentColor;border-radius:50%;font-size:10px;font-weight:800;line-height:1}
+
+/* Animate the guide label with the rail, independent of resize observation. */
+@media(min-width:1025px){
+  .rail .mt-guide,.rail .mt-guide.mt-compact{align-self:stretch;justify-content:flex-start;margin:0;padding:8px 12px;gap:12px;overflow:hidden}
+  .rail .mt-guide span:last-child,.rail .mt-guide.mt-compact span:last-child{display:block;min-width:0;max-width:110px;overflow:hidden;white-space:nowrap;opacity:1;transition:max-width .32s var(--rail-out),opacity .2s ease .06s}
+  .rail-collapsed .rail .mt-guide,.rail-collapsed .rail .mt-guide.mt-compact{justify-content:center;padding:8px 0;gap:0}
+  .rail-collapsed .rail .mt-guide span:last-child,.rail-collapsed .rail .mt-guide.mt-compact span:last-child{max-width:0;opacity:0;transition:max-width .32s var(--rail-out),opacity .12s}
+}
+@media(min-width:1025px) and (prefers-reduced-motion:reduce){.rail .mt-guide span:last-child{transition:none}}
