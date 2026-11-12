@@ -2900,3 +2900,10 @@ body .app-shell.calendar-mode.calendar-mode:has(#calendar-view.active-view) .cal
   .rail-collapsed .rail .mt-guide span:last-child,.rail-collapsed .rail .mt-guide.mt-compact span:last-child{max-width:0;opacity:0;transition:max-width .32s var(--rail-out),opacity .12s}
 }
 @media(min-width:1025px) and (prefers-reduced-motion:reduce){.rail .mt-guide span:last-child{transition:none}}
+
+/* Center every collapsed rail action in both themes, including on hover. */
+@media(min-width:1025px){
+  :root .rail-collapsed .rail .rail-item,:root .rail-collapsed .rail .rail-item:hover,
+  :root[data-theme="dark"] .rail-collapsed .rail .rail-item,:root[data-theme="dark"] .rail-collapsed .rail .rail-item:hover,
+  :root .rail-collapsed .rail .rail-hub,:root .rail-collapsed .rail .rail-hub:hover{justify-content:center;gap:0;padding-left:0;padding-right:0}
+}
