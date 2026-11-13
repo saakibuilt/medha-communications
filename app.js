@@ -735,8 +735,13 @@ function applyIncomingStreamMessage(event){
     chat.messagesLoaded=true;
     renderMessages();
     scrollMessagesToEnd();
-    if(readReceiptsEnabled())streamChannelFor(chat)?.markRead().catch(()=>{});
-    else markSeenLocally(chat.cid);
+    /* Only "seen" when the person is actually looking: a chat left open in a
+       background tab, a minimised window or an unfocused app stays unread
+       (red dot in Hub) until they come back to it. */
+    if(chatOnScreen()){
+      if(readReceiptsEnabled())streamChannelFor(chat)?.markRead().catch(()=>{});
+      else markSeenLocally(chat.cid);
+    }else{chat.unread=(chat.unread||0)+1;if(soundEnabled())playIncomingPing();}
   }else{
     /* Store the body, not just the badge. The message is already in hand from
        the websocket, so keeping it costs nothing - and without it a chat that
@@ -4654,6 +4659,11 @@ function unlockNotifications(){
 }
 ["pointerdown","keydown","touchstart"].forEach(evt=>
   document.addEventListener(evt,unlockNotifications,{capture:true,passive:true}));
+function chatOnScreen(){return !document.hidden&&(embedMode||document.hasFocus())}
+/* Back on the open chat: now it really has been seen. */
+function markActiveSeenOnReturn(){if(chatOnScreen()&&active?.unread){markConversationRead(active).catch(()=>{});renderList()}}
+window.addEventListener("focus",markActiveSeenOnReturn);
+document.addEventListener("visibilitychange",markActiveSeenOnReturn);
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState==="visible"&&audioContext?.state==="suspended")
     audioContext.resume().catch(()=>{});
