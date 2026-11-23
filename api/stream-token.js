@@ -38,7 +38,10 @@ export default async function handler(req,res){
     if(!response.ok)throw Error("Invalid Medha authentication");
     const identity=(await response.json()).users?.[0];
     if(!identity?.localId)throw Error("Invalid Medha authentication");
-    const user={id:identity.localId,name:identity.displayName||identity.email||req.body?.name||"Medha user"};
+    /* Show the Medha profile name (sent by Hub / mobile), never an email address. */
+    const sent=String(req.body?.name||"").trim().slice(0,80);
+    const clean=v=>v&&!v.includes("@")?v:"";
+    const user={id:identity.localId,name:clean(sent)||clean(identity.displayName)||(identity.email||"").split("@")[0]||"Medha user"};
     const client=StreamChat.getInstance(apiKey,secret);
     /* Callers that hold a live Firebase session re-mint whenever they need to,
        so the default stays one hour. Activities discards its launch token by
