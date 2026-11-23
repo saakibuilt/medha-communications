@@ -74,6 +74,8 @@ export default async function handler(request,response){
     const type=String(event.type||"");
     if(type==="message.new"){
       const message=event.message||{};
+      // A call's chat line is not a message to notify about: the call itself rings (and a miss is pushed below).
+      if(message.call_id)return response.status(200).json({ok:true,type,skipped:"call message"});
       const sender=message.user?.name||event.user?.name||"New message";
       const recipients=messageRecipients(event);
       const cid=event.channel?.cid||message.channel_cid||"";
@@ -86,8 +88,19 @@ export default async function handler(request,response){
       const call=event.call||{},custom=call.custom||call.data?.custom||{};
       const video=call.video===true||custom.mode==="video";
       const caller=event.user?.name||call.created_by?.name||"Medha user";
-      const result=await forwardPush(members,{title:`Incoming ${video?"video":"audio"} call`,body:`${caller} is calling you`,url:HUB_URL,tag:`stream-call-${event.call_cid||call.cid||Date.now()}`});
+      const chat=custom.channelCid?hubChatUrl(custom.channelCid):HUB_URL;
+      const result=await forwardPush(members,{title:`Incoming ${video?"video":"audio"} call`,body:`${caller} is calling you`,url:chat,tag:`stream-call-${event.call_cid||call.cid||Date.now()}`});
       console.info("Stream call push result",{recipients:members.length,delivered:result.delivered||0,skipped:result.skipped||null});
+      return response.status(200).json({ok:true,type,result});
+    }
+    if(type==="call.missed"){
+      // Missed call: tapping opens the chat with the person who called.
+      const call=event.call||{},custom=call.custom||call.data?.custom||{};
+      const creator=callCreator(event);
+      const missed=(Array.isArray(event.members)?idsFromMembers(event.members):idsFromMembers(callMembers(event))).filter(id=>id&&id!==creator);
+      const video=call.video===true||custom.mode==="video";
+      const caller=call.created_by?.name||event.user?.name||"Medha user";
+      const result=await forwardPush(missed,{title:`Missed ${video?"video":"audio"} call`,body:`Missed ${video?"video":"audio"} call from ${caller}`,url:custom.channelCid?hubChatUrl(custom.channelCid):HUB_URL,tag:`stream-missed-${event.call_cid||call.cid||Date.now()}`});
       return response.status(200).json({ok:true,type,result});
     }
     return response.status(200).json({ok:true,ignored:type});
