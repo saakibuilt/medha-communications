@@ -1,4 +1,5 @@
 import { StreamChat } from "stream-chat";
+import { medhaNames, displayName } from "./_medha-names.js";
 /* Same allowlist as stream-token: other Medha apps upsert the people they are
    about to open a channel with, so a first-time recipient is a known Stream
    user by the time the channel is created. */
@@ -35,6 +36,8 @@ export default async function handler(req,res){
     if(!response.ok)throw Error("Invalid Medha authentication");
     const body=await new Promise((resolve,reject)=>{let text="";req.on("data",chunk=>text+=chunk);req.on("end",()=>{try{resolve(text?JSON.parse(text):{})}catch(error){reject(error)}});req.on("error",reject)});
     const users=Array.isArray(body.users)?body.users.map(user=>({id:String(user.id||"").trim(),name:String(user.name||"Medha user").trim(),image:user.image})).filter(user=>user.id):[];
+    const names=await medhaNames(users.map(u=>u.id));
+    for(const u of users)u.name=displayName(names[u.id],u.name);
     if(!users.length)return res.status(400).json({error:"At least one Stream user is required"});
     await StreamChat.getInstance(apiKey,secret).upsertUsers(users);
     return res.status(200).json({ok:true,count:users.length});

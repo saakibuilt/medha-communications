@@ -1,4 +1,5 @@
 import { StreamChat } from "stream-chat";
+import { medhaNames, displayName } from "./_medha-names.js";
 /* Medha Hub calls this from its own origin to open the same chat session in
    its side panel, so the endpoint has to answer a cross-origin preflight.
    The allowlist is explicit - this mints a Stream token, so it must not be
@@ -38,10 +39,8 @@ export default async function handler(req,res){
     if(!response.ok)throw Error("Invalid Medha authentication");
     const identity=(await response.json()).users?.[0];
     if(!identity?.localId)throw Error("Invalid Medha authentication");
-    /* Show the Medha profile name (sent by Hub / mobile), never an email address. */
-    const sent=String(req.body?.name||"").trim().slice(0,80);
-    const clean=v=>v&&!v.includes("@")?v:"";
-    const user={id:identity.localId,name:clean(sent)||clean(identity.displayName)||(identity.email||"").split("@")[0]||"Medha user"};
+    const names=await medhaNames([identity.localId]);
+    const user={id:identity.localId,name:displayName(names[identity.localId],req.body?.name,identity.displayName,identity.email)};
     const client=StreamChat.getInstance(apiKey,secret);
     /* Callers that hold a live Firebase session re-mint whenever they need to,
        so the default stays one hour. Activities discards its launch token by
